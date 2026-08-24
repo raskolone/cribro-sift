@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cribro Sift — HUD</title>
+    <link rel="stylesheet" href="css/tokens.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        font-family: var(--font-body);
+      }
+
+      /* Pigułka rośnie i kurczy się razem z tym, co ma do powiedzenia:
+         szerokość bierze się z treści, więc schowanie napisów zwija ją samo.
+         Wyśrodkowanie w obu osiach sprawia, że kurczy się do środka,
+         a nie ucieka w bok.
+
+         Jest przy tym o 30% mniejsza, niż była. Powód jest prosty: pojawia
+         się nad cudzym oknem w chwili, gdy patrzy się w to okno, a nie w nią.
+         Ma potwierdzić, że mikrofon ruszył — do tego nie potrzeba miejsca,
+         potrzeba widoczności, a tę niesie ruch i kolor.
+
+         Zmniejszenie idzie przez skalowanie całości jedną liczbą, nie przez
+         przepisanie kilkunastu rozmiarów. Proporcje pigułki są policzone —
+         kółko, fala, napisy i odstępy trzymają się razem — a lista osobno
+         zmniejszanych wartości rozjechałaby się przy pierwszej poprawce.
+         Kolejność w `transform` jest przy tym istotna: najpierw przesunięcie
+         o połowę własnego rozmiaru, potem skala. Odwrotnie pigułka zjechałaby
+         z osi, bo przesunięcie liczyłoby się już od zmniejszonego kształtu. */
+      #shell {
+        --pill: 0.7;
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        display: flex;
+        align-items: center;
+        gap: var(--s-4);
+        padding: 10px 18px 10px 12px;
+        border-radius: var(--r-pill);
+        background-color: var(--glass);
+        background-image: var(--glass-fill);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        border: 1px solid var(--glass-edge);
+        box-shadow: var(--glass-sheen), var(--glass-drop);
+        opacity: 0;
+        transform: translate(-50%, -50%) translateY(10px) scale(calc(var(--pill) * 0.97));
+        transition:
+          opacity var(--t),
+          transform var(--t),
+          gap var(--t-slow),
+          padding var(--t-slow),
+          border-color var(--t),
+          box-shadow var(--t);
+      }
+      #shell.in {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(var(--pill));
+      }
+
+      /* Po trzech sekundach nasłuchu pigułka znika. Napis „Słucham" i fala
+         są potrzebne na początku — jako potwierdzenie, że mikrofon ruszył.
+         Potem przestają nieść treść, a zasłaniają okno, do którego się mówi.
+
+         To, co nadal coś znaczy — że nagrywanie trwa i że mikrofon słyszy —
+         przejmuje znaczek widgetu. Pigułka osuwa się w jego
+         stronę i gaśnie, więc widać, dokąd poszła. Wszystko dzieje się
+         w jednym miejscu, nie w dwóch naraz.
+
+         Gdy widget jest wyłączony, nie ma komu przekazać pałeczki: pigułka
+         kurczy się wtedy do własnego kółka („mini") i zostaje na ekranie. */
+      #shell.in[data-size="gone"] {
+        opacity: 0;
+        transform: translate(-50%, -50%) translateY(38px) scale(calc(var(--pill) * 0.34));
+        pointer-events: none;
+        /* Rozpędza się ku końcowi — ruch ma wyglądać jak wciągnięcie
+           w znaczek, a nie jak zwykłe zniknięcie. */
+        transition:
+          opacity 0.4s ease-in,
+          transform 0.46s cubic-bezier(0.5, 0, 0.75, 0);
+      }
+      #shell[data-size="gone"] #body,
+      #shell[data-size="gone"] #timer {
+        opacity: 0;
+      }
+      #shell[data-size="mini"] {
+        gap: 0;
+        padding: 7px;
+      }
+      #shell[data-size="mini"] #body,
+      #shell[data-size="mini"] #timer {
+        max-width: 0;
+        max-height: 0;
+        opacity: 0;
+        margin: 0;
+      }
+      #shell[data-size="mini"] canvas {
+        width: 26px;
+        height: 26px;
+      }
+      /* Widok zwinięty to samo kółko z pierścieniem — i przez większość
+         nagrania jedyna rzecz na ekranie, która mówi, że mikrofon słucha.
+         Puls jest więc mocny: dwa pierścienie zamiast jednego, rozchodzące
+         się dwa i pół raza dalej niż wcześniej, w tempie tętna. Poprzedni
+         gasł do 4% alfy w promieniu ośmiu pikseli i przy zmniejszonej
+         pigułce byłby już tylko domysłem. */
+      #shell[data-size="mini"][data-state="listening"] {
+        animation: breathe 1.25s var(--ease) infinite;
+      }
+      @keyframes breathe {
+        0%,
+        100% {
+          box-shadow:
+            var(--glass-sheen),
+            var(--glass-drop),
+            0 0 0 0 var(--rec-55),
+            0 0 0 0 var(--rec-30);
+        }
+        50% {
+          box-shadow:
+            var(--glass-sheen),
+            var(--glass-drop),
+            0 0 0 12px var(--rec-20),
+            0 0 0 20px var(--rec-04);
+        }
+      }
+
+      /* ── Nagrywanie ───────────────────────────────────────────
+         Fiolet zamiast mięty i to samo podstawienie tokenów co na znaczku
+         widgetu: zieleń w tej aplikacji znaczy „gotowe", więc
+         nie ma prawa świecić wtedy, gdy mikrofon dopiero słucha. Podmiana
+         obejmuje napis „SŁUCHAM", falę głosu, obwódkę i poświatę naraz —
+         pierścień na canvasie bierze ten sam kolor przez js/hud.js. */
+      #shell[data-state="listening"] {
+        --accent: var(--rec);
+        --accent-25: var(--rec-30);
+        --accent-55: var(--rec-55);
+        border-color: var(--rec-45);
+        box-shadow: var(--shadow-lg), var(--rec-glow);
+      }
+      #shell[data-state="done"] {
+        border-color: var(--accent-55);
+      }
+
+      canvas {
+        width: 44px;
+        height: 44px;
+        flex: none;
+        transition: width var(--t-slow), height var(--t-slow);
+      }
+
+      /* ── Nic nie usłyszałem ────────────────────────────────────
+         Cisza w nagraniu nie jest awarią: mikrofon działał, sito działało,
+         nie było czego przesiać. Dlatego zamiast czerwonego komunikatu jest
+         mina i jedno zdanie — tyle, ile powiedziałby człowiek obok.
+
+         Mina zajmuje miejsce pierścienia, nie staje obok niego. Pigułka ma
+         jedno oko i w tej chwili patrzy właśnie tym. */
+      #face {
+        display: none;
+        width: 44px;
+        height: 44px;
+        flex: none;
+        place-items: center;
+        font-size: 29px;
+        line-height: 1;
+        animation: face-in 0.42s var(--ease) both;
+      }
+      #shell[data-state="empty"] #face {
+        display: grid;
+      }
+      #shell[data-state="empty"] canvas,
+      #shell[data-state="empty"] #timer {
+        display: none;
+      }
+      /* Zdanie, nie etykieta — więc bez wersalików, bez rozstrzelenia
+         i bez akcentu, którym pigułka mówi o swoich stanach pracy. */
+      #shell[data-state="empty"] #status {
+        font-family: var(--font-body);
+        font-size: var(--fs-sm);
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text);
+        white-space: normal;
+        text-wrap: balance;
+      }
+      /* Szerokość pigułki brała się z fali głosu; bez niej zdanie łamałoby
+         się na trzy linijki w pigułce wąskiej jak sam napis. */
+      #shell[data-state="empty"] #body {
+        min-width: 210px;
+      }
+      #shell[data-state="empty"] {
+        border-color: var(--line-strong);
+        box-shadow: var(--glass-sheen), var(--glass-drop);
+      }
+      @keyframes face-in {
+        from {
+          opacity: 0;
+          transform: translateY(-5px) scale(0.7);
+        }
+      }
+
+      #body {
+        flex: 1;
+        min-width: 0;
+        max-width: 232px;
+        max-height: 96px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        transition:
+          max-width var(--t-slow),
+          max-height var(--t-slow),
+          opacity var(--t),
+          margin var(--t-slow);
+      }
+
+      #status {
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        letter-spacing: var(--track-label);
+        text-transform: uppercase;
+        color: var(--accent);
+        transition: color var(--t);
+      }
+      #shell[data-state="sifting"] #status {
+        color: var(--warn);
+      }
+
+      /* Fala głosu — 28 kresek, każda oddycha własnym rytmem. */
+      #wave {
+        display: flex;
+        align-items: center;
+        gap: 2.5px;
+        height: 18px;
+        min-width: 168px;
+      }
+      /* `display: flex` bije atrybut `hidden`, a fala jest chowana właśnie
+         nim (patrz setState w js/hud.js) — bez tej linijki kreski stoją pod
+         każdym napisem, także pod „W schowku" i pod smutną miną. */
+      #wave[hidden] {
+        display: none;
+      }
+      #wave i {
+        flex: 1;
+        height: 2px;
+        border-radius: var(--r-pill);
+        background: var(--accent);
+        opacity: 0.35;
+        transform-origin: center;
+        transition: transform 90ms linear, opacity 90ms linear;
+      }
+
+      #hint {
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        letter-spacing: 0.08em;
+        color: var(--text-mute);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #timer {
+        font-family: var(--font-mono);
+        font-size: var(--fs-xs);
+        font-variant-numeric: tabular-nums;
+        color: var(--text-2);
+        flex: none;
+        max-width: 60px;
+        overflow: hidden;
+        margin-left: var(--s-2);
+        transition:
+          max-width var(--t-slow),
+          opacity var(--t),
+          margin var(--t-slow);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="shell" data-state="idle" data-size="full">
+      <canvas id="ring" width="88" height="88"></canvas>
+      <div id="face" aria-hidden="true">😔</div>
+      <div id="body">
+        <div id="status">Gotowe</div>
+        <div id="wave"></div>
+        <div id="hint" hidden></div>
+      </div>
+      <div id="timer">0:00</div>
+    </div>
+
+    <script src="../shared/strings.js"></script>
+    <script src="js/i18n.js"></script>
+    <!-- Atrapa mostu: w Electronie nie robi nic (window.cribro już jest),
+         w przeglądarce pozwala obejrzeć HUD bez procesu głównego. -->
+    <script src="js/mock-bridge.js"></script>
+    <script src="js/theme.js"></script>
+    <script src="js/hud.js"></script>
+  </body>
+</html>

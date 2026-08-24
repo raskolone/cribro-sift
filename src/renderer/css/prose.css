@@ -1,0 +1,313 @@
+/* ─────────────────────────────────────────────────────────────
+   Tekst notatki — to, co widać zamiast Markdownu.
+
+   Jeden krój, jeden rozmiar, trzy odcienie. Notatka ze spotkania nie jest
+   dokumentem do składu: nagłówek ma być rozpoznawalny jednym spojrzeniem,
+   a nie efektowny. Wszystko poniżej opisuje wyłącznie treść — powierzchnia
+   do pisania (tło, wcięcia, kursor) należy do okna, w którym edytor stoi.
+   ───────────────────────────────────────────────────────────── */
+
+.prose {
+  position: relative;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.75;
+  color: var(--text);
+  outline: none;
+  caret-color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.prose > * {
+  margin: 0 0 var(--s-3);
+}
+.prose > *:last-child {
+  margin-bottom: 0;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--text-hi);
+  letter-spacing: -0.01em;
+  margin: var(--s-4) 0 var(--s-2);
+}
+/* Trzy stopnie, trzy wyraźnie różne rozmiary. Różnica o dwa piksele
+   każe je porównywać obok siebie, a nagłówek ma mówić o swoim miejscu
+   w notatce jednym spojrzeniem, bez porównywania z czymkolwiek. */
+.prose h1 {
+  font-size: var(--fs-h2);
+  margin-top: var(--s-5);
+}
+.prose h2 {
+  font-size: var(--fs-h3);
+}
+.prose h3 {
+  font-size: var(--fs-h4);
+  color: var(--text);
+}
+.prose > h1:first-child,
+.prose > h2:first-child,
+.prose > h3:first-child {
+  margin-top: 0;
+}
+
+/* ── Nagłówek składany ──
+   Strzałka jest jedyną różnicą, jaką widać: nagłówek zostaje nagłówkiem,
+   a nie zamienia się w przycisk. Rysuje ją CSS, a kliknięcie w nią łapie
+   js/editor.js po lewym skraju bloku (TOGGLE_ZONE). */
+.prose h1[data-toggle],
+.prose h2[data-toggle],
+.prose h3[data-toggle] {
+  position: relative;
+  padding-left: 24px;
+}
+.prose [data-toggle]::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0.42em;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  border-top-color: var(--accent-55);
+  cursor: pointer;
+  transition: transform var(--t), border-top-color var(--t);
+}
+.prose [data-toggle="closed"]::before {
+  transform: rotate(-90deg);
+}
+.prose [data-toggle]:hover::before {
+  border-top-color: var(--accent);
+}
+/* Ile jest schowane. Bez tej liczby zwinięty nagłówek wygląda tak samo
+   jak zwykły i nie ma po czym poznać, że coś pod nim jest. */
+.prose [data-toggle="closed"]::after {
+  content: "…";
+  margin-left: 0.4em;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  vertical-align: 0.25em;
+}
+.prose [data-folded="true"] {
+  display: none;
+}
+
+/* Linia rozdzielająca. Nie kreska przez całą szerokość i nie ramka —
+   notatka nie jest formularzem. Cienki gradient gasnący ku brzegom robi
+   przerwę, a nie przegrodę. */
+.prose hr {
+  height: 1px;
+  border: 0;
+  margin: var(--s-5) 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--line-strong) 12%,
+    var(--line-strong) 88%,
+    transparent
+  );
+}
+
+/* ── Justowanie ──
+   Ustawienie całej notatki, nie pojedynczego akapitu. Notatka ma jeden
+   krój i jeden rozmiar (patrz nagłówek tego pliku) — wyrównanie idzie
+   za tym samym: to cecha dokumentu, a nie ozdoba wybranego zdania.
+   Nagłówki i kreska zostają po swojemu, bo justowany nagłówek rozjeżdża
+   się na słowa, a wyśrodkowana kreska nie ma czego środkować. */
+.prose[data-align="justify"] p,
+.prose[data-align="justify"] li,
+.prose[data-align="justify"] blockquote {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+}
+.prose[data-align="center"] > *:not(hr) {
+  text-align: center;
+}
+.prose[data-align="right"] > *:not(hr) {
+  text-align: right;
+}
+
+.prose strong,
+.prose b {
+  font-weight: 700;
+  color: var(--text-hi);
+}
+.prose em,
+.prose i {
+  font-style: italic;
+}
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--ink);
+  border: 1px solid var(--line-soft);
+  color: var(--accent-soft);
+}
+
+.prose ul,
+.prose ol {
+  padding-left: 22px;
+}
+.prose li {
+  margin: 3px 0;
+}
+.prose ul li::marker {
+  color: var(--accent-55);
+}
+.prose ol li::marker {
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.prose li > ul,
+.prose li > ol {
+  margin: 3px 0;
+}
+
+/* Lista zadań: kwadrat rysowany zamiast punktora. Kliknięcie w niego
+   odhacza — obsługa siedzi w js/editor.js, bo tylko tam widać kursor. */
+.prose ul.task {
+  list-style: none;
+  padding-left: 4px;
+}
+.prose ul.task > li {
+  position: relative;
+  padding-left: 26px;
+  transition:
+    color var(--t),
+    text-decoration-color var(--t);
+}
+.prose ul.task > li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.42em;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--ink);
+  cursor: pointer;
+  transition: border-color var(--t), background var(--t);
+}
+.prose ul.task > li:hover::before {
+  border-color: var(--accent-55);
+}
+.prose ul.task > li[data-done="true"]::before {
+  background: var(--accent);
+  border-color: transparent;
+}
+/* Znacznik odhaczenia: dwie kreski złożone w „ptaszka". */
+.prose ul.task > li[data-done="true"]::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 0.62em;
+  width: 4px;
+  height: 8px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(43deg);
+  pointer-events: none;
+}
+/* Odhaczone zadanie jest przekreślone — i to ma być widać z drugiego końca
+   pokoju, bo po to się odhacza. Kreskę rysował wcześniej --text-faint, czyli
+   kolor linii pomocniczych: na ciemnym tle znikała zupełnie i jedynym śladem
+   odhaczenia zostawał kwadracik z boku.
+
+   Kreska jest w kolorze akcentu, nie tekstu. To różnica w znaczeniu: akcent
+   mówi „zrobione", szara kreska mówiłaby „skreślone, nieaktualne" — a to
+   dwie różne rzeczy, choć rysuje je ta sama linia. Sam tekst gaśnie do
+   odcienia meta, żeby to, co zostało do zrobienia, było jaśniejsze od tego,
+   co już zrobione. */
+.prose ul.task > li[data-done="true"] {
+  color: var(--text-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--accent-55);
+  text-decoration-thickness: 1.5px;
+}
+/* Pogrubienie i kod mają własny, jaśniejszy kolor — w odhaczonym punkcie
+   świeciłyby tak, jakby ta jedna rzecz nadal czekała. */
+.prose ul.task > li[data-done="true"] strong,
+.prose ul.task > li[data-done="true"] b,
+.prose ul.task > li[data-done="true"] code {
+  color: inherit;
+}
+
+.prose blockquote {
+  border-left: 2px solid var(--accent-25);
+  padding-left: var(--s-3);
+  color: var(--text-2);
+  font-style: italic;
+}
+
+/* Puste pole mówi, co z nim zrobić. Placeholdera nie ma w contenteditable,
+   więc rysujemy go sami — treść bierze się z atrybutu.
+
+   Napis stoi na środku pustej kartki, nie w jej lewym górnym rogu. Wciśnięty
+   w róg wyglądał jak tekst, który ktoś zaczął pisać i przerwał — a to nie
+   jest treść notatki, tylko zachęta do jej zaczęcia. Środek mówi wprost:
+   tu jeszcze nic nie ma. Znika przy pierwszym znaku, więc nie ma prawa
+   wchodzić w drogę temu, co się pisze. */
+.prose[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  padding: 0 var(--s-8) 6%;
+  text-align: center;
+  text-wrap: balance;
+  font-size: var(--fs-lead);
+  line-height: 1.85;
+  color: var(--text-faint);
+  white-space: pre-wrap;
+  pointer-events: none;
+  /* Wejście od dołu, żeby pojawienie się pustej notatki nie było mrugnięciem. */
+  animation: prose-hint 0.5s var(--ease) both;
+}
+@keyframes prose-hint {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ── Zrzut ekranu w notatce ───────────────────────────────────────
+   Obrazek wchodzi do notatki razem z tekstem z ekranu (patrz
+   main/shot.js). Leży w niej jak akapit, a nie jak załącznik: ta sama
+   szerokość kolumny, ta sama krawędź co kafle w oknie i nic poza tym.
+
+   `max-width: 100%` nie jest ostrożnością — zrzut z ekranu Retiny ma
+   dwa razy więcej pikseli niż miejsca w kolumnie notatki i bez tego
+   rozpychałby ją w bok razem z całym oknem. */
+.prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--s-4) 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  /* Zrzut bywa jasny, a notatka jest nocna — cienkie tło pod obrazkiem
+     zdejmuje z niego wrażenie dziury wyciętej w stronie. */
+  background: var(--ink-2);
+}
+
+/* Obrazek w akapicie sam dla siebie nie potrzebuje podwójnego odstępu:
+   marginesy akapitu i obrazka złożyłyby się na przerwę wielkości linijki. */
+.prose p > img:only-child {
+  margin: 0;
+}
+
+.prose[data-align="center"] img,
+.prose[data-align="right"] img {
+  margin-inline: auto;
+}

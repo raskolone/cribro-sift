@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Notatka na wierzchu — Cribro Sift</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/prose.css" />
+    <style>
+      /* ─────────────────────────────────────────────────────────
+         Kartka na pulpicie — jedna notatka we własnym okienku.
+
+         Trzy rzeczy odróżniają ją od okna Notatnika, i wszystkie trzy
+         biorą się stąd, że kartka leży NA CUDZEJ PRACY, a nie obok niej:
+
+           NIEPRZEZROCZYSTA  tekst notatki nie ma prawa mieszać się z tym,
+                             co pod spodem. Szkło jest w oknach aplikacji,
+                             nie na notatce przyklejonej do ekranu.
+           SKALOWANA         ta sama kartka na 13" i na 27" ma zajmować ten
+                             sam ułamek pulpitu. Skalę przysyła proces
+                             główny (--k), bo tylko on wie, na którym
+                             ekranie kartka wylądowała.
+           ROZKŁADANA        wychodzi na pulpit rozwinięciem od góry i tak
+                             samo się składa. To nie jest ozdoba: kilka
+                             kartek pojawiających się naraz wygląda jak
+                             usterka, a rozłożone jedna po drugiej — jak
+                             położone.
+
+         Treść jest tą samą treścią co w Notatniku, przez ten sam edytor
+         (js/editor.js) i ten sam arkusz (css/prose.css). Notatka z listą
+         zadań ma na pulpicie wyglądać jak notatka z listą zadań, a nie
+         jak Markdown z gwiazdkami.
+         ───────────────────────────────────────────────────────── */
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        font-family: var(--font-body);
+        color: var(--text);
+      }
+
+      :root {
+        /* Aureola — margines okna, w którym mieści się cień i wyskok
+           animacji poza obrys kartki. Musi zgadzać się ze STICKY_HALO
+           w main/main.js, bo to ten sam margines liczony z dwóch stron. */
+        --halo: 16px;
+        /* Skala ekranu. Podstawia ją js/sticky.js z tego, co przysłał
+           proces główny; jedynka jest wartością na czas ładowania. */
+        --k: 1;
+        --k1: 1;
+        --fold: 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      #stage {
+        position: fixed;
+        inset: var(--halo);
+        /* Perspektywa jest na scenie, nie na kartce: przeniesiona na sam
+           element znikałaby przy każdej innej transformacji. */
+        perspective: 1100px;
+      }
+
+      /* Skalowanie do ekranu. Kartka jest rysowana w swoich własnych
+         pikselach i dopiero cała powiększana — dzięki temu odstępy,
+         zaokrąglenia i tekst rosną razem, w tych samych proporcjach.
+         Osobne przeliczanie każdego wymiaru rozjeżdżałoby się co ekran. */
+      #zoom {
+        position: absolute;
+        top: 0;
+        left: 0;
+        /* Odwrotność skali stoi osobno (--k1), zamiast dzielenia w calc:
+           mnożenie przez zmienną jest w CSS starsze i pewniejsze od
+           dzielenia przez nią, a obie liczby i tak podstawia js/sticky.js. */
+        width: calc(100% * var(--k1));
+        height: calc(100% * var(--k1));
+        transform: scale(var(--k));
+        transform-origin: 0 0;
+      }
+
+      /* ── Kartka ── */
+
+      #card {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        border-radius: var(--r-lg);
+        overflow: hidden;
+        /* Do pierwszej klatki animacji kartki nie widać. Okno pokazuje się
+           zanim renderer zdąży cokolwiek narysować — bez tego przez jedną
+           klatkę mrugałby gotowy prostokąt, a dopiero potem rozwijałby się
+           od zera. */
+        opacity: 0;
+        transform-origin: 50% 0;
+        will-change: transform, opacity;
+      }
+
+      /* Rozwinięcie: kartka odchyla się od górnej krawędzi, jak kartka
+         wyjmowana z bloczka. Opóźnienie ustawia js/sticky.js — każda
+         kolejna wychodzi o chwilę później. */
+      #card[data-fold="out"] {
+        animation: fold-out var(--fold) var(--delay, 0ms) both;
+      }
+      #card[data-fold="in"] {
+        animation: fold-in 0.26s cubic-bezier(0.4, 0, 1, 1) var(--delay, 0ms) both;
+      }
+
+      @keyframes fold-out {
+        from {
+          opacity: 0;
+          transform: rotateX(-16deg) scaleY(0.6) translateY(-8px);
+        }
+        55% {
+          opacity: 1;
+        }
+        to {
+          opacity: 1;
+          transform: none;
+        }
+      }
+      @keyframes fold-in {
+        from {
+          opacity: 1;
+          transform: none;
+        }
+        to {
+          opacity: 0;
+          transform: rotateX(-12deg) scaleY(0.66) translateY(-6px);
+        }
+      }
+
+      /* Treść dochodzi chwilę po kształcie. Rozwijająca się kartka
+         z gotowym tekstem w środku wygląda jak obrazek, który ktoś
+         rozciąga; pusta i zapisana dopiero na końcu — jak kartka. */
+      #card[data-fold="out"] .body,
+      #card[data-fold="out"] .head,
+      #card[data-fold="out"] .foot {
+        animation: ink 0.3s ease-out calc(var(--delay, 0ms) + 0.16s) both;
+      }
+      @keyframes ink {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      /* ── Głowa ──
+         Cała jest uchwytem okna: kartkę przesuwa się jak kartkę, łapiąc
+         za jej górny brzeg.
+
+         Przeciąganie liczy js/sticky.js, a NIE systemowe
+         `-webkit-app-region: drag`. Powód jest jeden i konkretny: obszar
+         przeciągania połyka kliknięcia, a w głowie leży tytuł, który ma się
+         dać przepisać podwójnym kliknięciem. Z app-region to kliknięcie
+         nigdy do niego nie dochodziło. Własne przeciąganie ma próg ruchu,
+         więc jedno nie wyklucza drugiego. */
+      .head {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 9px 8px 8px 13px;
+        border-bottom: 1px solid var(--line-soft);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent);
+        cursor: grab;
+      }
+      .head[data-drag="true"] {
+        cursor: grabbing;
+      }
+      .head__title {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-2);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        user-select: none;
+        -webkit-user-select: none;
+        cursor: text;
+      }
+      /* Przepisywany tytuł przestaje być uchwytem okna — inaczej pierwsze
+         kliknięcie w środek słowa przesuwałoby kartkę zamiast postawić
+         w niej kursor. */
+      .head__title.is-editing {
+        cursor: text;
+        outline: none;
+        color: var(--text-hi);
+        box-shadow: inset 0 -1px 0 var(--accent-55);
+        overflow-x: auto;
+        user-select: text;
+        -webkit-user-select: text;
+      }
+      /* Pasek stanu przy nagrywaniu — kartka mówi o tym samym, o czym mówi
+         znaczek w pasku menu, i tym samym kolorem. */
+      #card[data-state="listening"] .head {
+        background: linear-gradient(180deg, var(--rec-20), transparent);
+      }
+      #card[data-state="listening"] .head__title {
+        color: var(--rec-soft);
+      }
+
+      .ico {
+        width: 25px;
+        height: 25px;
+        flex: none;
+        display: grid;
+        place-items: center;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-mute);
+        cursor: pointer;
+        transition:
+          background var(--t),
+          color var(--t);
+      }
+      .ico:hover {
+        background: var(--accent-12);
+        color: var(--accent);
+      }
+      .ico--close:hover {
+        background: rgba(240, 114, 111, 0.14);
+        color: var(--danger);
+      }
+      .ico .swatch {
+        width: 14px;
+        height: 14px;
+      }
+
+      .ico svg {
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .ico[data-state="listening"] {
+        color: var(--rec);
+        background: var(--rec-12);
+      }
+
+      /* ── Paleta kolorów ──
+         Wysuwa się spod głowy kartki. Kolor jest po to, żeby rozpoznać
+         kartkę, zanim się ją przeczyta — a przy kilku leżących obok siebie
+         to jest jedyne, co je od siebie odróżnia z drugiego końca ekranu. */
+      .palette {
+        position: absolute;
+        top: 38px;
+        right: 8px;
+        z-index: 3;
+        display: flex;
+        gap: 6px;
+        padding: 7px 8px;
+        border-radius: var(--r-sm);
+        border: 1px solid var(--line-strong);
+        background: var(--paper-sink);
+        box-shadow: var(--shadow-md);
+        animation: palette-in 0.18s var(--ease) both;
+      }
+      .palette[hidden] {
+        display: none;
+      }
+      @keyframes palette-in {
+        from {
+          opacity: 0;
+          transform: translateY(-5px) scale(0.96);
+        }
+      }
+      .palette button {
+        /* Bez `flex: none` przycisk kurczy się razem z rzędem i próbki
+           robią się z kółek kreskami — kółko jest w środku, a to on jest
+           tu elementem układu. */
+        flex: none;
+        line-height: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        cursor: pointer;
+        border-radius: 50%;
+        transition: transform var(--t-fast);
+      }
+      .palette button:hover {
+        transform: scale(1.18);
+      }
+      .palette button[aria-pressed="true"] .swatch {
+        border-color: var(--accent);
+        box-shadow: var(--paper-sheen), 0 0 0 2px var(--accent-30);
+      }
+      .palette .swatch {
+        width: 17px;
+        height: 17px;
+      }
+
+      /* ── Treść ── */
+
+      .body {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 12px 14px 14px;
+      }
+      .body::-webkit-scrollbar {
+        width: 7px;
+      }
+      .body::-webkit-scrollbar-thumb {
+        background: var(--line-strong);
+        border-radius: 4px;
+      }
+      .body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      /* Ten sam arkusz co w Notatniku (css/prose.css), tylko o stopień
+         ciaśniej — kartka jest mniejsza od okna, a nie ma być innym
+         dokumentem. */
+      #text.prose {
+        font-size: 12.5px;
+        line-height: 1.72;
+        min-height: 100%;
+        user-select: text;
+        -webkit-user-select: text;
+      }
+      #text.prose[data-empty="true"]::before {
+        font-size: 11.5px;
+        padding: 0 var(--s-4) 8%;
+      }
+
+      /* ── Stopka ── */
+
+      .foot {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 13px 9px;
+        border-top: 1px solid var(--line-soft);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.05em;
+        color: var(--text-mute);
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .foot .dot {
+        opacity: 0.4;
+      }
+      #state[data-state="saving"] {
+        color: var(--accent-55);
+      }
+
+      /* ── Uchwyt rozmiaru ──
+         Kartka nie ma ramki, więc nie ma też brzegu, za który dałoby się
+         ją złapać — brzeg okna leży w przezroczystej aureoli, poza kartką.
+         Uchwyt siedzi więc w prawym dolnym rogu, tam gdzie go szuka ręka,
+         i pokazuje się dopiero po najechaniu na kartkę: notatka ma wyglądać
+         jak notatka, dopóki nikt jej nie zmienia. */
+      #grip {
+        position: absolute;
+        /* Odsunięty od rogu o cztery piksele, a nie o dwa: kartka ma
+           zaokrąglony brzeg i przycina wszystko, co w ten łuk wejdzie. */
+        right: 5px;
+        bottom: 4px;
+        z-index: 4;
+        width: 16px;
+        height: 16px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--text-mute);
+        cursor: nwse-resize;
+        opacity: 0;
+        transition: opacity var(--t), color var(--t);
+      }
+      #card:hover #grip,
+      #grip[data-drag="true"] {
+        opacity: 0.7;
+      }
+      #grip:hover {
+        opacity: 1;
+        color: var(--accent);
+      }
+      #grip svg {
+        width: 100%;
+        height: 100%;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        stroke-linecap: round;
+      }
+    </style>
+  </head>
+
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="s-mic" viewBox="0 0 24 24">
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+        </symbol>
+        <symbol id="s-close" viewBox="0 0 24 24">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </symbol>
+        <symbol id="s-open" viewBox="0 0 24 24">
+          <path d="M14 4h6v6M20 4l-8.5 8.5" />
+          <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+        </symbol>
+        <symbol id="s-grip" viewBox="0 0 24 24">
+          <path d="M20 8L8 20M20 14l-6 6M20 20h-.01" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="stage">
+      <div id="zoom">
+        <section id="card" class="paper" data-state="idle">
+          <header class="head">
+            <span class="head__title" id="title" data-i18n="skip"
+                  title="Podwójne kliknięcie zmienia tytuł"></span>
+            <button class="ico" id="paint" title="Kolor notatki" aria-expanded="false">
+              <span class="swatch"></span>
+            </button>
+            <button class="ico" id="dictate" title="Dyktuj do tej notatki">
+              <svg><use href="#s-mic" /></svg>
+            </button>
+            <button class="ico" id="expand" title="Otwórz w Notatniku">
+              <svg><use href="#s-open" /></svg>
+            </button>
+            <button class="ico ico--close" id="dismiss" title="Zdejmij z wierzchu">
+              <svg><use href="#s-close" /></svg>
+            </button>
+          </header>
+          <div class="palette" id="palette" hidden data-i18n="skip"></div>
+
+          <div class="body">
+            <div
+              id="text"
+              class="prose"
+              spellcheck="true"
+              data-i18n="skip"
+              data-empty="true"
+              data-placeholder="Pisz albo naciśnij mikrofon."
+            ></div>
+          </div>
+
+          <footer class="foot">
+            <span id="state">Zapisane</span>
+            <span class="dot">·</span>
+            <span id="words">0 słów</span>
+          </footer>
+
+          <button id="grip" title="Zmień rozmiar kartki">
+            <svg><use href="#s-grip" /></svg>
+          </button>
+        </section>
+      </div>
+    </div>
+
+    <script src="../shared/strings.js"></script>
+    <script src="../shared/richtext.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/mock-bridge.js"></script>
+    <script src="js/editor.js"></script>
+    <script src="js/notes-core.js"></script>
+    <script src="js/sticky.js"></script>
+  </body>
+</html>

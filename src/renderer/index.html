@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cribro Sift</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/prose.css" />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <!-- Tło motywu: dryfujące punkty łączone liniami bliskości.
+         Musi być pierwszym dzieckiem body, cała reszta siedzi warstwę wyżej. -->
+    <canvas id="constellation"></canvas>
+    <!-- Znak Cribro: otwarty krąg (enso) z siatką sita w środku -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-mark" viewBox="0 0 24 24">
+          <path
+            d="M19.5 6.6A9 9 0 1 0 21 12"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          />
+          <path
+            d="M7 10h10M7 13.2h10M9.6 7v10M13.2 7v10"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.1"
+            opacity=".6"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-layers" viewBox="0 0 24 24">
+          <path
+            d="M12 3 3 8l9 5 9-5-9-5ZM3 13l9 5 9-5M3 17.5l9 5 9-5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="i-sieve" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <path
+            d="M5 9.5h14M5 14.5h14M9.5 4v16M14.5 4v16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+            opacity=".65"
+          />
+        </symbol>
+        <symbol id="i-grain" viewBox="0 0 24 24">
+          <path
+            d="M12 3c3 3 4.5 5.6 4.5 8.6A4.5 4.5 0 0 1 12 16a4.5 4.5 0 0 1-4.5-4.4C7.5 8.6 9 6 12 3Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+          />
+          <path d="M12 16v5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-command" viewBox="0 0 24 24">
+          <path
+            d="M5 5.5h14A1.5 1.5 0 0 1 20.5 7v7.5A1.5 1.5 0 0 1 19 16h-8.2l-4 3.2V16H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+          />
+          <path d="m6.6 9.5 1 1 1.9-2.1M11.4 9.6h6" fill="none" stroke="currentColor"
+                stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M11.4 13.2h4.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          <circle cx="7.6" cy="13.2" r="1" fill="currentColor" />
+        </symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <path
+            d="M12 2.5v2.6M12 18.9v2.6M21.5 12h-2.6M5.1 12H2.5M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1 5.3 5.3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24">
+          <rect
+            x="9"
+            y="2.5"
+            width="6"
+            height="11"
+            rx="3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+          />
+          <path
+            d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24">
+          <path
+            d="M12 3.8 2.8 20h18.4L12 3.8Z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linejoin="round"
+          />
+          <path d="M12 10v4.2M12 17.2v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-note" viewBox="0 0 24 24">
+          <path d="M5 4.5h14v11l-4 4H5v-15Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+          <path d="M15 19.5v-4h4M8.5 9h7M8.5 12.5h4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24">
+          <path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="6.4" fill="none" stroke="currentColor" stroke-width="1.7" />
+          <path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        </symbol>
+
+        <!-- Pasek narzędzi notatki -->
+        <symbol id="i-bold" viewBox="0 0 24 24">
+          <path d="M7.5 5.5h5.6a3.6 3.6 0 0 1 0 7.2H7.5V5.5Zm0 7.2h6.4a3.9 3.9 0 0 1 0 7.8H7.5v-7.8Z"
+                fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-italic" viewBox="0 0 24 24">
+          <path d="M9.6 5.5h6M8 18.5h6M13.6 5.5 10 18.5" fill="none" stroke="currentColor"
+                stroke-width="1.8" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-heading" viewBox="0 0 24 24">
+          <path d="M5.5 5.5v13M14 5.5v13M5.5 12h8.5" fill="none" stroke="currentColor"
+                stroke-width="1.9" stroke-linecap="round" />
+          <path d="M17.5 18.5v-6.6l2.6 2" fill="none" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-list" viewBox="0 0 24 24">
+          <path d="M9 6.5h11M9 12h11M9 17.5h11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          <circle cx="4.6" cy="6.5" r="1.4" fill="currentColor" />
+          <circle cx="4.6" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="4.6" cy="17.5" r="1.4" fill="currentColor" />
+        </symbol>
+        <symbol id="i-todo" viewBox="0 0 24 24">
+          <path d="M11 6.5h9M11 12h9M11 17.5h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          <rect x="2.6" y="4.5" width="4.8" height="4.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <path d="M3.2 12.4 4.7 14l2.6-2.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          <rect x="2.6" y="15.4" width="4.8" height="4.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+        </symbol>
+        <symbol id="i-quote" viewBox="0 0 24 24">
+          <path d="M5 5.5v13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          <path d="M9.5 8h10M9.5 12h10M9.5 16h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".75" />
+        </symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <path d="M12 7.2V12l3.2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-sticky" viewBox="0 0 24 24">
+          <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5V14l-6 6H5.5A1.5 1.5 0 0 1 4 18.5z" />
+          <path d="M20 14h-4.5a1.5 1.5 0 0 0-1.5 1.5V20" />
+        </symbol>
+        <symbol id="i-pin" viewBox="0 0 24 24">
+          <path d="M9 3.5h6l-.8 5.2 3 2.6v2.2H6.8v-2.2l3-2.6L9 3.5ZM12 13.5V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+          <path d="M4.5 7h15M9.5 7V5.4a1.4 1.4 0 0 1 1.4-1.4h2.2a1.4 1.4 0 0 1 1.4 1.4V7M6.6 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.8-12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-share" viewBox="0 0 24 24">
+          <path d="M12 15.5V3.8M8.2 7.4 12 3.6l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M5.5 12.5v6a1.8 1.8 0 0 0 1.8 1.8h9.4a1.8 1.8 0 0 0 1.8-1.8v-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-window" viewBox="0 0 24 24">
+          <rect x="3.5" y="5" width="17" height="14" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <path d="M3.5 9h17" fill="none" stroke="currentColor" stroke-width="1.6" />
+        </symbol>
+        <symbol id="i-divider" viewBox="0 0 24 24">
+          <path d="M3.5 12h17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" />
+          <path d="M6 6.5h12M6 17.5h12" fill="none" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" opacity=".45" />
+        </symbol>
+        <symbol id="i-align" viewBox="0 0 24 24">
+          <path d="M4 6.5h16M4 12h16M4 17.5h16" fill="none" stroke="currentColor" stroke-width="1.7"
+                stroke-linecap="round" />
+          <path d="M4 9.25h16M4 14.75h16" fill="none" stroke="currentColor" stroke-width="1.7"
+                stroke-linecap="round" opacity=".45" />
+        </symbol>
+        <symbol id="i-tag" viewBox="0 0 24 24">
+          <path d="M11.2 3.5H20a.5.5 0 0 1 .5.5v8.8a1.5 1.5 0 0 1-.44 1.06l-6.7 6.7a1.5 1.5 0 0 1-2.12 0l-7.3-7.3a1.5 1.5 0 0 1 0-2.12l6.7-6.7A1.5 1.5 0 0 1 11.2 3.5Z"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+          <circle cx="16.4" cy="7.6" r="1.5" fill="currentColor" />
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24">
+          <path d="M3.5 7a1.5 1.5 0 0 1 1.5-1.5h4l2 2.4h7.5A1.5 1.5 0 0 1 20 9.4v8.1a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5Z"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="i-pdf" viewBox="0 0 24 24">
+          <path d="M6.5 3.5h7l5 5v12a1.5 1.5 0 0 1-1.5 1.5h-10.5A1.5 1.5 0 0 1 5 20.5v-15.5A1.5 1.5 0 0 1 6.5 3.5Z"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+          <path d="M13.5 3.5v5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="app">
+      <!-- Uchwyt zwijania pasa. Pojawia się dopiero przy najechaniu na okno. -->
+      <button class="rail-toggle" id="railToggle" title="Zwiń pas boczny" aria-label="Zwiń pas boczny">
+        <svg><use href="#i-chevron" /></svg>
+      </button>
+
+      <aside id="sidebar">
+        <div class="brand">
+          <div class="brand__mark">
+            <svg><use href="#i-mark" /></svg>
+          </div>
+          <div class="brand__name">CRIBRO<b>SIFT</b></div>
+        </div>
+
+        <nav class="nav" id="nav">
+          <button class="nav__item" title="Start" data-view="start" aria-selected="false">
+            <svg><use href="#i-mic" /></svg> <span>Start</span>
+          </button>
+          <button class="nav__item" title="Przesiane" data-view="sifted" aria-selected="true">
+            <svg><use href="#i-layers" /></svg> <span>Przesiane</span>
+          </button>
+          <button class="nav__item" title="Notatki" data-view="notes" aria-selected="false">
+            <svg><use href="#i-note" /></svg> <span>Notatki</span>
+          </button>
+          <button class="nav__item" title="Sito" data-view="sieve" aria-selected="false">
+            <svg><use href="#i-sieve" /></svg> <span>Sito</span>
+          </button>
+          <button class="nav__item" title="Ziarna" data-view="grains" aria-selected="false">
+            <svg><use href="#i-grain" /></svg> <span>Ziarna</span>
+          </button>
+          <button class="nav__item" title="Polecenia" data-view="commands" aria-selected="false">
+            <svg><use href="#i-command" /></svg> <span>Polecenia</span>
+          </button>
+          <button class="nav__item" title="Ustawienia" data-view="settings" aria-selected="false">
+            <svg><use href="#i-gear" /></svg> <span>Ustawienia</span>
+          </button>
+        </nav>
+
+        <div class="sidebar__foot">
+          <div class="label">Skrót</div>
+          <div class="keycap" id="keycap"></div>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div class="topbar__text">
+            <h1><span id="title">Przesiane</span> <span class="pill" id="titlePill"></span></h1>
+            <p id="subtitle">Tylko to, co chciałeś powiedzieć.</p>
+          </div>
+          <div class="status no-drag" data-state="idle" id="status">
+            <i></i><span class="label" id="statusText">Gotowe</span>
+          </div>
+          <button class="btn btn--primary no-drag" id="dictate">
+            <svg><use href="#i-mic" /></svg> Dyktuj
+          </button>
+        </header>
+
+        <div id="banner"></div>
+        <div id="errorBar"></div>
+
+        <section class="view" id="view-start" hidden></section>
+        <section class="view" id="view-sifted"></section>
+        <section class="view" id="view-notes" hidden></section>
+        <section class="view" id="view-sieve" hidden></section>
+        <section class="view" id="view-grains" hidden></section>
+        <section class="view" id="view-commands" hidden></section>
+        <section class="view" id="view-settings" hidden></section>
+      </main>
+    </div>
+
+    <div id="toast"></div>
+
+    <script src="../shared/strings.js"></script>
+    <script src="../shared/richtext.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/mock-bridge.js"></script>
+    <script src="js/theme.js"></script>
+    <script src="js/constellation.js"></script>
+    <script src="js/diff.js"></script>
+    <script src="js/editor.js"></script>
+    <script src="js/notes-core.js"></script>
+    <script src="js/notes-view.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>

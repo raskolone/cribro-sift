@@ -1,0 +1,84 @@
+{
+  "name": "cribro-sift",
+  "productName": "Cribro Sift",
+  "version": "0.1.0",
+  "description": "Mów swobodnie. Zostaje esencja. — dyktowanie głosowe z sitem AI.",
+  "main": "src/main/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "mockup": "node scripts/build-mockup.js",
+    "pack": "electron-builder --dir --config.directories.output=$HOME/CribroSift-build",
+    "dist": "electron-builder --config.directories.output=$HOME/CribroSift-build",
+    "icon": "node scripts/make-icon.js",
+    "identity": "bash scripts/make-identity.sh",
+    "sign": "bash scripts/sign.sh",
+    "app": "npm run pack && npm run sign",
+    "deploy": "bash scripts/install.sh",
+    "smoke": "node scripts/smoke.js",
+    "test": "node scripts/smoke.js && node scripts/hotkey-test.js && node scripts/notes-test.js && node scripts/editor-test.js && node scripts/sync-test.js && node scripts/genie-test.js && node scripts/oauth-test.js && node scripts/commands-test.js && node scripts/shot-test.js"
+  },
+  "keywords": [
+    "dictation",
+    "voice",
+    "whisper",
+    "claude",
+    "macos"
+  ],
+  "author": "Cribro",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3",
+    "puppeteer-core": "^25.8.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
+    "gsap": "^3.15.0"
+  },
+  "optionalDependencies": {
+    "uiohook-napi": "^1.5.5"
+  },
+  "build": {
+    "appId": "com.cribro.sift",
+    "productName": "Cribro Sift",
+    "copyright": "Cribro",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "!**/*.map"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "identity": null,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Cribro Sift nagrywa Twój głos wyłącznie po to, żeby zamienić go na tekst. Nagranie jest kasowane zaraz po transkrypcji.",
+        "NSAppleEventsUsageDescription": "Cribro Sift wkleja przesiany tekst pod kursor w aktywnej aplikacji.",
+        "LSMinimumSystemVersion": "13.0"
+      }
+    },
+    "dmg": {
+      "artifactName": "Cribro-Sift-${version}-${arch}.dmg"
+    }
+  }
+}

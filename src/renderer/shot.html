@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tekst z ekranu — Cribro Sift</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <style>
+      /* ─────────────────────────────────────────────────────────
+         Tekst z ekranu — okno z jednym pytaniem: dokąd i w jakiej
+         formie. Staje przed oczami zaraz po zaznaczeniu obszaru,
+         więc musi dać się przeczytać w sekundę i zamknąć jednym
+         klawiszem. Stąd wszystko jest widoczne naraz, bez zakładek
+         i bez zwijanych sekcji: podgląd, odczyt, dwa wybory.
+         ───────────────────────────────────────────────────────── */
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      /* Ta sama szyba co w szybkiej notatce: rozmycie tego, co ZA oknem,
+         robi system (vibrancy „under-window"), a dokument dokłada tylko
+         cienką warstwę i krawędź. Gęste tło zakryłoby to rozmycie
+         i zostałaby matowa płytka zamiast szkła. */
+      #shell {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background-color: var(--glass-thin);
+        background-image: var(--glass-fill);
+        backdrop-filter: var(--glass-blur-lg);
+        -webkit-backdrop-filter: var(--glass-blur-lg);
+        border: 1px solid var(--glass-edge);
+        box-shadow: var(--glass-sheen), var(--glass-drop);
+        border-radius: var(--r-lg);
+        overflow: hidden;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: var(--s-2);
+        padding: var(--s-3) var(--s-4);
+        border-bottom: 1px solid var(--line);
+        -webkit-app-region: drag;
+      }
+      header svg {
+        width: 15px;
+        height: 15px;
+        color: var(--accent);
+      }
+      header .label {
+        flex: 1;
+      }
+      #close {
+        -webkit-app-region: no-drag;
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        border: 1px solid transparent;
+        background: none;
+        color: var(--text-mute);
+        cursor: pointer;
+        font-size: var(--fs-sm);
+        line-height: 1;
+        transition: color var(--t), background var(--t);
+      }
+      #close:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      main {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: var(--s-4);
+        display: flex;
+        flex-direction: column;
+        gap: var(--s-4);
+      }
+
+      /* Ten sam pasek przewijania co w oknie głównym (patrz css/app.css).
+         Systemowy, szary, wchodzi w środek szyby i widać go z daleka —
+         a w tym oknie przewija się rzadko i tylko o kilka linijek. */
+      ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--line-strong);
+        border-radius: var(--r-pill);
+        border: 3px solid transparent;
+        background-clip: content-box;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-25);
+        background-clip: content-box;
+      }
+
+      /* Podgląd jest dowodem, że złapało się to, co trzeba — i tylko tym.
+         Dlatego niski pas z obrazkiem wpisanym w całości, a nie kadr:
+         przycięty zrzut kazałby zgadywać, co zostało poza oknem. */
+      #preview {
+        flex: none;
+        position: relative;
+        height: 118px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--ink-2);
+        overflow: hidden;
+      }
+      /* Obrazek wyjęty z układu i rozpięty na ramce.
+
+         Wyglądałoby na przesadę, gdyby nie to, że prostsze zapisy tutaj
+         nie działają: `max-height: 100%` liczy się od wysokości, której
+         siatka nie zna z góry, więc przy szerokim zrzucie wychodził on
+         poza ramkę o kilkanaście pikseli — dokładnie tyle, żeby uciąć
+         ostatnią linijkę tekstu na podglądzie. Rozpięcie na `inset`
+         daje ramce wymiar, którego obrazek nie ma prawa przekroczyć,
+         a `object-fit` mieści w niej i wąski pasek tekstu, i całe okno. */
+      #preview img {
+        position: absolute;
+        inset: var(--s-2);
+        width: calc(100% - 2 * var(--s-2));
+        height: calc(100% - 2 * var(--s-2));
+        object-fit: contain;
+        border-radius: var(--r-sm);
+      }
+
+      .group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s-2);
+      }
+      .group__label {
+        display: flex;
+        align-items: baseline;
+        gap: var(--s-2);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+      }
+      .group__note {
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text-faint);
+      }
+
+      /* Pole odczytu bierze całe miejsce, które zostało — bo to ono jest
+         tu treścią, a reszta okna tylko o nią pyta. Przy krótkim zrzucie
+         urośnie, przy długim i tak przewinie się w środku. */
+      .group--read {
+        flex: 1;
+        min-height: 0;
+      }
+
+      #text {
+        flex: 1;
+        min-height: 88px;
+        resize: none;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        outline: none;
+        background: var(--ink);
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: var(--fs-sm);
+        line-height: 1.65;
+        padding: var(--s-3);
+        caret-color: var(--accent);
+        transition: border-color var(--t);
+      }
+      #text:focus {
+        border-color: var(--accent-25);
+      }
+      #text[data-state="reading"] {
+        color: var(--text-faint);
+      }
+
+      /* Wybór jest przełącznikiem, nie listą: trzy możliwości mieszczą się
+         obok siebie, więc nie ma powodu chować dwóch z nich pod rozwijanym
+         polem. Widać od razu, co się wybrało i co się przez to odrzuciło. */
+      .seg {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-pill);
+        background: var(--surface-2);
+      }
+      .seg button {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid transparent;
+        border-radius: var(--r-pill);
+        background: none;
+        color: var(--text-mute);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        cursor: pointer;
+        transition: color var(--t), background var(--t), border-color var(--t);
+      }
+      .seg button:hover:not([aria-pressed="true"]):not(:disabled) {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .seg button[aria-pressed="true"] {
+        color: var(--accent);
+        border-color: var(--accent-25);
+        background: linear-gradient(135deg, var(--accent-15), var(--accent-04));
+      }
+      .seg button:disabled {
+        color: var(--text-faint);
+        cursor: not-allowed;
+      }
+
+      select {
+        width: 100%;
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--ink);
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+      }
+      select:focus {
+        outline: none;
+        border-color: var(--accent-25);
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      /* Komunikat zajmuje miejsce dopiero wtedy, gdy jest co powiedzieć —
+         okno bez błędu nie może być wyższe o pustą linijkę. */
+      #note {
+        padding: var(--s-2) var(--s-3);
+        border-radius: var(--r-sm);
+        border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+        background: color-mix(in srgb, var(--warn) 10%, transparent);
+        color: var(--warn);
+        font-size: var(--fs-xs);
+        line-height: 1.5;
+      }
+      #note[data-kind="ok"] {
+        border-color: var(--accent-25);
+        background: var(--accent-08);
+        color: var(--accent);
+      }
+
+      footer {
+        display: flex;
+        align-items: center;
+        gap: var(--s-3);
+        padding: var(--s-3) var(--s-4);
+        border-top: 1px solid var(--line);
+      }
+      #hint {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+      }
+
+      button.act {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--s-2);
+        padding: 7px 16px;
+        border-radius: var(--r-pill);
+        border: 1px solid var(--accent-25);
+        background: linear-gradient(135deg, var(--accent-15), var(--accent-04));
+        color: var(--accent);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color var(--t), box-shadow var(--t);
+      }
+      button.act:hover:not(:disabled) {
+        border-color: var(--accent-55);
+        box-shadow: var(--glow);
+      }
+      button.act:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.act--quiet {
+        border-color: var(--line-strong);
+        background: none;
+        color: var(--text-mute);
+      }
+      button.act--quiet:hover {
+        border-color: var(--line-strong);
+        box-shadow: none;
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="s-frame" viewBox="0 0 24 24">
+          <path
+            d="M3 8.5V5a2 2 0 0 1 2-2h3.5M21 8.5V5a2 2 0 0 0-2-2h-3.5M3 15.5V19a2 2 0 0 0 2 2h3.5M21 15.5V19a2 2 0 0 1-2 2h-3.5M7 12h10"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="shell">
+      <header>
+        <svg><use href="#s-frame" /></svg>
+        <span class="label">Tekst z ekranu</span>
+        <button id="close" aria-label="Zamknij">×</button>
+      </header>
+
+      <main>
+        <div id="preview"><img id="shotImage" alt="Zaznaczony fragment ekranu" /></div>
+
+        <div id="note" hidden></div>
+
+        <div class="group group--read">
+          <div class="group__label">
+            Odczyt <span class="group__note" id="readNote">poprawki wpisujesz tutaj</span>
+          </div>
+          <textarea id="text" spellcheck="true" data-state="reading"></textarea>
+        </div>
+
+        <div class="group">
+          <div class="group__label">Dokąd</div>
+          <div class="seg" id="target">
+            <button data-value="new" aria-pressed="true">Nowa notatka</button>
+            <button data-value="note" aria-pressed="false">Do notatki</button>
+            <button data-value="cursor" aria-pressed="false">Pod kursor</button>
+          </div>
+          <select id="noteId" hidden></select>
+        </div>
+
+        <div class="group">
+          <div class="group__label">
+            Forma <span class="group__note" id="formNote"></span>
+          </div>
+          <div class="seg" id="form">
+            <button data-value="text" aria-pressed="true">Tekst</button>
+            <button data-value="image" aria-pressed="false">Obrazek</button>
+            <button data-value="both" aria-pressed="false">Oba</button>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <span id="hint">⌘⏎ zapisuje · Esc zamyka</span>
+        <button class="act act--quiet" id="cancel">Anuluj</button>
+        <button class="act" id="save">Zapisz</button>
+      </footer>
+    </div>
+
+    <script src="../shared/strings.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/mock-bridge.js"></script>
+    <script src="js/shot.js"></script>
+  </body>
+</html>

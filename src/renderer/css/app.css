@@ -1,0 +1,2119 @@
+/* ─────────────────────────────────────────────────────────────
+   Cribro Sift — okno główne
+   Motyw: Nocturne Green (design/themes). Wszystkie wartości pochodzą
+   z tokens.css — tutaj nie ma prawa pojawić się surowy kolor, krój
+   ani promień. Odcienie stanu (bursztyn, czerwień) są wyprowadzane
+   z tokenów przez color-mix, bo motyw celowo nie daje ich w wariantach
+   alfa: „state variants swap the hue only".
+   ───────────────────────────────────────────────────────────── */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Ziarno, nie ozdoba: gradient strony rozciąga się na kilkaset pikseli
+   ciemnego granatu, a 8 bitów na kanał nie wystarcza, żeby przejście było
+   gładkie — bez rozproszenia widać koncentryczne pasy. Dwa procent szumu
+   je rozbija i nie zmienia żadnego koloru. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.022;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: var(--r-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-25);
+  background-clip: content-box;
+}
+
+/* Tło rysuje konstelacja (canvas) na gradiencie strony z tokenów.
+   Całość interfejsu siedzi warstwę wyżej.
+
+   Dwie kolumny: pas nawigacji i treść. Pas zwija się do samych ikon. */
+#app {
+  --nav-w: 244px;
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--nav-w) 1fr;
+  height: 100vh;
+  transition: grid-template-columns var(--t);
+}
+#app.is-rail {
+  --nav-w: 66px;
+}
+
+/* ── Szkło ────────────────────────────────────────────────────────
+   Jeden przepis na wszystkie kafle w oknie: rozmycie z podbitym
+   nasyceniem, skośna warstwa światła na powierzchni, jasna krawędź
+   u góry i niski, miękki cień. Kafel ma wyglądać jak tafla położona
+   na tle, a nie jak wycięty z niego prostokąt — dlatego tło jest
+   przezroczyste na tyle, żeby konstelacja pod spodem została widoczna,
+   tylko rozmyta.
+
+   Wszystkie wartości pochodzą z tokens.css (--glass-*). Zmiana wyglądu
+   szkła to zmiana czterech tokenów, nie stu reguł. */
+.glass,
+.card,
+.tile,
+.entry,
+.mesh,
+.notes__list,
+.notes__editor {
+  background-color: var(--surface-2);
+  background-image: var(--glass-fill);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* ── Nawigacja ────────────────────────────────────────────────── */
+
+/* Szyba, nie płyta. Przy pełnej gęstości (--glass) pas boczny wypłaszczał
+   gradient strony i na styku z treścią powstawał wyraźny stopień; przy
+   połowicznej krycia grunt przechodzi przez oba pola tak samo. */
+#sidebar {
+  background-color: var(--surface-2);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  border-right: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-sheen);
+  display: flex;
+  flex-direction: column;
+  padding: 0 14px 14px;
+  overflow: hidden;
+}
+
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 52px var(--s-2) 26px;
+  -webkit-app-region: drag;
+}
+.brand__mark {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-25);
+  background: linear-gradient(135deg, var(--accent-12), var(--accent-04));
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+}
+.brand__mark svg {
+  width: 21px;
+  height: 21px;
+}
+.brand__name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-lead);
+  line-height: var(--lh-tight);
+  letter-spacing: 0.02em;
+  color: var(--text-hi);
+}
+.brand__name b {
+  display: block;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 11px var(--s-3);
+  border-radius: var(--r-sm);
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: background var(--t), color var(--t), border-color var(--t);
+  text-align: left;
+  width: 100%;
+}
+.nav__item svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  opacity: 0.85;
+}
+.nav__item:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+.nav__item[aria-selected="true"] {
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+  color: var(--accent);
+}
+
+.sidebar__foot {
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+/* Kafel skrótu na dole paska */
+.keycap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  padding: var(--s-1) var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+}
+.keycap span {
+  color: var(--text-mute);
+  font-size: var(--fs-label);
+}
+
+/* ── Zwijanie pasa bocznego ───────────────────────────────────── */
+
+/* Uchwyt siedzi na krawędzi pasa, nie w jego treści — inaczej zwinięty pas
+   musiałby zrobić miejsce na przycisk, który sam go zwija. */
+.rail-toggle {
+  position: absolute;
+  top: 62px;
+  left: calc(var(--nav-w) - 13px);
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-flat);
+  color: var(--text-mute);
+  opacity: 0;
+  transition: opacity var(--t), color var(--t), border-color var(--t), left var(--t);
+  -webkit-app-region: no-drag;
+}
+#app:hover .rail-toggle,
+.rail-toggle:focus-visible {
+  opacity: 1;
+}
+.rail-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent-30);
+}
+.rail-toggle svg {
+  width: 13px;
+  height: 13px;
+  transition: transform var(--t);
+}
+#app.is-rail .rail-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* Zwinięty pas to sama kolumna ikon. Nazwy znikają, ikony zostają na osi. */
+#app.is-rail .brand {
+  padding: 52px 0 26px;
+  justify-content: center;
+}
+#app.is-rail .brand__name,
+#app.is-rail .sidebar__foot,
+#app.is-rail .nav__item span {
+  display: none;
+}
+#app.is-rail #sidebar {
+  padding: 0 var(--s-3) var(--s-3);
+}
+#app.is-rail .nav__item {
+  justify-content: center;
+  padding: 11px 0;
+}
+
+/* ── Główna kolumna ───────────────────────────────────────────── */
+
+/* Kolumna, nie blok: dzięki temu widok, który ma zająć całą wysokość
+   okna (Notatki), dostaje dokładnie to, co zostało po pasku górnym —
+   bez zgadywania wysokości belki w calc(). */
+main {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 0 var(--s-10) 56px;
+}
+
+/* Notatki są edytorem na pełne okno: pas na dole zabierałby im miejsce,
+   a przewijanie należy do listy i do tekstu, nie do całej kolumny. */
+main:has(#view-notes:not([hidden])) {
+  padding-bottom: var(--s-5);
+  overflow: hidden;
+}
+
+/* Pasek górny wg przepisu na sticky nav: szkło, blur, hairline pod spodem.
+   Rozmycie jest mocniejsze niż na kaflach — pod belkę wjeżdża przewijana
+   treść i ma być widać, że przechodzi ZA szybą, a nie pod półprzezroczystą
+   plamą. Stąd też cień pod krawędzią: oddziela belkę od tego, co pod nią. */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s-4);
+  margin: 0 calc(var(--s-10) * -1);
+  padding: 48px var(--s-10) 22px;
+  background-color: var(--glass);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  border-bottom: 1px solid var(--glass-edge);
+  box-shadow: 0 12px 28px -24px rgba(0, 0, 0, 0.9);
+  -webkit-app-region: drag;
+}
+.topbar__text {
+  flex: 1;
+  min-width: 0;
+}
+.topbar h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-h2);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+  margin: 0 0 6px;
+  color: var(--text-hi);
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+.topbar p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-xs);
+}
+
+/* ── Odznaka ──────────────────────────────────────────────────── */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: var(--fs-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px var(--s-3);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+.pill--mint {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-12);
+}
+.pill--amber {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+/* Wskaźnik stanu — oddycha, gdy sito pracuje. Poświata jest funkcją:
+   znaczy „to żyje teraz", nie ozdabia. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background var(--t);
+}
+/* Nasłuch jest fioletowy wszędzie, także tutaj: mięta w tej aplikacji
+   znaczy „gotowe", a kropka stanu jest pierwszą rzeczą, na którą pada wzrok
+   po otwarciu okna. Podmiana tokenów pod spodem zabiera ze sobą także
+   pierścień animacji, bo `breathe` czyta je z tego samego elementu. */
+.status[data-state="listening"] i {
+  --accent-55: var(--rec-55);
+  --accent-04: var(--rec-04);
+  background: var(--rec);
+  animation: breathe 1.6s var(--ease) infinite;
+}
+.status[data-state="sifting"] i {
+  background: var(--warn);
+  animation: breathe 0.9s var(--ease) infinite;
+}
+.status[data-state="done"] i {
+  background: var(--accent);
+  box-shadow: var(--glow);
+}
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 var(--accent-55);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 7px var(--accent-04);
+    opacity: 0.55;
+  }
+}
+
+/* ── Przyciski ────────────────────────────────────────────────── */
+
+/* Domyślny przycisk to wariant drugoplanowy: obrys w akcencie, tło
+   ledwie tknięte. Pełny akcent zarezerwowany dla jednej akcji na ekranie. */
+.btn {
+  -webkit-app-region: no-drag;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 9px 22px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent-25);
+  background: linear-gradient(135deg, var(--accent-15), var(--accent-04));
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: border-color var(--t), box-shadow var(--t), transform var(--t);
+}
+.btn:hover {
+  border-color: var(--accent-55);
+  box-shadow: var(--glow);
+  transform: translateY(-1px);
+}
+.btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.btn--primary {
+  padding: 11px 22px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: var(--glow-btn);
+  transition: filter var(--t), transform var(--t);
+}
+.btn--primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: var(--glow-btn);
+}
+.btn--primary:active {
+  transform: translateY(0);
+  filter: brightness(0.94);
+}
+
+/* Bursztyn to stan, nie ozdoba — ten sam przepis, podmieniony odcień. */
+.btn--amber {
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+}
+.btn--amber:hover {
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--warn) 25%, transparent);
+}
+
+/* Trzeci plan: neutralny, mono, bez akcentu. Gdyby akcje przy każdym
+   wpisie w historii świeciły na miętowo, akcent przestałby cokolwiek znaczyć. */
+.btn--ghost,
+.btn--sm {
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  transition: background var(--t), color var(--t), border-color var(--t);
+}
+.btn--ghost:hover,
+.btn--sm:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--line-strong);
+  color: var(--text);
+  box-shadow: none;
+  transform: none;
+}
+.btn--ghost {
+  border-color: transparent;
+  background: none;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ── Pasek uprawnień (bursztyn = wymaga ruchu) ─────────────────── */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 18px var(--s-5);
+  margin: var(--s-6) 0;
+  border-radius: var(--r-lg);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  background-color: color-mix(in srgb, var(--warn) 12%, transparent);
+  background-image: var(--glass-fill);
+  box-shadow: var(--glass-sheen);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+.banner__icon {
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: var(--r-md);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--warn);
+}
+.banner__icon svg {
+  width: 22px;
+  height: 22px;
+}
+.banner h3 {
+  margin: 0 0 3px;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-hi);
+}
+.banner p {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+.banner p + p {
+  margin-top: 6px;
+}
+/* Rada na wypadek martwego wpisu w Ustawieniach — potrzebna rzadko,
+   więc ma być czytelna, ale nie ma krzyczeć. */
+.banner__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+.banner__body {
+  flex: 1;
+}
+
+/* ── Kafle statystyk ──────────────────────────────────────────── */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s-4);
+  margin-bottom: var(--s-8);
+}
+.tile {
+  padding: 17px var(--s-5) 19px;
+  border-radius: var(--r-xl);
+  transition: transform var(--t), border-color var(--t), box-shadow var(--t);
+}
+.tile:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-25);
+  box-shadow: var(--glass-sheen), var(--glass-drop), var(--glow);
+}
+/* Liczba jest tu bohaterem: serif, akcent, bez cienia wątpliwości. */
+.tile__value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-h2);
+  line-height: 1;
+  color: var(--accent);
+  margin: 10px 0 var(--s-2);
+}
+.tile__value small {
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  margin-left: 3px;
+}
+.tile__note {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+
+/* ── Lista przesianych ────────────────────────────────────────── */
+
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin: 0 0 var(--s-4);
+}
+.section-head .label {
+  flex: none;
+}
+.section-head hr {
+  flex: 1;
+  border: none;
+  border-top: 1px solid var(--line-soft);
+  margin: 0;
+}
+
+.entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.entry {
+  position: relative;
+  border-radius: var(--r-lg);
+  padding: var(--s-4) 18px var(--s-4);
+  transition: border-color var(--t), box-shadow var(--t);
+  animation: rise var(--t-slow) both;
+}
+.entry:hover {
+  border-color: var(--accent-25);
+}
+/* Przypięty wpis świeci — to jedyna rzecz na liście, która ma świecić. */
+.entry[data-pinned="true"] {
+  border-color: var(--accent-30);
+  background-image: linear-gradient(180deg, var(--accent-08), transparent 60%), var(--glass-fill);
+  box-shadow: var(--glass-sheen), var(--glow);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.entry__meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.entry__meta .dot {
+  opacity: 0.4;
+}
+
+.entry__text {
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.entry__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  margin-top: var(--s-3);
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  opacity: 0.55;
+  transition: opacity var(--t);
+}
+.entry:hover .entry__actions,
+.entry:focus-within .entry__actions {
+  opacity: 1;
+}
+.entry__actions .spacer {
+  flex: 1;
+}
+
+/* Podgląd różnicy — to jest sedno. Widać, co sito zabrało. */
+.sifted-out {
+  margin-top: var(--s-3);
+  padding: var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--ink);
+  border: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.75;
+  color: var(--text-2);
+}
+.sifted-out .kept {
+  color: var(--text);
+}
+.sifted-out .gone {
+  color: var(--text-faint);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--danger) 55%, transparent);
+  text-decoration-thickness: 1px;
+}
+.sifted-out .added {
+  color: var(--accent);
+}
+.sifted-out__legend {
+  display: flex;
+  gap: var(--s-4);
+  margin-top: var(--s-3);
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+/* ── Formularze ───────────────────────────────────────────────── */
+
+/* Karta ustawień nie jest klikalna, więc nie reaguje na najechanie.
+   Uniesienie i poświata są zarezerwowane dla rzeczy, które się wybiera. */
+.card {
+  border-radius: var(--r-xl);
+  padding: 22px var(--s-6);
+  margin-bottom: var(--s-4);
+}
+.card > h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-h4);
+  margin: 0 0 var(--s-1);
+  color: var(--text-hi);
+}
+.card > p.sub {
+  margin: 0 0 18px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: var(--s-5);
+  padding: var(--s-4) 0;
+  border-top: 1px solid var(--line-soft);
+}
+.field:first-of-type {
+  border-top: none;
+}
+.field__label {
+  flex: 1;
+  min-width: 0;
+}
+.field__label strong {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+.field__label span {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+.field__control {
+  flex: none;
+}
+
+/* Pole adresu e-mail zostało kiedyś poza tą listą i było jedynym białym
+   prostokątem w całym ciemnym oknie — przeglądarka rysowała je po swojemu. */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+select,
+textarea {
+  background: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: 9px var(--s-3);
+  font-size: var(--fs-xs);
+  color: var(--text);
+  transition: border-color var(--t), box-shadow var(--t);
+  min-width: 220px;
+}
+textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  line-height: var(--lh-body);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent-55);
+  box-shadow: var(--glow);
+}
+input[type="password"],
+input.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+}
+
+/* Przełącznik */
+.switch {
+  width: 44px;
+  height: 25px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  border: 1px solid var(--line-strong);
+  position: relative;
+  transition: background var(--t), border-color var(--t);
+  flex: none;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: left var(--t), background var(--t);
+}
+.switch[aria-checked="true"] {
+  background: var(--accent-15);
+  border-color: var(--accent-30);
+}
+.switch[aria-checked="true"]::after {
+  left: 21px;
+  background: var(--accent);
+}
+
+/* ── Gęstość sita — wybór jak kafle modułów ───────────────────── */
+
+.mesh-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s-3);
+}
+.mesh {
+  text-align: left;
+  padding: 18px;
+  border-radius: var(--r-xl);
+  transition: transform var(--t), border-color var(--t), box-shadow var(--t);
+}
+.mesh:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-25);
+  box-shadow: var(--glow);
+}
+/* Stan wybrany: obrys, tło i poświata — nigdy rozmiar. */
+.mesh[aria-checked="true"] {
+  border-color: var(--accent-30);
+  background-image: linear-gradient(180deg, var(--accent-08), transparent), var(--glass-fill);
+  box-shadow: var(--glass-sheen), var(--glow);
+}
+.mesh canvas {
+  width: 52px;
+  height: 52px;
+  display: block;
+  margin-bottom: var(--s-3);
+  opacity: 0.75;
+}
+.mesh[aria-checked="true"] canvas {
+  opacity: 1;
+}
+.mesh strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  color: var(--text-hi);
+  margin-bottom: 3px;
+}
+.mesh span {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  line-height: 1.5;
+}
+
+/* ── Ziarna ───────────────────────────────────────────────────── */
+
+.grains {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+}
+.grain {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 5px 10px 5px var(--s-3);
+  border-radius: var(--r-pill);
+  background: var(--accent-12);
+  border: 1px solid var(--accent-30);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.1em;
+}
+.grain button {
+  color: var(--text-mute);
+  line-height: 1;
+  font-size: var(--fs-sm);
+  transition: color var(--t);
+}
+.grain button:hover {
+  color: var(--danger);
+}
+
+/* Wybór języków pisowni. Ten sam pigułkowy kształt co ziarna, bo to ta
+   sama rzecz — lista słów albo języków, którą się dokłada i zdejmuje.
+   Zgaszona pigułka znaczy „ten język jest wyłączony": stan widać z drugiego
+   końca pokoju, bez czytania, który kwadracik jest zaznaczony. */
+.grain--pick {
+  cursor: pointer;
+  padding-left: 9px;
+  background: var(--surface-2);
+  border-color: var(--line-soft);
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+}
+.grain--pick:has(input:checked) {
+  background: var(--accent-12);
+  border-color: var(--accent-30);
+  color: var(--accent);
+}
+.grain--pick input {
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+}
+
+/* ── Polecenia ────────────────────────────────────────────────
+
+   Wiersz polecenia jest kartą w karcie: własna ramka, bo to osobna rzecz
+   z własnym włącznikiem, a nie kolejne pole ustawień. Wyłączone gaśnie
+   w całości — stan widać bez czytania, czy przełącznik jest w lewo. */
+
+.cmd {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  padding: var(--s-4);
+  margin-top: var(--s-4);
+}
+.cmd[data-off="true"] {
+  opacity: 0.45;
+}
+.cmd__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.cmd__name {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 1;
+  min-width: 0;
+}
+.cmd__name strong {
+  font-size: var(--fs-sm);
+}
+.cmd__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+}
+.cmd__acts--form {
+  justify-content: flex-end;
+  margin-top: var(--s-4);
+}
+.cmd__triggers {
+  margin-top: var(--s-3);
+}
+.cmd__rules {
+  margin: var(--s-3) 0 0;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* Formularz rozpycha się na całą szerokość karty — edycja to jedna rzecz
+   naraz, więc nie ma z czym konkurować o miejsce. */
+.cmd--edit {
+  border-color: var(--accent-30);
+  background: var(--surface);
+}
+.cmd--edit textarea {
+  margin-top: var(--s-3);
+  min-height: 96px;
+}
+
+/* Wynik próby. Zielone znaczy „to ruszy", zgaszone — „to zwykły tekst".
+   Jedno i drugie jest dobrą odpowiedzią; pytanie brzmi „co się stanie",
+   a nie „czy się udało". */
+.probe {
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-soft);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
+.probe--on {
+  border-color: var(--accent-30);
+  background: var(--accent-12);
+}
+.probe--off {
+  background: var(--surface-2);
+  color: var(--text-mute);
+}
+.probe__body {
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.probe__note {
+  display: block;
+  margin-top: var(--s-2);
+  opacity: 0.75;
+}
+
+/* Komendy formatujące — tylko do czytania, więc bez ramek i przełączników. */
+.cmd__inline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-xs);
+}
+.cmd__inline:last-child {
+  border-bottom: none;
+}
+.cmd__inline b {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  min-width: 46%;
+}
+.cmd__inline span {
+  color: var(--text-mute);
+}
+
+/* „Zmień projekt" — sięga się po to raz i chce mieć z głowy, więc leży
+   złożone pod strzałką zamiast zajmować miejsce nad polem logowania. */
+details.engine > summary {
+  cursor: pointer;
+  padding: var(--s-3) 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  transition: color var(--t);
+}
+details.engine > summary:hover {
+  color: var(--accent);
+}
+details.engine[open] > summary {
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: var(--s-1);
+}
+
+/* ── Pustka ───────────────────────────────────────────────────── */
+
+.empty {
+  text-align: center;
+  padding: 76px var(--s-6);
+  border-radius: var(--r-xl);
+  border: 1px dashed var(--line-strong);
+}
+.empty canvas {
+  width: 96px;
+  height: 96px;
+  opacity: 0.5;
+  margin-bottom: var(--s-5);
+}
+.empty h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-h3);
+  color: var(--text-hi);
+  margin: 0 0 6px;
+}
+.empty p {
+  margin: 0 auto;
+  max-width: 380px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+}
+
+/* Oddech pod belką: kafel nie ma zaczynać się dokładnie na jej krawędzi. */
+.view {
+  padding-top: var(--s-5);
+}
+.view[hidden] {
+  display: none;
+}
+
+/* Notatki zajmują całą wysokość, jaka została po pasku górnym.
+
+   `:not([hidden])` nie jest tu ozdobą. Selektor z identyfikatorem bije
+   `.view[hidden]`, więc bez tego zastrzeżenia zakładka schowana nadal
+   dostawała `display: flex` — i na KAŻDEJ innej zakładce zostawiała pod
+   belką dwudziestopikselowy pasek własnej treści: górne krawędzie pola
+   wyszukiwania i przycisków paska narzędzi, przycięte i bez wyjaśnienia. */
+#view-notes:not([hidden]) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Powiadomienie — znika samo, nie prosi o uwagę. */
+#toast {
+  position: fixed;
+  bottom: 26px;
+  left: 50%;
+  transform: translate(-50%, 14px);
+  padding: 11px 18px;
+  border-radius: var(--r-pill);
+  background-color: var(--glass);
+  background-image: var(--glass-fill);
+  border: 1px solid var(--accent-30);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  font-size: var(--fs-xs);
+  color: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--t), transform var(--t);
+  z-index: 100;
+}
+#toast.in {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.search {
+  position: relative;
+  flex: 1;
+  max-width: 320px;
+}
+.search input {
+  width: 100%;
+  min-width: 0;
+  padding-left: 34px;
+}
+.search svg {
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--text-mute);
+}
+
+/* ── Ekran startowy ───────────────────────────────────────────── */
+
+.setup {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: step;
+}
+.setup__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+  padding: 18px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.setup__row:first-child {
+  border-top: none;
+}
+
+/* Numer kroku zmienia się w znacznik, gdy krok jest zaliczony. */
+.setup__num {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  color: var(--text-mute);
+  border: 1px solid var(--line-strong);
+  background: var(--ink);
+  transition: color var(--t), border-color var(--t), background var(--t);
+}
+.setup__row[data-done="true"] .setup__num {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-12);
+  font-size: 0;
+}
+.setup__row[data-done="true"] .setup__num::after {
+  content: "✓";
+  font-size: var(--fs-label);
+}
+
+.setup__body {
+  flex: 1;
+  min-width: 0;
+}
+.setup__body strong {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.setup__body strong em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+}
+.setup__body > span {
+  display: block;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-body);
+  color: var(--text-3);
+  max-width: 62ch;
+}
+.setup__body b {
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.setup__act {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 300px;
+}
+
+/* Wynik testu — cytat z silnika, żeby było widać, że naprawdę odpowiedział. */
+.setup__result {
+  margin-top: 10px;
+  padding: 10px var(--s-3);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
+  background: var(--ink);
+  border: 1px solid var(--line-soft);
+  color: var(--text-3);
+  word-break: break-word;
+}
+.setup__result.is-ok {
+  border-color: var(--accent-30);
+  color: var(--accent);
+}
+.setup__result.is-bad {
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  color: var(--danger);
+}
+
+/* Pasek błędu — ten sam język co pasek uprawnień, inny odcień. */
+.banner--error {
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.banner--error .banner__icon {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+/* Ten sam pasek, ściszony. Puste nagranie nie jest awarią — nic się nie
+   zepsuło, po prostu nie było czego przesiać. Kolor stanu (bursztyn przy
+   uprawnieniach, czerwień przy błędzie) mówiłby tu nieprawdę, więc pasek
+   jest zwykłą płytką, a całą treść niesie mina i jedno zdanie. */
+.banner--quiet {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+.banner__icon--face {
+  background: none;
+  font-size: 30px;
+  line-height: 1;
+}
+
+/* ── Blok silnika w Ustawieniach ──────────────────────────────── */
+
+/* Każdy krok potoku dostaje własną ramkę. Bez niej dwa komplety pól
+   „dostawca / model / klucz" zlewają się w jedną nieczytelną listę. */
+.engine {
+  margin-top: 18px;
+  padding: var(--s-1) 18px var(--s-4);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-soft);
+  background: var(--surface-2);
+}
+.engine:first-of-type {
+  margin-top: 6px;
+}
+.engine__head {
+  padding: var(--s-4) 0 var(--s-3);
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: var(--s-1);
+}
+.engine__head strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 5px;
+}
+.engine__head span {
+  font-size: var(--fs-xs);
+  line-height: var(--lh-body);
+  color: var(--text-mute);
+}
+.engine .field:first-of-type {
+  border-top: none;
+}
+.engine .setup__result {
+  margin: 2px 0 var(--s-3);
+}
+
+.field__label a {
+  color: var(--accent);
+  border-bottom: 1px solid var(--accent-30);
+}
+.field__label a:hover {
+  color: var(--accent-soft);
+  border-bottom-color: var(--accent-soft);
+}
+
+.hintline {
+  margin: var(--s-4) 0 0;
+  padding: 11px var(--s-4);
+  border-radius: var(--r-sm);
+  background: var(--accent-08);
+  border: 1px solid var(--accent-25);
+  font-size: var(--fs-xs);
+  color: var(--accent-soft);
+}
+.hintline code {
+  font-family: var(--font-mono);
+  font-size: 0.94em;
+  color: var(--accent);
+}
+
+/* Adresy, ścieżki i inne rzeczy do przepisania co do znaku. Zaznaczalne
+   myszką — to jest tekst do skopiowania, a nie do przeczytania. */
+.pre {
+  margin: var(--s-3) 0 0;
+  padding: 11px var(--s-4);
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  border: 1px solid var(--line-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+  color: var(--text-2);
+  overflow-x: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ── Zakładka Notatki ─────────────────────────────────────────────
+   Schemat jest stały: lista po lewej, notatka po prawej, pasek narzędzi
+   nad tekstem, stan zapisu pod nim. Obie kolumny przewijają się osobno —
+   szukanie notatki nie ma przesuwać tekstu, który się właśnie pisze. */
+
+/* Lista rozkłada się i składa jak okiennica: kolumna zwęża się do zera,
+   a sam panel odchyla się w bok. Edytor przejmuje zwolnione miejsce w tym
+   samym ruchu, więc notatka pisana na pełnym oknie nie wymaga niczego
+   poza jednym kliknięciem. */
+/* Szerokość listy jest zmienną, a zmienne z definicji przeskakują z wartości
+   na wartość — bez tego wpisu kolumna znikała skokiem, a uchwyt na krawędzi
+   przeskakiwał w drugie miejsce. Zgłoszona przeglądarce jako <length>
+   animuje się jak każda inna długość. */
+@property --list-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 268px;
+}
+@property --list-h {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 180px;
+}
+
+.notes {
+  --list-w: 268px;
+  --fold: 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--list-w) 1fr;
+  gap: var(--s-4);
+  transition: --list-w var(--fold), gap var(--fold);
+}
+
+/* Uchwyt listy na jej krawędzi — ten sam gest, którym zwija się pas boczny.
+   Przycisk w pasku narzędzi robi to samo, ale trzeba go tam najpierw znaleźć;
+   uchwyt leży dokładnie tam, gdzie kończy się to, co ma zniknąć. Przy
+   zwiniętej liście zostaje widoczny na stałe — inaczej jedyna droga powrotna
+   byłaby niewidzialna. */
+.notes__edge {
+  position: absolute;
+  top: calc(50% - 13px);
+  left: calc(var(--list-w) - 13px);
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-flat);
+  color: var(--text-mute);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    left var(--fold),
+    opacity var(--t),
+    color var(--t),
+    border-color var(--t);
+}
+#view-notes:hover .notes__edge,
+.notes[data-list="closed"] .notes__edge,
+.notes__edge:focus-visible {
+  opacity: 1;
+}
+.notes__edge:hover {
+  color: var(--accent);
+  border-color: var(--accent-30);
+}
+.notes__edge svg {
+  width: 13px;
+  height: 13px;
+  transition: transform var(--t);
+}
+.notes[data-list="closed"] .notes__edge svg {
+  transform: rotate(180deg);
+}
+
+/* Nagłówek przegródki: „Przypięte", „Szybkie notatki", „Notatki". Kreska
+   prowadzi wzrok do liczby po prawej, więc podział widać, zanim się go
+   przeczyta. Nagłówek jest zarazem klapką: kliknięcie zwija przegródkę,
+   bo dziesięć rzuconych myśli ma dać się schować jednym ruchem. */
+.notes__group {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: calc(100% - 12px);
+  margin: var(--s-3) 6px 5px;
+  padding: 3px 4px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-mute);
+  transition: color var(--t), background var(--t);
+}
+.notes__group:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+.notes__caret {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  opacity: 0.7;
+  transform: rotate(-90deg);
+  transition: transform var(--t);
+}
+.notes__group[aria-expanded="false"] .notes__caret {
+  transform: rotate(180deg);
+}
+.notes__group:first-child {
+  margin-top: 4px;
+}
+.notes__group i {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.notes__group b {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.notes[data-list="closed"] {
+  --list-w: 0px;
+  gap: 0;
+}
+.notes--empty {
+  display: block;
+  height: auto;
+}
+
+.notes__list,
+.notes__editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-radius: var(--r-lg);
+}
+
+/* Panel listy: własny punkt obrotu przy krawędzi okna, żeby składał się
+   w stronę, z której wyszedł. */
+.notes__list {
+  overflow: hidden;
+  transform-origin: left center;
+  /* Panel składa się w trzech wymiarach, więc i tak dostaje własną warstwę.
+     Zapowiedziana z góry oszczędza przeglądarce przerysowania go w pierwszej
+     klatce ruchu — a to właśnie ta klatka bywała widoczna jako szarpnięcie. */
+  will-change: transform, opacity;
+  transition:
+    transform var(--fold),
+    opacity var(--fold);
+}
+.notes[data-list="closed"] .notes__list {
+  transform: perspective(1400px) rotateY(-22deg) scaleX(0.94);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Kafle rozkładają się po kolei, od góry — ten sam gest co taca widgetu.
+
+   OPÓŹNIENIE DOTYCZY WYŁĄCZNIE ROZKŁADANIA. Wpisane jednym `transition-delay`
+   obejmowało wszystkie cztery własności — a wtedy najechanie na dwudziesty
+   kafel zapalało go dopiero po pół sekundy. Wyglądało to dokładnie jak
+   zacięcie i było najczęstszym, bo lista bywa długa, a najeżdża się na nią
+   bez przerwy. Tło i obwódka mają więc zero, ruch — swoją kolej.
+
+   Kolej urywa się przy dwunastym kaflu. Dalej i tak nie widać, który wyszedł
+   pierwszy, a przy pięćdziesięciu notatkach ostatnia dojeżdżałaby półtorej
+   sekundy po pierwszej — czyli długo po tym, jak lista jest już do czytania. */
+.note-card {
+  transform-origin: left center;
+  /* Własna warstwa i własny układ: przebudowa jednego kafla nie ma prawa
+     kazać przeglądarce przeliczać całej listy. */
+  contain: layout paint style;
+  transition:
+    background var(--t),
+    border-color var(--t),
+    transform var(--fold),
+    opacity var(--fold);
+  transition-delay: 0s, 0s, 0s, 0s;
+}
+.notes[data-list="open"] .note-card {
+  transition-delay:
+    0s,
+    0s,
+    calc(min(var(--i, 0), 12) * 26ms),
+    calc(min(var(--i, 0), 12) * 26ms);
+}
+.notes[data-list="closed"] .note-card {
+  opacity: 0;
+  transform: perspective(900px) rotateY(-26deg) translateX(-12px);
+}
+
+.notes__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-4) var(--s-3);
+}
+.notes__count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-top: 5px;
+}
+
+/* Wyszukiwarka w kolumnie listy jest paskiem, nie kolumną: bez tego
+   dziedziczy „flex: 1" po zwykłej wyszukiwarce i rozpycha się na całą
+   wysokość, spychając notatki na dno. */
+.search--notes {
+  flex: 0 0 auto;
+  max-width: none;
+  margin: 0 var(--s-4) var(--s-3);
+}
+
+.notes__items {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.notes__nothing {
+  margin: var(--s-3) 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
+
+/* Kafel notatki: tytuł, dwie linijki treści, metryka. Tyle wystarczy,
+   żeby rozpoznać notatkę, i nie tyle, żeby ją tu czytać. */
+.note-card {
+  position: relative;
+  text-align: left;
+  width: 100%;
+  padding: 10px var(--s-3);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.note-card:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.note-card[aria-selected="true"] {
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+}
+.note-card__title {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 22px;
+}
+/* Przepisywany tytuł: to samo miejsce, ta sama linia, tylko pole na wpis
+   jest teraz widoczne. Tytuł nie ma dokąd uciec, więc nic się nie przesuwa. */
+.note-card__title.is-editing {
+  padding: 1px 5px;
+  margin: -2px -5px 0;
+  border-radius: 4px;
+  background: var(--surface-flat);
+  box-shadow: inset 0 0 0 1px var(--accent-30);
+  color: var(--text);
+  outline: none;
+  cursor: text;
+  text-overflow: clip;
+}
+.note-card[aria-selected="true"] .note-card__title {
+  color: var(--accent);
+}
+.note-card__preview {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.note-card__meta {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.note-card__meta .dot {
+  opacity: 0.4;
+}
+/* Pinezka na kaflu. Widać ją, gdy jest po co — pod kursorem albo wtedy,
+   gdy notatka jest przypięta i sama musi to o sobie mówić. */
+.note-card__pin {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--text-mute);
+  opacity: 0;
+  transition: opacity var(--t), color var(--t), background var(--t);
+}
+.note-card__pin svg {
+  width: 13px;
+  height: 13px;
+}
+.note-card:hover .note-card__pin,
+.note-card__pin:focus-visible,
+.note-card__pin[aria-pressed="true"] {
+  opacity: 1;
+}
+.note-card__pin:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.note-card__pin[aria-pressed="true"] {
+  color: var(--accent);
+}
+.note-card mark {
+  background: var(--accent-15);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* ── Pasek narzędzi notatki ── */
+
+.notes__bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px var(--s-3);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.notes__sep {
+  width: 1px;
+  height: 20px;
+  background: var(--line-strong);
+  margin: 0 4px;
+}
+
+/* Uchwyt listy. Strzałka pokazuje, w którą stronę pójdzie panel. */
+.notes__handle svg {
+  transition: transform var(--t);
+}
+.notes[data-list="closed"] .notes__handle svg {
+  transform: rotate(180deg);
+}
+.notes__spacer {
+  flex: 1;
+}
+
+.notes .icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  transition: background var(--t), color var(--t), border-color var(--t);
+}
+.notes .icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.notes .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+/* Włączone formatowanie widać na przycisku — tak samo jak w edytorze
+   tekstu, w którym „B" zostaje wciśnięte, dopóki kursor stoi w pogrubieniu. */
+.notes .icon-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+}
+.notes .icon-btn--danger:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.btn--note svg {
+  width: 14px;
+  height: 14px;
+}
+.btn--note[data-state="listening"] {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: transparent;
+  box-shadow: var(--glow-btn);
+}
+.btn--note[data-state="sifting"] {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+}
+
+.notes__menu-wrap {
+  position: relative;
+}
+.notes__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  min-width: 218px;
+  padding: 5px;
+  border-radius: var(--r-md);
+  background-color: var(--glass);
+  background-image: var(--glass-fill);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.notes__menu[hidden] {
+  display: none;
+}
+.notes__menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.notes__menu button:hover {
+  background: var(--accent-08);
+  color: var(--accent);
+}
+.notes__menu button[aria-pressed="true"] {
+  color: var(--accent);
+}
+.notes__menu kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.notes__menu-sep {
+  height: 1px;
+  background: var(--line-soft);
+  margin: var(--s-1) 6px;
+}
+/* Menu szuflady wychodzi spod przycisku stojącego przy LEWEJ krawędzi,
+   więc i ono otwiera się w prawo. Reszta menu wisi przy prawym skraju
+   paska i tam „right: 0" jest tym, czego trzeba. */
+#noteFolderMenu {
+  right: auto;
+  left: 0;
+}
+
+/* ── Szuflady i etykiety ───────────────────────────────────────
+   Metryczka notatki: gdzie leży i czego dotyczy. Osobny pas pod paskiem
+   narzędzi, bo to nie są czynności — pasek jest od tego, co się robi,
+   a to jest to, czym notatka jest. */
+
+.notes__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  padding: 0 var(--s-6) 2px;
+}
+
+.folder-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t), background var(--t);
+}
+.folder-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.folder-btn:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.folder-btn[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-08);
+}
+.folder-btn span.is-editing {
+  outline: none;
+  min-width: 60px;
+  color: var(--text);
+}
+
+/* Pas szuflad nad listą. Poziomo i z przewijaniem, bo szuflad bywa
+   kilkanaście, a lista notatek nie ma się przez nie skracać. */
+.notes__folders {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 2px var(--s-4) var(--s-2);
+  scrollbar-width: none;
+}
+.notes__folders[hidden] {
+  display: none;
+}
+.notes__folders::-webkit-scrollbar {
+  display: none;
+}
+.folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t), background var(--t);
+}
+.folder-chip b {
+  font-weight: 400;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.folder-chip:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.folder-chip[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-08);
+}
+.folder-chip[aria-pressed="true"] b {
+  color: var(--accent-55);
+}
+
+.notes__tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px 2px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent-15);
+  background: var(--accent-04);
+  color: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.tag button {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
+.tag button:hover {
+  color: var(--danger);
+  background: rgba(255, 255, 255, 0.06);
+}
+/* Etykieta na kaflu jest przyciskiem w całości: kliknięcie pokazuje
+   resztę notatek z tą etykietą — bo po to się na nią patrzy. */
+.tag--sm {
+  padding: 1px 7px;
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t);
+}
+.tag--sm:hover {
+  color: var(--accent);
+  border-color: var(--accent-30);
+}
+.note-card__tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 5px;
+}
+/* Selektor z nazwą znacznika, nie sama klasa: wyżej stoi wspólna reguła
+   dla `input[type="text"]` (ciemne pole, obwódka, min-width: 220px), a ta
+   jest tak samo szczegółowa jak sama klasa i wygrywałaby kolejnością.
+   Pole na etykietę ma być kaflem wielkości słowa, nie polem formularza. */
+input.tag-input {
+  width: 92px;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+  transition: border-color var(--t), width var(--t);
+}
+input.tag-input::placeholder {
+  color: var(--text-faint);
+}
+input.tag-input:focus {
+  width: 128px;
+  border-style: solid;
+  border-color: var(--accent-30);
+}
+
+/* ── Tekst i stopka ── */
+
+#noteText {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-5) var(--s-6) var(--s-6);
+}
+
+.notes__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 10px var(--s-6) var(--s-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  border-top: 1px solid var(--line-soft);
+}
+.notes__foot .dot {
+  opacity: 0.4;
+}
+.notes__hint {
+  color: var(--accent);
+}
+#noteStatus[data-state="saving"] {
+  color: var(--warn);
+}
+.notes__undo {
+  color: var(--warn);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* Wąskie okno: lista nad notatką zamiast obok niej. Zwinięta znika
+   tak samo, tylko w pionie. */
+@media (max-width: 900px) {
+  .notes {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--list-h) 1fr;
+    transition: --list-h var(--fold), gap var(--fold);
+  }
+  .notes[data-list="closed"] {
+    --list-h: 0px;
+  }
+  /* W pionie uchwyt siedzi pod listą, nie obok niej. */
+  .notes__edge {
+    top: calc(var(--list-h) - 13px);
+    left: 50%;
+    transition: top var(--fold), opacity var(--t), color var(--t), border-color var(--t);
+  }
+  .notes[data-list="closed"] .notes__edge svg {
+    transform: rotate(-90deg);
+  }
+  .notes__edge svg {
+    transform: rotate(90deg);
+  }
+  .notes__list {
+    transform-origin: center top;
+  }
+  .notes[data-list="closed"] .notes__list {
+    transform: perspective(1400px) rotateX(22deg) scaleY(0.94);
+  }
+}

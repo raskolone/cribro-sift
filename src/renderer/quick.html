@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Szybka notatka — Cribro Sift</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <style>
+      /* ─────────────────────────────────────────────────────────
+         Szybka notatka — jedno małe okno i nic poza polem tekstowym.
+         Osobne od Notatnika celowo: to jest miejsce na jedno zdanie
+         rzucone w trakcie rozmowy, a nie na zarządzanie notatkami.
+         ───────────────────────────────────────────────────────── */
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      /* Małe okno bez ramki systemowej jest samą szybą: rozmycie łapie
+         to, co pod nim, jasna krawędź obrysowuje kształt, a cień odkleja
+         je od tła.
+
+         Tło jest tu rzadsze niż w kaflach okna głównego (--glass-thin,
+         nie --glass) i to nie jest ozdoba. Rozmycie tego, co ZA oknem,
+         robi system (vibrancy „under-window", patrz createQuickWindow
+         w main/main.js) — dokument może to rozmycie tylko przepuścić
+         albo zakryć. Gęste tło zakrywało je i zostawała matowa płytka
+         zamiast szkła. */
+      #shell {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background-color: var(--glass-thin);
+        background-image: var(--glass-fill);
+        backdrop-filter: var(--glass-blur-lg);
+        -webkit-backdrop-filter: var(--glass-blur-lg);
+        border: 1px solid var(--glass-edge);
+        box-shadow: var(--glass-sheen), var(--glass-drop);
+        border-radius: var(--r-lg);
+        overflow: hidden;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: var(--s-2);
+        padding: var(--s-3) var(--s-4);
+        border-bottom: 1px solid var(--line);
+        -webkit-app-region: drag;
+      }
+      header .label {
+        flex: 1;
+      }
+      #close {
+        -webkit-app-region: no-drag;
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        border: 1px solid transparent;
+        background: none;
+        color: var(--text-mute);
+        cursor: pointer;
+        font-size: var(--fs-sm);
+        line-height: 1;
+        transition: color var(--t), background var(--t);
+      }
+      #close:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      #text {
+        flex: 1;
+        min-height: 0;
+        resize: none;
+        border: none;
+        outline: none;
+        background: transparent;
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: var(--fs-body);
+        line-height: 1.7;
+        padding: var(--s-4);
+        caret-color: var(--accent);
+      }
+      #text::placeholder {
+        color: var(--text-faint);
+      }
+
+      footer {
+        display: flex;
+        align-items: center;
+        gap: var(--s-3);
+        padding: var(--s-3) var(--s-4);
+        border-top: 1px solid var(--line);
+      }
+      /* Podpowiedź nie ma prawa łamać się na dwie linijki — stopka jest
+         wtedy wyższa niż przyciski i okno wygląda na krzywe. */
+      #hint {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+      }
+
+      button.act {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--s-2);
+        padding: 7px 16px;
+        border-radius: var(--r-pill);
+        border: 1px solid var(--accent-25);
+        background: linear-gradient(135deg, var(--accent-15), var(--accent-04));
+        color: var(--accent);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        font-weight: 500;
+        cursor: pointer;
+        transition: border-color var(--t), box-shadow var(--t);
+      }
+      button.act:hover {
+        border-color: var(--accent-55);
+        box-shadow: var(--glow);
+      }
+      /* W trakcie nagrywania przycisk jest jedynym wskaźnikiem stanu. */
+      button.act[data-state="listening"] {
+        background: var(--accent);
+        color: var(--accent-ink);
+        border-color: transparent;
+        box-shadow: var(--glow-btn);
+      }
+      button.act[data-state="sifting"] {
+        color: var(--warn);
+        border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+        background: color-mix(in srgb, var(--warn) 12%, transparent);
+      }
+      button.act svg {
+        width: 14px;
+        height: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="q-mic" viewBox="0 0 24 24">
+          <rect x="9" y="2.5" width="6" height="11" rx="3" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="shell">
+      <header>
+        <span class="label">Szybka notatka</span>
+        <button id="close" aria-label="Zamknij">×</button>
+      </header>
+
+      <textarea id="text" spellcheck="true" placeholder="Powiedz albo napisz jedno zdanie."></textarea>
+
+      <footer>
+        <span id="hint">⌘⏎ zapisuje · Esc zamyka</span>
+        <button class="act" id="dictate"><svg><use href="#q-mic" /></svg><span>Dyktuj</span></button>
+        <button class="act" id="save">Zapisz i zamknij</button>
+      </footer>
+    </div>
+
+    <script src="../shared/strings.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/mock-bridge.js"></script>
+    <script src="js/quick.js"></script>
+  </body>
+</html>

@@ -1,0 +1,804 @@
+/* ─────────────────────────────────────────────────────────────
+   Notatnik — szybkie notatki ze spotkania.
+   Ten sam motyw co reszta aplikacji (Nocturne Green), ale ciszej:
+   tu się pisze, więc nic nie ma prawa migać ani przyciągać wzroku.
+   Poświata pojawia się w jednym miejscu — na przycisku, który nagrywa.
+   ───────────────────────────────────────────────────────────── */
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: var(--r-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* Szerokość listy jako animowalna długość — bez tego wpisu kolumna
+   znikałaby skokiem, bo zwykła zmienna nie ma wartości pośrednich. */
+@property --list-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 236px;
+}
+
+#app {
+  --list-w: 236px;
+  --fold: 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--list-w) 1fr;
+  height: 100vh;
+  transition: --list-w var(--fold);
+}
+
+/* Zwinięta lista: zostaje sama notatka. Panel składa się w bok, jak
+   okiennica — ten sam gest co w zakładce Notatki w oknie głównym. */
+body[data-list="closed"] #app {
+  --list-w: 0px;
+}
+#list {
+  transform-origin: left center;
+  will-change: transform, opacity;
+  transition: transform var(--fold), opacity var(--fold);
+}
+body[data-list="closed"] #list {
+  transform: perspective(1400px) rotateY(-22deg) scaleX(0.94);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Uchwyt na krawędzi listy. Przy zwiniętej zostaje widoczny na stałe —
+   inaczej droga powrotna byłaby niewidzialna. */
+.list__edge {
+  position: absolute;
+  top: calc(50% - 13px);
+  left: calc(var(--list-w) - 13px);
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-flat);
+  color: var(--text-mute);
+  opacity: 0;
+  transition:
+    left var(--fold),
+    opacity var(--t),
+    color var(--t),
+    border-color var(--t);
+}
+#app:hover .list__edge,
+body[data-list="closed"] .list__edge,
+.list__edge:focus-visible {
+  opacity: 1;
+}
+.list__edge:hover {
+  color: var(--accent);
+  border-color: var(--accent-30);
+}
+.list__edge svg {
+  width: 13px;
+  height: 13px;
+  transition: transform var(--t);
+}
+body[data-list="closed"] .list__edge svg {
+  transform: rotate(180deg);
+}
+body.is-solo .list__edge {
+  display: none;
+}
+
+/* Nagłówek przegródki: „Przypięte", „Szybkie notatki", „Notatki".
+   Jest zarazem klapką — kliknięcie zwija przegródkę. */
+.list__group {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: calc(100% - 12px);
+  margin: var(--s-3) 6px 5px;
+  padding: 3px 4px;
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-mute);
+  transition: color var(--t), background var(--t);
+}
+.list__group:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.03);
+}
+.list__caret {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  opacity: 0.7;
+  transform: rotate(-90deg);
+  transition: transform var(--t);
+}
+.list__group[aria-expanded="false"] .list__caret {
+  transform: rotate(180deg);
+}
+.list__group:first-child {
+  margin-top: 2px;
+}
+.list__group i {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.list__group b {
+  font-weight: 400;
+  color: var(--text-faint);
+}
+
+/* Notatka oderwana do własnego okienka: zostaje sama notatka. Lista
+   byłaby tu tylko powtórzeniem tego, co widać w Notatniku obok. */
+body.is-solo #app {
+  grid-template-columns: 1fr;
+}
+body.is-solo #list,
+body.is-solo #detach {
+  display: none;
+}
+
+/* ── Lista ────────────────────────────────────────────────────── */
+
+/* Szkło jak w oknie głównym — jeden przepis dla całej aplikacji,
+   opisany przy .glass w css/app.css i sterowany tokenami --glass-*. */
+#list {
+  background-color: var(--surface-2);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  border-right: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-sheen);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.list__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 44px var(--s-4) var(--s-4);
+  -webkit-app-region: drag;
+}
+.list__count {
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+  margin-top: 3px;
+}
+
+.list__items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 10px var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.note {
+  position: relative;
+  text-align: left;
+  width: 100%;
+  padding: 11px var(--s-3);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  /* Kafel odpowiada za siebie: przebudowa jednego nie każe przeliczać
+     całej listy, a przy stu notatkach to jest różnica widoczna gołym okiem. */
+  contain: layout paint style;
+  transition: background var(--t), color var(--t), border-color var(--t);
+}
+.note:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+.note[aria-selected="true"] {
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+  color: var(--accent);
+}
+.note__title {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+  padding-right: 22px;
+}
+/* Przepisywany tytuł: to samo miejsce, ta sama linia, tylko pole na wpis
+   jest teraz widoczne. */
+.note__title.is-editing {
+  padding: 1px 5px;
+  margin: -2px -5px 2px;
+  border-radius: 4px;
+  background: var(--surface-flat);
+  box-shadow: inset 0 0 0 1px var(--accent-30);
+  color: var(--text);
+  outline: none;
+  cursor: text;
+  text-overflow: clip;
+}
+.note[aria-selected="true"] .note__title {
+  color: var(--accent);
+}
+.note__when {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Pinezka na kaflu. Widać ją, gdy jest po co — pod kursorem albo wtedy,
+   gdy notatka jest przypięta i sama musi to o sobie mówić. */
+.note__pin {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--text-mute);
+  opacity: 0;
+  transition: opacity var(--t), color var(--t), background var(--t);
+}
+.note__pin svg {
+  width: 13px;
+  height: 13px;
+}
+.note:hover .note__pin,
+.note__pin:focus-visible,
+.note__pin[aria-pressed="true"] {
+  opacity: 1;
+}
+.note__pin:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+.note__pin[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+/* ── Edytor ───────────────────────────────────────────────────── */
+
+/* Powierzchnia do pisania jest szkłem, nie dziurą: konstelacja ma pod nią
+   przechodzić stłumiona, inaczej tekst leżałby na ruchomym tle. */
+#editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: var(--surface-2);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen);
+}
+
+/* Pasek narzędzi bywa ciasny w wąskim okienku pojedynczej notatki —
+   wtedy zawija się na drugą linię zamiast obcinać przyciski. */
+.editor__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-3);
+  padding: 44px 22px var(--s-3);
+  -webkit-app-region: drag;
+  border-bottom: 1px solid var(--glass-edge);
+}
+/* W wąskim okienku pojedynczej notatki data ustępuje miejsca narzędziom:
+   skraca się wielokropkiem zamiast łamać pasek na trzy linijki. */
+.editor__meta {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.editor__tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  border: 1px solid transparent;
+  transition: background var(--t), color var(--t), border-color var(--t);
+}
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.icon-btn--accent {
+  color: var(--accent);
+  border-color: var(--accent-25);
+  background: var(--accent-08);
+}
+.icon-btn--accent:hover {
+  background: var(--accent-15);
+  color: var(--accent-soft);
+}
+.icon-btn--danger:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.icon-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-08);
+}
+
+.tool {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 9px 18px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--accent);
+  border: 1px solid var(--accent-25);
+  background: linear-gradient(135deg, var(--accent-15), var(--accent-04));
+  transition: border-color var(--t), box-shadow var(--t), transform var(--t);
+}
+.tool svg {
+  width: 15px;
+  height: 15px;
+}
+.tool:hover {
+  border-color: var(--accent-55);
+  box-shadow: var(--glow);
+  transform: translateY(-1px);
+}
+/* Podczas nagrywania przycisk sam jest wskaźnikiem — nie ma innego.
+   Tu poświata jest w pełni na miejscu: oznacza rzecz, która żyje. */
+.tool[data-state="listening"] {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: transparent;
+  box-shadow: var(--glow-btn);
+}
+.tool[data-state="sifting"] {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 30%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  box-shadow: none;
+}
+
+/* Powierzchnia do pisania. Wygląd samego tekstu — nagłówki, listy,
+   pogrubienia — opisuje css/prose.css, wspólny dla obu okien. */
+#text {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  padding: 22px 26px var(--s-6);
+}
+
+.editor__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 10px 26px var(--s-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.editor__foot .dot {
+  opacity: 0.4;
+}
+.editor__foot .spacer {
+  flex: 1;
+}
+.editor__foot .hint {
+  color: var(--accent);
+}
+#status[data-state="saving"] {
+  color: var(--warn);
+}
+
+/* ── Pustka ───────────────────────────────────────────────────── */
+
+#empty {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  background-color: var(--glass);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  -webkit-app-region: drag;
+}
+#empty[hidden] {
+  display: none;
+}
+.empty__inner {
+  text-align: center;
+  max-width: 380px;
+  -webkit-app-region: no-drag;
+}
+.empty__inner h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--fs-h3);
+  color: var(--text-hi);
+  margin: 10px 0 var(--s-2);
+}
+.empty__inner p {
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  margin: 0 0 22px;
+}
+.btn--primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 11px 22px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  box-shadow: var(--glow-btn);
+  transition: filter var(--t), transform var(--t);
+}
+.btn--primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+/* ── Wyszukiwarka ─────────────────────────────────────────────── */
+
+.list__search {
+  position: relative;
+  margin: 0 10px 10px;
+}
+.list__search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--text-mute);
+  pointer-events: none;
+}
+.list__search input {
+  width: 100%;
+  padding: var(--s-2) 10px var(--s-2) 31px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--ink);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  outline: none;
+  transition: border-color var(--t), box-shadow var(--t);
+}
+.list__search input::placeholder {
+  color: var(--text-faint);
+}
+.list__search input:focus {
+  border-color: var(--accent-55);
+  box-shadow: var(--glow);
+}
+.list__search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+/* Trafienie wyszukiwania zaznaczone w podglądzie listy. */
+.note mark {
+  background: var(--accent-15);
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+/* ── Menu udostępniania ───────────────────────────────────────── */
+
+.menu-wrap {
+  position: relative;
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  min-width: 218px;
+  padding: 5px;
+  border-radius: var(--r-md);
+  background-color: var(--glass);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.menu[hidden] {
+  display: none;
+}
+.menu button {
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  color: var(--text-2);
+  transition: background var(--t), color var(--t);
+}
+.menu button:hover {
+  background: var(--accent-08);
+  color: var(--accent);
+}
+.menu__sep {
+  height: 1px;
+  background: var(--line-soft);
+  margin: var(--s-1) 6px;
+}
+
+/* Cofnięcie przesiania — zachęta pojawia się tylko wtedy, gdy jest co cofać. */
+.editor__foot .undo {
+  color: var(--warn);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+/* ── Menu formatowania ────────────────────────────────────────── */
+
+.menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+.menu kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  border: 1px solid var(--line-strong);
+  color: var(--text-mute);
+}
+
+/* ── Szuflady i etykiety ───────────────────────────────────────
+   To samo, co w zakładce Notatki w oknie głównym (css/app.css). Powtórzone,
+   bo to okno wczytuje wyłącznie tokens.css, prose.css i ten plik — wspólny
+   jest motyw, a nie arkusz. */
+
+/* Menu szuflady wychodzi spod przycisku przy LEWEJ krawędzi paska, więc
+   i ono otwiera się w prawo. Reszta menu wisi po prawej stronie. */
+.menu--left {
+  right: auto;
+  left: 0;
+}
+
+.notes__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  padding: var(--s-3) 22px 0;
+}
+
+.folder-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t), background var(--t);
+}
+.folder-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.folder-btn:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.folder-btn[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-08);
+}
+.folder-btn span.is-editing {
+  outline: none;
+  min-width: 60px;
+  color: var(--text);
+}
+
+.notes__folders {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 2px var(--s-4) var(--s-2);
+  scrollbar-width: none;
+}
+.notes__folders[hidden] {
+  display: none;
+}
+.notes__folders::-webkit-scrollbar {
+  display: none;
+}
+.folder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--text-mute);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t), background var(--t);
+}
+.folder-chip b {
+  font-weight: 400;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.folder-chip:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.folder-chip[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-08);
+}
+.folder-chip[aria-pressed="true"] b {
+  color: var(--accent-55);
+}
+
+.notes__tags {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px 2px 8px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent-15);
+  background: var(--accent-04);
+  color: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.tag button {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--t), background var(--t);
+}
+.tag button:hover {
+  color: var(--danger);
+  background: rgba(255, 255, 255, 0.06);
+}
+.tag--sm {
+  padding: 1px 7px;
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t);
+}
+.tag--sm:hover {
+  color: var(--accent);
+  border-color: var(--accent-30);
+}
+.note-card__tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 4px 0 2px;
+}
+/* Selektor z nazwą znacznika, nie sama klasa: wyżej stoi wspólna reguła
+   dla `input[type="text"]` (ciemne pole, obwódka, min-width: 220px), a ta
+   jest tak samo szczegółowa jak sama klasa i wygrywałaby kolejnością.
+   Pole na etykietę ma być kaflem wielkości słowa, nie polem formularza. */
+input.tag-input {
+  width: 92px;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  outline: none;
+  transition: border-color var(--t), width var(--t);
+}
+input.tag-input::placeholder {
+  color: var(--text-faint);
+}
+input.tag-input:focus {
+  width: 128px;
+  border-style: solid;
+  border-color: var(--accent-30);
+}
