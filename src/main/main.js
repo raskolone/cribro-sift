@@ -1816,6 +1816,9 @@ function buildAppMenu() {
         { role: "zoom", label: t("Powiększ") },
         { type: "separator" },
         { label: t("Otwórz Cribro Sift"), click: () => createMainWindow() },
+        /* Przewodnik jest w oknie (przycisk na dole paska), ale kto go
+           zamknął i nie pamięta gdzie, szuka go w menu — i tam też ma być. */
+        { label: t("Przewodnik"), click: () => go("guide")() },
         { role: "front", label: t("Ustaw wszystko na wierzchu") },
       ],
     },

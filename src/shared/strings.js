@@ -712,6 +712,52 @@ const EN = {
   Zakończ: "Quit",
   "Cribro Sift — trzymaj ⌃⌥ i mów": "Cribro Sift — hold ⌃⌥ and speak",
   "Gotowe — tekst w schowku": "Ready — text in the clipboard",
+
+  /* ── Przewodnik ──
+     Osiem slajdów o tym, co aplikacja robi. Zdania są tu całe i płaskie
+     (bez znaczników w środku), bo tłumaczenie chodzi po węzłach tekstu —
+     akapit rozbity na `<b>` rozpadłby się na kilka kluczy, z których żaden
+     nie byłby zdaniem. Patrz renderer/js/onboarding.js. */
+  Przewodnik: "Guide",
+  "Przewodnik po aplikacji": "A guide to the app",
+  Wstecz: "Back",
+  Dalej: "Next",
+  Zaczynajmy: "Let’s start",
+  "Otwórz Ustawienia": "Open Settings",
+  Gęstość: "Density",
+  Ekran: "Screen",
+
+  "Mów swobodnie. Zostaje esencja.": "Speak freely. The essence stays.",
+  "Cribro Sift zamienia mówienie w tekst i przepuszcza go przez sito: znikają wahania, zająknięcia, powtórzenia i fałszywe starty. Zostaje to, co chciałeś powiedzieć — a nie zapis tego, jak się mówiło.":
+    "Cribro Sift turns speech into text and puts it through a sieve: hesitations, stumbles, repetitions and false starts disappear. What stays is what you meant to say — not a transcript of how you said it.",
+
+  "Trzymaj ⌃⌥ i mów": "Hold ⌃⌥ and speak",
+  "Puszczasz klawisze — sito pracuje, a przesiany tekst ląduje pod kursorem w aplikacji, w której właśnie jesteś. Nie chcesz trzymać? Stuknij te same klawisze dwa razy, a nagrywanie zostaje włączone; kolejne stuknięcie je kończy. Escape kasuje nagranie bez śladu.":
+    "Let the keys go — the sieve works, and the sifted text lands at the cursor in whatever app you are in. Would rather not hold? Tap the same keys twice and recording stays on; another tap ends it. Escape deletes the recording without a trace.",
+
+  "Jedno pokrętło: jak gęsto przesiewać": "One dial: how finely to sift",
+  "Zgrubne zostawia prawie wszystko i usuwa same zacięcia. Średnie daje czystą wypowiedź twoim głosem. Drobne przepisuje ją zwięźle i formalnie, gotową do wysłania. Przestawisz je w zakładce Sito, w pasku menu i na tacy widgetu.":
+    "Coarse leaves almost everything and removes only the stumbles. Medium gives you a clean sentence in your own voice. Fine rewrites it concisely and formally, ready to send. You can change it in the Sieve tab, in the menu bar and on the widget tray.",
+
+  "Powiedz, czym ma być ten tekst": "Say what the text should become",
+  "„Zrób z tego maila”, „zrób z tego listę” — fraza rzucona na początku albo na końcu wypowiedzi przestawia sito na to jedno dyktowanie i sama znika z wyniku. Polecenia są twoje: dopisujesz własne frazy i własne reguły w zakładce Polecenia.":
+    "“Make this an email”, “make this a list” — a phrase thrown in at the start or the end of what you say switches the sieve for that one dictation and then disappears from the result. The commands are yours: you add your own phrases and your own rules in the Commands tab.",
+
+  "Notatki, do których się mówi": "Notes you speak into",
+  "Notatnik z listą po lewej i notatką po prawej, szybka notatka w jednym małym oknie, dyktowanie prosto do otwartej notatki. Listy zadań, nagłówki i cytaty są tam, gdzie się ich szuka, a wszystko zapisuje się samo.":
+    "A notepad with the list on the left and the note on the right, a quick note in one small window, dictation straight into the open note. Task lists, headings and quotes are where you look for them, and everything saves itself.",
+
+  "Znaczek nad wszystkim": "A badge above everything",
+  "Pływające kółko, które nie znika, gdy przełączasz okna. Najechanie kursorem rozkłada tacę: dyktowanie, szybka notatka, gęstość sita, język i okno aplikacji. Kliknięcie otwiera notatki odłożone „na wierzch” — listę przy znaczku albo karteczki rozłożone na pulpicie.":
+    "A floating circle that does not go away when you switch windows. Hovering unfolds the tray: dictation, a quick note, sieve density, language and the app window. Clicking opens the notes you put “on top” — a list beside the badge, or cards laid out on the desktop.",
+
+  "Tekst, którego nie da się zaznaczyć": "Text you cannot select",
+  "Cudzy PDF, slajd z prezentacji, zrzut z rozmowy. Zaznaczasz kawałek ekranu, a to, co na nim widać, staje się notatką. Model tutaj wyłącznie czyta: nie poprawia literówek i nie odpowiada na to, co przeczytał.":
+    "Someone else’s PDF, a slide from a deck, a screenshot of a chat. You select a piece of the screen and what is on it becomes a note. The model only reads here: it does not fix typos and does not answer what it read.",
+
+  "Zostaje jedno: klucz": "One thing left: the key",
+  "Sito i transkrypcja korzystają z modelu, więc potrzebują twojego klucza — wpisujesz go raz w Ustawieniach. Do przewodnika wracasz zawsze przyciskiem na dole paska po lewej.":
+    "The sieve and the transcription both use a model, so they need your key — you enter it once in Settings. You can always come back to this guide with the button at the bottom of the left rail.",
 };
 
 const DICTS = { en: EN };

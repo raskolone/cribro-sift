@@ -220,6 +220,52 @@ liście zostaje widoczny na stałe, żeby droga powrotna nie była niewidzialna.
 To samo robi strzałka w pasku narzędzi notatki i **⌘⇧L**. Oba stany zwinięcia
 zostają między uruchomieniami.
 
+### Przewodnik
+
+Cribro **nie tłumaczy się samo** i to nie jest wada interfejsu, tylko skutek
+tego, czym jest: wszystko dzieje się poza oknem. Skrót działa w cudzej
+aplikacji, znaczek pływa nad wszystkim, przesiany tekst ląduje pod kursorem
+gdzie indziej. Kto otworzy okno po pierwszym uruchomieniu, widzi pustą listę
+przesianych wypowiedzi i nie ma z czego wywnioskować, że trzeba przytrzymać
+dwa klawisze i zacząć mówić.
+
+Stąd **osiem slajdów**, które pokazują się raz, same, przy pierwszym starcie:
+
+| # | Slajd | O czym |
+| --- | --- | --- |
+| 1 | Sito | co ta aplikacja właściwie robi |
+| 2 | Skrót | ⌃⌥ trzymane i stuknięte dwa razy, Escape kasuje |
+| 3 | Gęstość | zgrubne · średnie · drobne |
+| 4 | Polecenia | „zrób z tego maila" i własne frazy |
+| 5 | Notatki | Notatnik, szybka notatka, dyktowanie do notatki |
+| 6 | Widget | znaczek, taca, notatki na wierzchu |
+| 7 | Tekst z ekranu | zaznaczenie kawałka cudzego okna |
+| 8 | Klucz | jedyna rzecz, bez której nic nie ruszy |
+
+**Każdy slajd ma ruchomy rysunek** i to nie jest ozdoba: wszystkie te funkcje
+SĄ ruchem — przytrzymanie klawiszy, przesypywanie się przez sito, rozkładanie
+tacy, zaznaczanie prostokąta na ekranie. Nieruchomy obrazek każdej z nich
+trzeba opisać słowami, a opis czyta się dłużej, niż trwa sam gest. Sceny są
+rysowane w SVG i animowane w CSS-ie (`js/onboarding.js` i `css/onboarding.css`),
+bez żadnej biblioteki; kto wyłączył ruch w systemie, dostaje je nieruchome.
+
+Sceny chodzą **wyłącznie na widocznym slajdzie**. Animacja CSS nie zatrzymuje
+się od tego, że element jest przezroczysty, więc osiem scen liczyłoby się
+naraz przez cały czas — a przy okazji: zdjęcie animacji z niewidocznych
+slajdów sprawia, że powrót na slajd zaczyna ruch od początku, zamiast złapać
+go w połowie.
+
+Zapamiętane jest samo **„pokazał się"**, nie „obejrzany do końca": kto zamknął
+przewodnik na drugim slajdzie, też podjął decyzję, a okno wracające przy
+każdym starcie, dopóki nie klikniesz go do końca, jest natrętne, a nie
+pomocne. Wraca się do niego **przyciskiem na dole paska bocznego**, który stoi
+tam zawsze, oraz pozycją *Przewodnik* w menu *Okno*. Escape zamyka slajdy,
+a nie okno — nasłuch idzie w fazie przechwytywania i zabiera klawisz reszcie
+aplikacji.
+
+Ostatni slajd prowadzi wprost do **Ustawień**, bo bez klucza do modelu
+wszystko, co pokazał, nie ma czym pracować.
+
 ### Konflikty skrótów
 
 *Ustawienia → Skrót → Sprawdź konflikty* mówi, czy skrót nie wchodzi komuś
@@ -1400,6 +1446,7 @@ src/renderer/
   shot.html      tekst z ekranu — okno z pytaniem: dokąd i w jakiej formie
   widget.html    pływający znaczek: taca czynności i notatki „na wierzchu"
   sticky.html    jedna notatka jako kartka na pulpicie (widok „pulpit")
+  js/onboarding.js  przewodnik: osiem slajdów, sceny SVG, pierwsze uruchomienie
   js/hud.js      nagrywanie PCM → WAV 16 kHz mono
   js/widget.js   widget: cztery stany, taca, przeciąganie, kartka na wierzchu
   js/sticky.js   kartka na pulpicie: treść, rozwijanie, skala ekranu, kolor
@@ -1412,6 +1459,7 @@ src/renderer/
   js/theme.js    kolory z tokenów dla tego, co rysowane na canvasie
   js/i18n.js     tłumaczenie interfejsu (t() i przejście po drzewie)
   css/prose.css  wygląd sformatowanego tekstu notatki, wspólny dla okien
+  css/onboarding.css  przewodnik: układ slajdów i ruch ośmiu scen
 src/shared/
   strings.js     słownik pl → en, wspólny dla obu procesów
   richtext.js    Markdown ↔ HTML — jedno miejsce dla obu kierunków
@@ -1427,9 +1475,10 @@ scripts/         testy, zrzuty ekranu, ikona
   notes-test.js     kształt notatki przy dopisywaniu z dyktowania
   editor-test.js    Markdown ↔ sformatowany tekst, tam i z powrotem
                     (nagłówki, kreska, nagłówek składany)
-  toolbar-test.js   paski narzędzi i ikony w szablonach: rysunek bez fill
-                    (czarna plama), odwołanie do nieistniejącego symbolu,
-                    grupy paska notatki, menu bez przycisku
+  toolbar-test.js   paski narzędzi, ikony i przewodnik w szablonach: rysunek
+                    bez fill (czarna plama), odwołanie do nieistniejącego
+                    symbolu, grupy paska notatki, menu bez przycisku,
+                    slajd bez rysunku
   sync-test.js      dwa „komputery" nad atrapą serwera: spór, kasowanie, kursor
   genie-test.js     sylwetka animacji widgetu: prostokąt na końcu, brak drgnięć
   oauth-test.js     logowanie przez Google bez Google: adres, kod, PKCE, odmowa

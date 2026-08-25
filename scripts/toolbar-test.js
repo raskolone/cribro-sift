@@ -16,6 +16,9 @@
  *   3. MENU BEZ PRZYCISKU (albo odwrotnie). Nasłuch kliknięć siedzi
  *      w js/notes.js i zna menu z nazwy; szablon może się z nim rozjechać
  *      przy pierwszej zmianie nazwy identyfikatora.
+ *   4. SLAJD PRZEWODNIKA BEZ RYSUNKU. Scena jest wskazywana nazwą, więc
+ *      literówka zostawia pusty prostokąt zamiast ilustracji — cicho
+ *      i tylko na tym jednym slajdzie.
  *
  * Wszystkie trzy da się sprawdzić na samym tekście szablonów, bez
  * przeglądarki — i to jest cały ten plik.
@@ -170,4 +173,36 @@ assert.ok(
 );
 ok("Każde menu paska ma w szablonie i menu, i przycisk, który je otwiera");
 
-console.log(`\nPaski narzędzi: ${PAGES.length} szablonów sprawdzonych. Żadna ikona nie zniknęła.`);
+/* ── 6. Przewodnik: slajd bez rysunku i rysunek bez kadru ─────────
+   Slajd wskazuje scenę po nazwie. Literówka w tej nazwie nie wybucha —
+   zostaje pusty prostokąt tam, gdzie miał być rysunek, i nikt tego nie
+   zauważy poza tym jednym slajdem. */
+
+const guide = fs.readFileSync(path.join(RENDERER, "js", "onboarding.js"), "utf8");
+const scenes = new Set([...guide.matchAll(/^    (\w+): `$/gm)].map((match) => match[1]));
+const used = [...guide.matchAll(/^      art: "(\w+)",$/gm)].map((match) => match[1]);
+
+assert.ok(scenes.size >= 6, "ART w js/onboarding.js miało zawierać sceny przewodnika");
+assert.ok(used.length >= 6, "SLIDES w js/onboarding.js miało zawierać slajdy");
+for (const name of used) {
+  assert.ok(scenes.has(name), `slajd przewodnika woła scenę „${name}", której nie ma w ART`);
+}
+for (const name of scenes) {
+  assert.ok(used.includes(name), `scena „${name}" nie stoi na żadnym slajdzie`);
+}
+ok(`Każdy slajd przewodnika ma swój rysunek (${used.length} slajdów)`);
+
+/* Jeden kadr dla wszystkich scen. Rysunki mają być tej samej wielkości —
+   slajd, na którym ilustracja nagle rośnie o połowę, czyta się jak inny
+   ekran, a nie jak następna strona tej samej rzeczy. */
+const frames = new Set([...guide.matchAll(/viewBox="([^"]+)"/g)].map((match) => match[1]));
+assert.equal(
+  frames.size,
+  1,
+  `sceny przewodnika mają ${frames.size} różne kadry: ${[...frames].join(" | ")}`,
+);
+ok("Wszystkie sceny przewodnika stoją w jednym kadrze");
+
+console.log(
+  `\nPaski i przewodnik: ${PAGES.length} szablonów i ${used.length} slajdów sprawdzonych.`,
+);

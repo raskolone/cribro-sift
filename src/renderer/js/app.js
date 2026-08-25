@@ -1736,6 +1736,13 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  // Przewodnik. Otwiera się zawsze od pierwszego slajdu — kto do niego
+  // wraca, wraca po całość, a nie po miejsce, w którym skończył.
+  if (event.target.closest("#guideOpen")) {
+    window.CribroGuide?.open(0);
+    return;
+  }
+
   if (event.target.closest('[data-act="quick-note"]')) {
     await api.notes.quick();
     return;
@@ -2477,6 +2484,10 @@ api.notes.onNew?.(async () => {
 });
 
 api.onGoToView?.((view) => {
+  /* „guide" nie jest widokiem, tylko oknem nad widokami — ale przychodzi
+     tym samym kanałem, bo z punktu widzenia paska menu to jest ta sama
+     rzecz: pokaż mi to. */
+  if (view === "guide") return void window.CribroGuide?.open(0);
   if (VIEWS[view]) {
     state.view = view;
     render();
@@ -2544,4 +2555,17 @@ function setRail(collapsed) {
   if (localStorage.getItem("cribro:rail") === "1") setRail(true);
 
   render();
+
+  /* ══ PIERWSZE URUCHOMIENIE ══
+
+     Aplikacja, w której wszystko dzieje się poza oknem, nie tłumaczy się
+     sama: pierwszy ekran jest listą przesianych wypowiedzi, która jest
+     pusta, i nie ma z czego wywnioskować, że trzeba przytrzymać dwa
+     klawisze i zacząć mówić. Przewodnik pokazuje się więc raz, sam,
+     i od tej chwili tylko na żądanie — przyciskiem na dole paska.
+
+     Po `render()`, a nie przed: slajdy mają wyjść NA gotowe okno, nie
+     zamiast niego. Zamknięcie przewodnika ma odsłaniać aplikację, a nie
+     puste tło, które dopiero się rysuje. */
+  if (!state.settings.tutorial?.seen) window.CribroGuide?.open(0);
 })();

@@ -165,6 +165,14 @@ const DEFAULTS = {
      zamiast robić drugą obok. */
   notion: { token: "", parent: "", pages: {} },
 
+  /* Przewodnik — kilka slajdów o tym, co aplikacja właściwie robi.
+
+     `seen` mówi tylko tyle, czy przewodnik pokazał się już sam. Nie jest to
+     „obejrzany do końca": kto go zamknął na drugim slajdzie, też podjął
+     decyzję i nie ma powodu witać go tym samym oknem przy każdym starcie.
+     Wraca się do niego z paska bocznego, przyciskiem, który stoi tam
+     zawsze — dlatego pominięcie niczego nie zamyka na dobre. */
+  tutorial: { seen: false },
 };
 
 /** Numer układu ustawień. Podniesienie znaczy: przy starcie coś poprawiamy. */

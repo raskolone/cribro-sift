@@ -155,6 +155,10 @@ if (!window.cribro) {
       ],
     },
     widget: { enabled: false, mode: "compact", x: null, y: null, cards: {} },
+    /* Przewodnik w makiecie jest już „pokazany": zrzuty ekranu robi się
+       z gotowego okna, a nie z okna zasłoniętego slajdem. Przycisk na dole
+       paska działa normalnie i tędy się go otwiera. */
+    tutorial: { seen: true },
     spellcheck: { enabled: true, followDictation: true, languages: [] },
     cloud: { enabled: false, url: "", anonKey: "", autoSync: true },
   };

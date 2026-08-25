@@ -1,0 +1,883 @@
+/* ─────────────────────────────────────────────────────────────
+   Przewodnik — osiem slajdów o tym, co ta aplikacja właściwie robi.
+
+   Powstał, bo Cribro nie tłumaczy się samo. Cała rzecz dzieje się POZA
+   oknem: skrót działa w cudzej aplikacji, znaczek pływa nad wszystkim,
+   tekst ląduje pod kursorem gdzie indziej. Kto otworzy okno po pierwszym
+   uruchomieniu, widzi listę przesianych wypowiedzi, która jest pusta,
+   i nie ma z czego wywnioskować, że trzeba przytrzymać dwa klawisze
+   i zacząć mówić.
+
+   KAŻDY SLAJD MA RUCHOMY RYSUNEK i to nie jest ozdoba. Wszystkie te
+   funkcje są ruchem — przytrzymanie klawiszy, przesypywanie się przez
+   sito, rozkładanie tacy, zaznaczanie prostokąta na ekranie — a ruchu
+   nie da się pokazać nieruchomym obrazkiem, tylko go opisać. Opis czyta
+   się dłużej, niż trwa sam gest.
+
+   Animacje chodzą WYŁĄCZNIE na widocznym slajdzie ([data-on="true"]).
+   Osiem scen liczonych naraz to osiem wątków rysowania w tle okna,
+   z którego widać jedną ósmą — a przy okazji: zdjęcie i ponowne założenie
+   atrybutu restartuje animację, więc powrót do slajdu odtwarza ją od
+   początku, zamiast łapać w połowie.
+   ───────────────────────────────────────────────────────────── */
+
+#guide {
+  position: fixed;
+  inset: 0;
+  /* Pod dymkiem powiadomień (#toast ma 100), nad całą resztą okna. */
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: var(--s-6);
+  background: rgba(4, 8, 16, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: guide-veil 0.24s var(--ease) both;
+}
+#guide[hidden] {
+  display: none;
+}
+@keyframes guide-veil {
+  from {
+    opacity: 0;
+  }
+}
+
+.guide__sheet {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--glass-edge);
+  /* Gęściej niż zwykłe szkło w tej aplikacji. Pod spodem leży całe okno
+     z banerem, konstelacją i listą — przez szybę o kryciu 0,66 przebijało
+     się to na wylot i akapit przecinała jasna smuga. Slajd ma się czytać
+     za pierwszym razem, a nie ładnie wyglądać. */
+  background-color: rgba(9, 16, 28, 0.88);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  overflow: hidden;
+  animation: guide-rise 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes guide-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+
+.guide__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.guide__close:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text);
+}
+.guide__close svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+/* ── Slajd ────────────────────────────────────────────────────
+   Wszystkie leżą jeden na drugim w tej samej komórce siatki: przełączenie
+   jest wtedy przenikaniem, a nie przeskokiem wysokości. Sheet dostaje
+   wysokość od najwyższego z nich i już jej nie zmienia — okno, które
+   podskakuje przy każdym „Dalej", czyta się jak zepsute. */
+
+.guide__stage {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Rysunek po lewej, słowa po prawej. Nie dla urody: rysunek ustawiony nad
+   tekstem w szerokim oknie robi się mały i zgubiony, a wzrok i tak czyta
+   od lewej. Poniżej siedmiuset pikseli kolumny składają się w jedną —
+   wtedy rysunek jest szerszy niż pół okna i lepiej mu na górze. */
+.guide__slide {
+  grid-area: 1 / 1;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-8);
+  padding: var(--s-8) var(--s-10) var(--s-6);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 0.26s var(--ease);
+}
+@media (max-width: 700px) {
+  .guide__slide {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+    padding: var(--s-6) var(--s-6) var(--s-4);
+  }
+}
+.guide__slide[data-on="true"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+/* ══ SCENA CHODZI TYLKO NA WIDOCZNYM SLAJDZIE ══
+
+   I to nie dzieje się samo. Animacja CSS nie zatrzymuje się od tego, że
+   element jest przezroczysty — osiem scen liczyłoby się naraz przez cały
+   czas, z czego widać jedną. Zdjęcie animacji tutaj załatwia obie rzeczy
+   naraz: niewidoczne sceny stoją, a powrót na slajd DODAJE animację od
+   nowa, więc ruch zaczyna się od początku zamiast łapać w połowie.
+   (`animation-play-state: paused` zatrzymałby ją, ale wznawiał w tym
+   samym miejscu — a slajd ma opowiadać całą historię, nie jej koniec.) */
+.guide__slide[data-on="false"] .guide__art * {
+  animation: none;
+}
+
+/* ── Scena ──
+   Stała wysokość, bo rysunki mają różne kształty, a slajdy nie mają prawa
+   różnić się układem: napis ma stać zawsze w tym samym miejscu, żeby przy
+   przełączaniu czytało się dalej, a nie szukało od nowa. */
+.guide__art {
+  --art-h: 200px;
+  height: var(--art-h);
+  display: grid;
+  place-items: center;
+}
+/* Wysokość W PIKSELACH, nie w procentach. Procent na elemencie siatki,
+   który nie jest rozciągany (place-items: center), Chromium liczy jak
+   `auto` — a `auto` na SVG-u znaczy „wysokość z proporcji viewBoksa".
+   Rysunek wychodził przez to dwa razy za wysoki i nachodził na tytuł. */
+.guide__art svg {
+  display: block;
+  height: var(--art-h);
+  width: auto;
+  max-width: 100%;
+}
+
+.guide__step {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--s-2);
+}
+/* Licznik jest szary, bo nie jest nazwą rozdziału — mówi tylko, ile jeszcze. */
+.guide__count {
+  color: var(--text-faint);
+}
+.guide__slide h2 {
+  margin: 0 0 var(--s-3);
+  font-family: var(--font-display);
+  font-weight: 700;
+  /* Krój ozdobny w wąskiej kolumnie: przy stałych 34 pikselach tytuł łamał
+     się na trzy wiersze i przestawał być tytułem. */
+  font-size: clamp(24px, 2.6vw, 32px);
+  line-height: var(--lh-tight);
+  color: var(--text-hi);
+}
+.guide__slide p {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  color: var(--text-3);
+}
+.guide__slide b {
+  color: var(--text);
+  font-weight: 500;
+}
+.guide__slide kbd {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 7px;
+  background: var(--ink);
+  border: 1px solid var(--line-strong);
+  color: var(--text-2);
+}
+
+/* ── Stopka ── */
+
+.guide__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-10) var(--s-6);
+}
+.guide__dots {
+  display: flex;
+  gap: 7px;
+  flex: 1;
+}
+/* Kropka jest też przyciskiem: osiem slajdów to za dużo, żeby do jednego
+   wracać przez siedem kliknięć „Wstecz". */
+.guide__dots button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--text-faint);
+  cursor: pointer;
+  transition: background var(--t), transform var(--t), width var(--t);
+}
+.guide__dots button:hover {
+  background: var(--text-mute);
+}
+.guide__dots button[aria-current="true"] {
+  width: 20px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+.guide__nav {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+}
+/* „Dalej" jest głównym przyciskiem tego okna i ma być wypełniony.
+   Doprecyzowanie MIEJSCEM, nie `!important`: w css/app.css `.btn--sm` stoi
+   po `.btn--primary`, obie klasy ważą tyle samo i przy równej wadze
+   decyduje kolejność — sam przycisk wychodził przez to obrysowany. */
+.guide__nav .btn--primary {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: var(--font-body);
+  font-weight: 700;
+  box-shadow: var(--glow-btn);
+}
+.guide__nav .btn--primary:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+  color: var(--accent-ink);
+}
+/* Pierwszy slajd nie ma dokąd cofać — przycisk gaśnie, zamiast znikać
+   i przesuwać ten obok pod palcem. */
+.guide__nav .btn[disabled] {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* ── Przycisk w pasku bocznym ──
+   Stoi nad kaflem skrótu, na dole pasa: przewodnik jest tym, po co sięga
+   się raz, a potem raz na jakiś czas — nie zabiera więc miejsca w nawigacji,
+   ale jest widoczny bez szukania w menu. */
+
+.guide-open {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  margin-bottom: var(--s-3);
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-mute);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background var(--t), color var(--t), border-color var(--t);
+}
+.guide-open:hover {
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+  color: var(--accent);
+}
+.guide-open svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Zwinięty pas zostawia sam znak — tak samo jak pozycje nawigacji. */
+#app.is-rail .guide-open {
+  justify-content: center;
+  padding: 9px 0;
+}
+#app.is-rail .guide-open span {
+  display: none;
+}
+
+/* ═══ RYSUNKI ═══════════════════════════════════════════════════
+   Wspólne części: obrys, wypełnienie i „papier", na którym stoją sceny.
+   Kolory idą z tokenów, więc rysunki zmieniają się razem z motywem. */
+
+/* Przekształcenia w SVG liczą się domyślnie od układu całego rysunku, więc
+   „obróć wokół środka" znaczyłoby „wokół środka sceny", a nie wokół środka
+   tego kółka. Jedna linijka przestawia to na własny prostokąt elementu
+   i dopiero wtedy `transform-origin: center` znaczy to, co się czyta. */
+#guide svg * {
+  transform-box: fill-box;
+}
+
+.gart-line {
+  fill: none;
+  stroke: var(--text-faint);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gart-edge {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.4;
+}
+.gart-plate {
+  fill: rgba(255, 255, 255, 0.035);
+  stroke: var(--glass-edge);
+  stroke-width: 1;
+}
+.gart-accent {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.gart-fill {
+  fill: var(--accent);
+}
+.gart-dim {
+  fill: var(--text-faint);
+}
+.gart-rec {
+  fill: var(--rec);
+}
+.gart-pointer {
+  fill: var(--text-hi);
+}
+/* Napisy w scenach. Atrybuty prezentacji SVG bywają kapryśne przy `var()`,
+   więc krój i kolor dostają je stąd, tak jak reszta rysunku. */
+.gart-text {
+  font-family: var(--font-mono);
+  fill: var(--text-2);
+  letter-spacing: 0.04em;
+}
+.gart-text--accent {
+  fill: var(--accent);
+}
+
+/* ── 1. Sito ──
+   Ziarna sypią się z góry, sito je zatrzymuje, a przez oczka przechodzi
+   tylko część. To jest cała aplikacja w jednym rysunku i dlatego stoi
+   na pierwszym slajdzie. */
+
+.gart-grain {
+  animation: grain-fall 2.6s var(--ease) infinite;
+  opacity: 0;
+}
+@keyframes grain-fall {
+  0% {
+    opacity: 0;
+    transform: translateY(-46px);
+  }
+  18% {
+    opacity: 1;
+  }
+  /* Przy sicie ziarno zwalnia — to moment, w którym coś się rozstrzyga. */
+  46% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+/* Ziarno, które przechodzi na drugą stronę: te same klatki, ale spada
+   dalej i gaśnie dopiero na dole. */
+.gart-grain--through {
+  animation-name: grain-through;
+}
+@keyframes grain-through {
+  0% {
+    opacity: 0;
+    transform: translateY(-46px);
+  }
+  18% {
+    opacity: 1;
+  }
+  46% {
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(62px);
+  }
+}
+.gart-sieve-ring {
+  animation: sieve-breathe 2.6s var(--ease) infinite;
+  transform-origin: center;
+}
+@keyframes sieve-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ── 2. Skrót ──
+   Dwa klawisze wciskane razem, fala głosu między nimi i linijka tekstu,
+   która dopiero po nich się pojawia. Kolejność jest tu treścią. */
+
+.gart-key {
+  animation: key-press 3.4s var(--ease) infinite;
+  transform-origin: center;
+}
+@keyframes key-press {
+  0%,
+  8% {
+    transform: translateY(0);
+  }
+  14%,
+  62% {
+    transform: translateY(3px);
+  }
+  70%,
+  100% {
+    transform: translateY(0);
+  }
+}
+.gart-wave rect {
+  animation: wave-bar 3.4s var(--ease) infinite;
+  transform-origin: center;
+}
+@keyframes wave-bar {
+  0%,
+  16% {
+    transform: scaleY(0.06);
+    opacity: 0.35;
+  }
+  30%,
+  56% {
+    opacity: 1;
+  }
+  34% {
+    transform: scaleY(1);
+  }
+  44% {
+    transform: scaleY(0.45);
+  }
+  52% {
+    transform: scaleY(0.9);
+  }
+  66%,
+  100% {
+    transform: scaleY(0.06);
+    opacity: 0.35;
+  }
+}
+.gart-typed {
+  animation: typed-in 3.4s var(--ease) infinite;
+  transform-origin: left center;
+}
+@keyframes typed-in {
+  0%,
+  66% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  76% {
+    opacity: 1;
+  }
+  86%,
+  100% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+/* ── 3. Gęstość ──
+   Trzy słupki zapalają się po kolei, a nad nimi tekst gubi kolejne
+   fragmenty. Ten sam znak, który stoi na tacy widgetu. */
+
+.gart-step {
+  animation: step-cycle 4.5s steps(1, end) infinite;
+}
+.gart-step--2 {
+  animation-name: step-cycle-2;
+}
+.gart-step--3 {
+  animation-name: step-cycle-3;
+}
+@keyframes step-cycle {
+  0%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes step-cycle-2 {
+  0%,
+  33% {
+    opacity: 0.22;
+  }
+  34%,
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes step-cycle-3 {
+  0%,
+  66% {
+    opacity: 0.22;
+  }
+  67%,
+  100% {
+    opacity: 1;
+  }
+}
+/* Fragmenty wypowiedzi znikają po kolei, w miarę jak sito się zagęszcza. */
+.gart-shed {
+  animation: shed-2 4.5s var(--ease) infinite;
+  transform-origin: left center;
+}
+.gart-shed--3 {
+  animation-name: shed-3;
+}
+@keyframes shed-2 {
+  0%,
+  30% {
+    opacity: 1;
+  }
+  38%,
+  100% {
+    opacity: 0.1;
+  }
+}
+@keyframes shed-3 {
+  0%,
+  63% {
+    opacity: 1;
+  }
+  71%,
+  100% {
+    opacity: 0.1;
+  }
+}
+
+/* ── 4. Polecenie ──
+   Zdanie wpada w kształt maila: powitanie, akapity, podpis. Ramka
+   dorysowuje się wokół, bo to ona jest tu wynikiem. */
+
+/* Obwód ramki 208×104 z zaokrągleniem 14 to około 600 jednostek — kreska
+   musi być DŁUŻSZA od obwodu, inaczej wzór się powtarza i „rysowanie"
+   wygląda jak dziura wędrująca po ramce. */
+.gart-frame {
+  stroke-dasharray: 620;
+  animation: frame-draw 3.6s var(--ease) infinite;
+}
+@keyframes frame-draw {
+  0%,
+  20% {
+    stroke-dashoffset: 620;
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  62%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+.gart-row {
+  animation: row-in 3.6s var(--ease) infinite both;
+  transform-origin: left center;
+}
+@keyframes row-in {
+  0%,
+  40% {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  55%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Sama fraza polecenia gaśnie — w wyniku jej nie ma i to jest cała
+   różnica między poleceniem a tekstem. */
+.gart-phrase {
+  animation: phrase-out 3.6s var(--ease) infinite;
+}
+@keyframes phrase-out {
+  0%,
+  22% {
+    opacity: 1;
+  }
+  36%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── 5. Notatki ──
+   Kartka, na której odhacza się zadanie i dopisuje linijka. */
+
+.gart-check {
+  stroke-dasharray: 14;
+  animation: check-draw 3.4s var(--ease) infinite;
+}
+@keyframes check-draw {
+  0%,
+  30% {
+    stroke-dashoffset: 14;
+  }
+  42%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+.gart-strike {
+  stroke-dasharray: 100;
+  animation: strike-draw 3.4s var(--ease) infinite;
+}
+@keyframes strike-draw {
+  0%,
+  36% {
+    stroke-dashoffset: 100;
+  }
+  50%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+.gart-new-line {
+  animation: line-appear 3.4s var(--ease) infinite;
+  transform-origin: left center;
+}
+@keyframes line-appear {
+  0%,
+  60% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  74%,
+  100% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+/* ── 6. Widget ──
+   Znaczek i taca, która rozkłada się pod kursorem. Ten sam ruch i to samo
+   tempo co w prawdziwym widgecie — slajd ma uczyć gestu, a nie pokazywać
+   inny. */
+
+.gart-slot {
+  animation: slot-out 3.8s var(--ease) infinite both;
+  transform-origin: center;
+}
+@keyframes slot-out {
+  0%,
+  14% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.5);
+  }
+  30%,
+  72% {
+    opacity: 1;
+    transform: none;
+  }
+  88%,
+  100% {
+    opacity: 0;
+    transform: translateY(-38px) scale(0.5);
+  }
+}
+.gart-cursor {
+  animation: cursor-in 3.8s var(--ease) infinite;
+}
+@keyframes cursor-in {
+  0% {
+    transform: translate(26px, 30px);
+    opacity: 0;
+  }
+  10%,
+  74% {
+    transform: none;
+    opacity: 1;
+  }
+  92%,
+  100% {
+    transform: translate(26px, 30px);
+    opacity: 0;
+  }
+}
+.gart-halo {
+  animation: halo-pulse 3.8s var(--ease) infinite;
+  transform-origin: center;
+}
+@keyframes halo-pulse {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  30% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  60% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+/* ── 7. Tekst z ekranu ──
+   Prostokąt zaznaczenia obiega kawałek cudzego okna, a to, co w środku,
+   robi się tekstem. */
+
+.gart-marquee {
+  stroke-dasharray: 6 5;
+  animation: marquee-draw 3.6s var(--ease) infinite, marquee-march 1.4s linear infinite;
+}
+@keyframes marquee-draw {
+  0%,
+  10% {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  26%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes marquee-march {
+  to {
+    stroke-dashoffset: -22;
+  }
+}
+.gart-blur-line {
+  animation: blur-out 3.6s var(--ease) infinite;
+}
+@keyframes blur-out {
+  0%,
+  40% {
+    opacity: 0.5;
+  }
+  56%,
+  100% {
+    opacity: 0.12;
+  }
+}
+.gart-read {
+  animation: read-in 3.6s var(--ease) infinite both;
+  transform-origin: left center;
+}
+@keyframes read-in {
+  0%,
+  48% {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+  64%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── 8. Klucz ──
+   Ostatni slajd mówi o jedynej rzeczy, bez której nic nie ruszy. */
+
+.gart-key-turn {
+  animation: key-slide 3.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+@keyframes key-slide {
+  0%,
+  14% {
+    opacity: 0;
+    transform: translateX(-34px);
+  }
+  30% {
+    opacity: 1;
+  }
+  48%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.gart-spark {
+  animation: spark 3.2s var(--ease) infinite;
+  transform-origin: center;
+}
+@keyframes spark {
+  0%,
+  48% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+}
+
+/* Kto wyłączył ruch w systemie, dostaje slajdy bez ruchu. Rysunki są
+   czytelne także w spoczynku — animacja dokłada im tempo, nie treść. */
+@media (prefers-reduced-motion: reduce) {
+  #guide *,
+  #guide *::before,
+  #guide *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Niskie okno: rysunek ustępuje miejsca tekstowi, bo to on niesie treść. */
+@media (max-height: 700px) {
+  .guide__art {
+    --art-h: 150px;
+  }
+  .guide__slide {
+    padding: var(--s-6) var(--s-8) var(--s-4);
+  }
+  .guide__foot {
+    padding: var(--s-3) var(--s-8) var(--s-5);
+  }
+}
