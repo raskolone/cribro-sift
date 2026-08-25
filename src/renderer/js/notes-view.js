@@ -957,10 +957,38 @@
         }
       });
 
-      /* Naciśnięcie przycisku paska nie ma zabierać zaznaczenia z tekstu. */
+      /* Naciśnięcie przycisku paska nie ma zabierać zaznaczenia z tekstu —
+         inaczej „B" pogrubiałoby to, co przed chwilą było zaznaczone, albo
+         nic. Dotyczy to nie tylko samego formatowania: godzina wstawia się
+         w miejscu kursora, a menu bloków i wyrównania i tak zaraz coś z tym
+         kursorem zrobią. */
+      const KEEPS_CARET = '[data-format], [data-note-act="stamp"], [data-note-act="block-menu"], [data-note-act="align-menu"]';
       root.addEventListener("mousedown", (event) => {
-        if (event.target.closest("[data-format]")) event.preventDefault();
+        if (event.target.closest(KEEPS_CARET)) event.preventDefault();
       });
+
+      /* Escape zamyka otwarte menu paska — i robi to PRZED resztą okna,
+         bo tam Escape jest ostatnią warstwą (chowa okno do paska menu),
+         a menu jest warstwą wierzchnią. Stąd faza przechwytywania: nasłuch
+         w js/app.js siedzi w fazie bąbelkowania i został zapisany wcześniej,
+         więc bez tego zdążyłby schować okno spod otwartego menu.
+
+         Zużyty klawisz zaznaczamy przez preventDefault — tamten nasłuch
+         sprawdza to u siebie i wtedy się nie odzywa. */
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key !== "Escape" || event.defaultPrevented) return;
+          const open = MENUS.some((id) => {
+            const menu = root.querySelector(id);
+            return menu && !menu.hidden;
+          });
+          if (!open) return;
+          event.preventDefault();
+          closeMenus();
+        },
+        true,
+      );
 
       document.addEventListener("selectionchange", () => {
         if (editor && document.activeElement === root.querySelector("#noteText")) {

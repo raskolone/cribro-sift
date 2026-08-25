@@ -113,11 +113,23 @@
           box-shadow var(--t);
         padding: 0;
       }
-      #badge:hover {
+      /* Podniesienie pod kursorem rysuje ATRYBUT, nie :hover. Kursor
+         chodzi tu nad oknem, które raz po raz przestaje łapać mysz
+         (przepuszczanie kliknięć), więc przeglądarkowy stan najechania
+         gaśnie i wraca w środku ruchu — a razem z nim od nowa startuje
+         przejście z odbiciem. Widać to jako szarpnięcie znaczka przy
+         samym zbliżeniu ręki. Kto ustawia atrybut, patrz setNear
+         w js/widget.js. */
+      #stage[data-near="true"] #badge {
         transform: translate(-50%, -50%) scale(1.08);
         border-color: var(--accent-55);
       }
-      #badge[data-drag="true"] {
+      /* Spod #stage, nie wprost z #badge: reguła podniesienia (wyżej) też
+         siedzi pod #stage i przy słabszym zapisie przeciągany znaczek
+         zostawałby powiększony jak pod kursorem — bo pod kursorem wtedy
+         jest. Przeciąganie ma być bez odbicia i bez przejścia: znaczek
+         trzyma się ręki. */
+      #stage[data-drag="true"] #badge {
         cursor: grabbing;
         transform: translate(-50%, -50%) scale(1.04);
         transition: none;
@@ -139,7 +151,7 @@
         transform: translate(-50%, -50%) scale(calc(1 + var(--level, 0) * 0.22));
         animation: badge-pulse 1.25s var(--ease) infinite;
       }
-      #badge[data-state="listening"]:hover {
+      #stage[data-near="true"] #badge[data-state="listening"] {
         transform: translate(-50%, -50%) scale(calc(1.08 + var(--level, 0) * 0.2));
       }
       /* Dwa pierścienie zamiast jednego i szeroko: ma być widać z drugiego

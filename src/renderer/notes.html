@@ -16,11 +16,27 @@
     <canvas id="constellation"></canvas>
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
-        <symbol id="i-format" viewBox="0 0 24 24">
-          <path d="M3 18 8 6l5 12M4.6 14.4h6.8" fill="none" stroke="currentColor" stroke-width="1.7"
+        <symbol id="i-heading" viewBox="0 0 24 24">
+          <path d="M5.5 5.5v13M14 5.5v13M5.5 12h8.5" fill="none" stroke="currentColor"
+                stroke-width="1.9" stroke-linecap="round" />
+          <path d="M17.5 18.5v-6.6l2.6 2" fill="none" stroke="currentColor" stroke-width="1.5"
                 stroke-linecap="round" stroke-linejoin="round" />
-          <path d="M15.5 18v-6.2h2.9a1.9 1.9 0 0 1 0 3.8h-2.9m0 0h3.2a1.9 1.9 0 0 1 0 3.8h-3.2"
-                fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        </symbol>
+        <symbol id="i-list" viewBox="0 0 24 24">
+          <path d="M9 6.5h11M9 12h11M9 17.5h11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          <circle cx="4.6" cy="6.5" r="1.4" fill="currentColor" />
+          <circle cx="4.6" cy="12" r="1.4" fill="currentColor" />
+          <circle cx="4.6" cy="17.5" r="1.4" fill="currentColor" />
+        </symbol>
+        <symbol id="i-todo" viewBox="0 0 24 24">
+          <path d="M11 6.5h9M11 12h9M11 17.5h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          <rect x="2.6" y="4.5" width="4.8" height="4.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <path d="M3.2 12.4 4.7 14l2.6-2.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          <rect x="2.6" y="15.4" width="4.8" height="4.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5" />
+        </symbol>
+        <symbol id="i-quote" viewBox="0 0 24 24">
+          <path d="M5 5.5v13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+          <path d="M9.5 8h10M9.5 12h10M9.5 16h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".75" />
         </symbol>
         <symbol id="i-bold" viewBox="0 0 24 24">
           <path d="M7.5 5.5h5.6a3.6 3.6 0 0 1 0 7.2H7.5V5.5Zm0 7.2h6.4a3.9 3.9 0 0 1 0 7.8H7.5v-7.8Z"
@@ -72,9 +88,15 @@
           <path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.9"
                 stroke-linecap="round" stroke-linejoin="round" />
         </symbol>
+        <!-- Karteczka z zagiętym rogiem. Rysunki w tym pliku niosą fill
+             i stroke same — arkusz nadaje im wyłącznie rozmiar. Bez tych
+             dwóch atrybutów karteczka wychodziła CZARNĄ PLAMĄ: domyślne
+             `fill` w SVG to czerń, a nie „nic". -->
         <symbol id="i-sticky" viewBox="0 0 24 24">
-          <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5V14l-6 6H5.5A1.5 1.5 0 0 1 4 18.5z" />
-          <path d="M20 14h-4.5a1.5 1.5 0 0 0-1.5 1.5V20" />
+          <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5V14l-6 6H5.5A1.5 1.5 0 0 1 4 18.5z"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+          <path d="M20 14h-4.5a1.5 1.5 0 0 0-1.5 1.5V20"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
         </symbol>
         <symbol id="i-pin" viewBox="0 0 24 24">
           <path d="M9 3.5h6l-.8 5.2 3 2.6v2.2H6.8v-2.2l3-2.6L9 3.5ZM12 13.5V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />
@@ -135,40 +157,97 @@
       </button>
 
       <main id="editor">
+        <!-- ══ PASEK NOTATKI ══
+
+             Jedenaście przycisków w jednym nieprzerwanym rzędzie to była
+             ściana, przez którą trzeba się było przebić wzrokiem: „B"
+             sąsiadowało z koszem, a jedno kółko („Aв") chowało w sobie
+             nagłówki, listy, cytat i wyrównanie naraz — czyli wszystko,
+             po co sięga się przy pisaniu.
+
+             Teraz pasek czyta się w trzech grupach, rozdzielonych kreską,
+             i to jest cała zmiana:
+
+               PISZĘ      pogrubienie, kursywa, nagłówki, listy, cytat,
+                          wyrównanie, godzina — rzeczy działające na tekst
+                          pod kursorem.
+               NOTATKA    przesianie, osobne okienko, wierzch, przypięcie,
+                          udostępnienie — rzeczy działające na całość.
+               KASOWANIE  osobno, za własną kreską i na końcu, bo jako
+                          jedyne jest nieodwracalne.
+
+             Listy, cytat i wyrównanie wyszły z menu na wierzch: to są
+             czynności robione w trakcie pisania i sięganie po nie przez
+             rozwijane menu kosztowało dwa kliknięcia zamiast jednego.
+             W menu zostało to, co rzadsze i co potrzebuje nazwy —
+             nagłówki, składanie i linia rozdzielająca.
+
+             Pasek jest ten sam co w zakładce Notatki w oknie głównym
+             (patrz notes__bar w js/notes-view.js) i to nie przypadek:
+             ta sama notatka wygląda w obu miejscach tak samo. -->
         <header class="editor__bar">
           <div class="editor__meta" id="meta"></div>
           <div class="editor__tools">
             <button class="tool" id="dictate" title="Dyktuj prosto do tej notatki">
               <svg><use href="#i-mic" /></svg><span>Dyktuj</span>
             </button>
-            <button class="icon-btn" id="stamp" title="Wstaw godzinę (⌘T)"><svg><use href="#i-clock" /></svg></button>
-            <button class="icon-btn" data-format="bold" title="Pogrubienie (⌘B)"><svg><use href="#i-bold" /></svg></button>
-            <button class="icon-btn" data-format="italic" title="Kursywa (⌘I)"><svg><use href="#i-italic" /></svg></button>
+
+            <span class="editor__sep"></span>
+
+            <button class="icon-btn" data-format="bold" title="Pogrubienie (⌘B)"
+                    aria-label="Pogrubienie"><svg><use href="#i-bold" /></svg></button>
+            <button class="icon-btn" data-format="italic" title="Kursywa (⌘I)"
+                    aria-label="Kursywa"><svg><use href="#i-italic" /></svg></button>
             <div class="menu-wrap">
-              <button class="icon-btn" id="format" title="Formatowanie"><svg><use href="#i-format" /></svg></button>
+              <button class="icon-btn" id="format" title="Nagłówki i bloki"
+                      aria-label="Nagłówki i bloki" aria-expanded="false">
+                <svg><use href="#i-heading" /></svg>
+              </button>
               <div class="menu" id="formatMenu" hidden>
                 <button data-format="h1"><span>Nagłówek 1</span><kbd>⌘⇧1</kbd></button>
                 <button data-format="h2"><span>Nagłówek 2</span><kbd>⌘⇧2</kbd></button>
                 <button data-format="h3"><span>Nagłówek 3</span><kbd>⌘⇧3</kbd></button>
+                <div class="menu__sep"></div>
                 <button data-format="toggle"><span>Nagłówek składany</span><kbd>⌘⇧E</kbd></button>
-                <div class="menu__sep"></div>
-                <button data-format="bold"><span>Pogrubienie</span><kbd>⌘B</kbd></button>
-                <button data-format="italic"><span>Kursywa</span><kbd>⌘I</kbd></button>
-                <div class="menu__sep"></div>
-                <button data-format="bullet"><span>Lista</span><kbd>⌘⇧8</kbd></button>
-                <button data-format="todo"><span>Lista zadań</span><kbd>⌘⇧9</kbd></button>
-                <button data-format="quote"><span>Cytat</span><kbd>⌘⇧'</kbd></button>
                 <button data-format="divider"><span>Linia rozdzielająca</span><kbd>⌘⇧-</kbd></button>
-                <div class="menu__sep"></div>
+              </div>
+            </div>
+            <button class="icon-btn" data-format="bullet" title="Lista (⌘⇧8)"
+                    aria-label="Lista"><svg><use href="#i-list" /></svg></button>
+            <button class="icon-btn" data-format="todo" title="Lista zadań (⌘⇧9)"
+                    aria-label="Lista zadań"><svg><use href="#i-todo" /></svg></button>
+            <button class="icon-btn" data-format="quote" title="Cytat (⌘⇧')"
+                    aria-label="Cytat"><svg><use href="#i-quote" /></svg></button>
+            <div class="menu-wrap">
+              <button class="icon-btn" id="align" title="Wyrównanie tekstu"
+                      aria-label="Wyrównanie tekstu" aria-expanded="false">
+                <svg><use href="#i-align" /></svg>
+              </button>
+              <div class="menu" id="alignMenu" hidden>
                 <button data-align="left"><span>Do lewej</span></button>
                 <button data-align="center"><span>Wyśrodkowany</span></button>
                 <button data-align="right"><span>Do prawej</span></button>
                 <button data-align="justify"><span>Wyjustowany</span><kbd>⌘⇧J</kbd></button>
               </div>
             </div>
-            <button class="icon-btn" id="siftNote" title="Przesiej całą notatkę"><svg><use href="#i-sieve" /></svg></button>
+            <button class="icon-btn" id="stamp" title="Wstaw godzinę (⌘T)"
+                    aria-label="Wstaw godzinę"><svg><use href="#i-clock" /></svg></button>
+
+            <span class="editor__sep"></span>
+
+            <button class="icon-btn" id="siftNote" title="Przesiej całą notatkę"
+                    aria-label="Przesiej całą notatkę"><svg><use href="#i-sieve" /></svg></button>
+            <button class="icon-btn" id="detach" title="Otwórz w osobnym okienku"
+                    aria-label="Otwórz w osobnym okienku"><svg><use href="#i-window" /></svg></button>
+            <button class="icon-btn" id="widgetPin" title="Widoczna w widgecie"
+                    aria-label="Widoczna w widgecie"><svg><use href="#i-sticky" /></svg></button>
+            <button class="icon-btn" id="pin" title="Przypnij"
+                    aria-label="Przypnij"><svg><use href="#i-pin" /></svg></button>
             <div class="menu-wrap">
-              <button class="icon-btn" id="share" title="Udostępnij"><svg><use href="#i-share" /></svg></button>
+              <button class="icon-btn" id="share" title="Udostępnij"
+                      aria-label="Udostępnij" aria-expanded="false">
+                <svg><use href="#i-share" /></svg>
+              </button>
               <div class="menu" id="shareMenu" hidden>
                 <button data-share="apple">Wyślij do Notatek Apple</button>
                 <button data-share="notion">Wyślij do Notion</button>
@@ -180,10 +259,11 @@
                 <button data-share="file">Zapisz jako plik .md…</button>
               </div>
             </div>
-            <button class="icon-btn" id="detach" title="Otwórz w osobnym okienku"><svg><use href="#i-window" /></svg></button>
-            <button class="icon-btn" id="widgetPin" title="Widoczna w widgecie"><svg><use href="#i-sticky" /></svg></button>
-            <button class="icon-btn" id="pin" title="Przypnij"><svg><use href="#i-pin" /></svg></button>
-            <button class="icon-btn icon-btn--danger" id="del" title="Usuń notatkę"><svg><use href="#i-trash" /></svg></button>
+
+            <span class="editor__sep"></span>
+
+            <button class="icon-btn icon-btn--danger" id="del" title="Usuń notatkę"
+                    aria-label="Usuń notatkę"><svg><use href="#i-trash" /></svg></button>
           </div>
         </header>
 

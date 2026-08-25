@@ -338,11 +338,27 @@ body.is-solo #detach {
   text-transform: uppercase;
   color: var(--text-mute);
 }
+/* Pasek czyta się w grupach, nie po jednym przycisku (patrz komentarz przy
+   nim w notes.html). W wąskim okienku pojedynczej notatki zawija się
+   i wtedy kreski robią drugą robotę: pokazują, gdzie kończy się grupa,
+   której wiersz nie pomieścił. */
 .editor__tools {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
   -webkit-app-region: no-drag;
+}
+
+/* Kreska między grupami. Cieńsza i krótsza niż sam przycisk — ma rozdzielać,
+   a nie dzielić pasek na kratki. */
+.editor__sep {
+  flex: none;
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--line-strong);
 }
 
 .icon-btn {
@@ -376,7 +392,24 @@ body.is-solo #detach {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
+/* Włączone widać na przycisku — tak samo jak w edytorze tekstu, w którym
+   „B" zostaje wciśnięte, dopóki kursor stoi w pogrubieniu. Obwódka jest tu
+   ważniejsza niż tło: samo tło przy ciemnym motywie ledwie się odcinało
+   i nie dawało się odróżnić od zwykłego najechania kursorem. To samo
+   dotyczy dwóch przełączników notatki („na wierzchu", „przypięta"),
+   które o stanie notatki mówią wyłącznie tym jednym znakiem. */
 .icon-btn[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-12);
+  border-color: var(--accent-30);
+}
+.icon-btn[aria-pressed="true"]:hover {
+  background: var(--accent-15);
+  color: var(--accent-soft);
+}
+/* Otwarte menu zostaje podświetlone, dopóki jest otwarte — inaczej nie
+   widać, spod którego przycisku wyszło. */
+.icon-btn[aria-expanded="true"] {
   color: var(--accent);
   background: var(--accent-08);
 }
@@ -586,6 +619,11 @@ body.is-solo #detach {
 }
 .menu button:hover {
   background: var(--accent-08);
+  color: var(--accent);
+}
+/* Bieżące wyrównanie zaznaczone w menu — bez tego trzeba by zgadywać,
+   które z czterech jest teraz włączone. */
+.menu button[aria-pressed="true"] {
   color: var(--accent);
 }
 .menu__sep {

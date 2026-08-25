@@ -345,8 +345,8 @@ const EN = {
   "Pulpit — wszystkie kartki": "Desktop — every card",
   "Kliknięcie w znaczek rozwija przy nim listę notatek z wierzchu, a wybrana wychodzi z niej kartką. Wszystko w jednym rogu ekranu i wszystko znika razem ze znaczkiem.":
     "Clicking the badge unfolds the list of notes on top right next to it, and the note you pick comes out of it as a card. All in one corner of the screen, and all of it goes away with the badge.",
-  "Każda notatka z wierzchu dostaje własną kartkę na pulpicie — jak karteczki przyklejone do ekranu. Kartki leżą tam, gdzie je położysz, skalują się do wielkości ekranu i chowają się wszystkie naraz, jednym kliknięciem w znaczek.":
-    "Every note on top gets its own card on the desktop — like sticky notes on the screen. The cards stay where you put them, scale to the size of the screen and hide all at once, with a single click on the badge.",
+  "Każda notatka z wierzchu dostaje własną kartkę na pulpicie — jak karteczki przyklejone do ekranu. Kartki leżą tam, gdzie je położysz, zmieniają rozmiar uchwytem w rogu i zostają nad wszystkimi oknami, także po przełączeniu pulpitu. Schodzą z wierzchu tylko na wyraźny gest: kliknięcie w znaczek albo Escape — wszystkie naraz.":
+    "Every note on top gets its own card on the desktop — like sticky notes on the screen. The cards stay where you put them, resize by the grip in the corner and stay above every window, across desktops too. They come off the top only on a deliberate gesture: a click on the badge or Escape — all of them at once.",
   "Otwórz w Notatniku": "Open in the Notepad",
   "Zdejmij z wierzchu": "Take off the top",
   "Pokazuj widget": "Show the widget",

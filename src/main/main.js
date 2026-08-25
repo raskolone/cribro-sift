@@ -607,7 +607,10 @@ function applyDockIcon(show) {
      BEZ FOKUSU        dopóki się w niego nie kliknie. Znaczek, który
                        zabiera kursor z pola, w którym ktoś pisze, jest
                        szkodnikiem.
-     MAŁY              zwinięty widget to okno 76 na 76 pikseli i nic więcej.
+     MAŁY              widać z niego jedno kółko o średnicy sześćdziesięciu
+                       pikseli. Okno jest większe — mieści zwiniętą tacę,
+                       żeby jej rozłożenie nie musiało go ruszać — ale poza
+                       znaczkiem jest przezroczyste i na wylot klikalne.
 
    OKNO ZMIENIA ROZMIAR, zamiast być cały czas duże i przezroczyste.
    Pierwsza wersja trzymała stałe okno 340×500 z przezroczystą resztą —
@@ -637,6 +640,10 @@ const WIDGET_PANEL_MIN = { width: 208, height: 196 };
 const WIDGET_PANEL_MAX = { width: 560, height: 760 };
 const WIDGET_GAP = 14; // odstęp znaczek ↔ panel
 
+/* Pole samego znaczka: kółko z aureolą. Od czasu, gdy znaczek i taca dzielą
+   jedno okno (patrz placeWidget), nie jest to już rozmiar zwiniętego okna —
+   jest to rozmiar startowy i miara, od której liczy się `half`, czyli jak
+   daleko od krawędzi ekranu wolno postawić środek znaczka. */
 const WIDGET_COLLAPSED = {
   width: WIDGET_BADGE + WIDGET_HALO * 2,
   height: WIDGET_BADGE + WIDGET_HALO * 2,
@@ -771,7 +778,10 @@ function createWidget() {
   });
 
   widget.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  widget.setAlwaysOnTop(true, "floating");
+  /* Warstwę WYŻEJ niż kartki na pulpicie, a te leżą na „floating".
+     Znaczek jest jedynym, czym się talię zbiera — kartka przeciągnięta na
+     niego nie może go przykryć, bo wtedy nie ma już czym jej schować. */
+  widget.setAlwaysOnTop(true, "floating", 1);
   widget.setIgnoreMouseEvents(true, { forward: true });
   widget.loadFile(path.join(__dirname, "..", "renderer", "widget.html"));
   widget.on("closed", () => {
@@ -879,6 +889,14 @@ function placeWidget(anchor, view, dirHint = null) {
       view,
       ax: widgetAnchorIn.x,
       ay: widgetAnchorIn.y,
+      /* Kotwica na EKRANIE, nie w oknie. Renderer nie ma skąd jej znać —
+         a potrzebuje jej dokładnie w jednej chwili: gdy okno już zmieniło
+         rozmiar, a odpowiedź z nową kotwicą wewnątrzokienną jeszcze do niego
+         nie dojechała. Ze współrzędnej ekranowej odejmuje wtedy własne
+         `window.screenX` i znaczek zostaje tam, gdzie stał (patrz „resize"
+         w renderer/js/widget.js). */
+      sx: Math.round(cx),
+      sy: Math.round(cy),
       badge: WIDGET_BADGE,
       tray,
       panelW: size.width,
@@ -893,14 +911,31 @@ function placeWidget(anchor, view, dirHint = null) {
     };
   };
 
-  if (view === "badge") {
-    return settle(WIDGET_COLLAPSED, { x: half, y: half }, { dir: "up" });
-  }
+  /* ══ ZNACZEK I TACA MAJĄ JEDNO OKNO ══
 
-  /* Taca. Okno rośnie WYŁĄCZNIE w te strony, w które taca naprawdę wychodzi
-     — po pozostałych zostaje sam znaczek z aureolą. Okno symetryczne byłoby
+     I to jest lekarstwo na przeskok, który było widać przy samym zbliżeniu
+     kursora do znaczka. Zwinięty widget był wcześniej oknem 104 na 104
+     piksele, a najechanie rozciągało je do rozmiaru tacy — w te strony,
+     w które taca wychodzi, czyli przy prawej krawędzi ekranu W LEWO.
+     Razem z rozmiarem zmieniało się więc miejsce znaczka WEWNĄTRZ okna
+     (--ax skakało z 52 na 190).
+
+     Te dwie zmiany nie dzieją się jednocześnie: okno przestawia proces
+     główny natychmiast, a nową kotwicę renderer dostaje dopiero odpowiedzią
+     na IPC. Przez klatkę albo dwie znaczek był narysowany sto trzydzieści
+     osiem pikseli obok miejsca, w którym stał — i wracał. Dokładnie to
+     wyglądało jak szarpnięcie animacji.
+
+     Okno ma więc rozmiar tacy także wtedy, gdy taca jest zwinięta.
+     Nic to nie zasłania: poza znaczkiem jest przezroczyste i przepuszcza
+     kliknięcia na wylot (patrz widget:passthrough), a rozłożenie tacy jest
+     od tej pory samym atrybutem w rendererze — bez ruszania okna, bez
+     zapytania do procesu głównego i bez ani jednej klatki czekania.
+
+     Okno rośnie WYŁĄCZNIE w te strony, w które taca naprawdę wychodzi —
+     po pozostałych zostaje sam znaczek z aureolą. Okno symetryczne byłoby
      o połowę większe i o tę połowę bardziej zasłaniało cudzą pracę. */
-  if (view === "tray") {
+  if (view === "badge" || view === "tray") {
     const up = tray.dir === "up" ? trayReach : half;
     const down = tray.dir === "down" ? trayReach : half;
     const left = tray.side === "left" ? traySide : half;
@@ -1050,6 +1085,13 @@ let deckOpen = false;
 let deckGen = 0;
 
 const deckMode = () => (store.getSettings().widget?.mode ?? "compact") === "desk";
+
+/* Talia leży w osobnych oknach, a znaczek musi wiedzieć, czy leży — to po
+   nim widać, że jest co zbierać, i to on decyduje, co zrobi kolejne
+   kliknięcie. Escape na kartce chowa całą talię, a wtedy znaczek nie ma
+   skąd się o tym dowiedzieć: nie on o to prosił. Stąd jedna wiadomość
+   wysyłana z KAŻDEGO miejsca, które talię otwiera albo chowa. */
+const tellDeck = () => broadcast("deck:changed", { open: deckOpen });
 
 /** Notatki na wierzchu, w tej samej kolejności co na liście widgetu. */
 function deckNotes() {
@@ -1364,24 +1406,39 @@ function createStickyWindow(note, bounds) {
     focusable: true,
     acceptFirstMouse: true,
     skipTaskbar: true,
-    /* ══ KARTKA NIE JEST NAD WSZYSTKIM ══
+    /* ══ KARTKA JEST NAD WSZYSTKIM, DOPÓKI SIĘ JEJ NIE SCHOWA ══
 
-       I to jest różnica między nią a znaczkiem. Kartka leży na pulpicie jak
-       karteczka przyklejona do biurka: kliknięcie w cudze okno przykrywa ją
-       tak samo, jak przykryłoby każdą inną kartkę. Notatka wisząca nad
-       arkuszem, w którym ktoś właśnie pracuje, przestaje być notatką i robi
-       się przeszkodą — a leżą ich na pulpicie po kilka naraz.
+       Wcześniej było odwrotnie: kartka leżała na pulpicie jak karteczka
+       przyklejona do biurka i kliknięcie w cudze okno przykrywało ją tak
+       samo, jak przykryłoby każdą inną. Brzmiało to uczciwie, a w pracy
+       znaczyło, że notatka odłożona na wierzch znikała przy pierwszym
+       przełączeniu okna — czyli dokładnie wtedy, gdy zaczynała być
+       potrzebna. Plan dnia, numer i zdanie do zapamiętania odkłada się na
+       wierzch po to, żeby były widoczne PRZY pracy w czymś innym.
 
-       Nad wszystkim zostaje WYŁĄCZNIE widget, bo on jest jednym kółkiem
-       i bo to on te kartki zbiera. Gdyby schodził pod cudze okna razem
-       z nimi, nie byłoby czym ich zawołać. */
-    alwaysOnTop: false,
+       Kartki zostają więc na wierzchu i schodzą z niego tylko na wyraźny
+       gest — kliknięcie w znaczek albo Escape. Nic innego ich nie zdejmuje:
+       ani kliknięcie w cudze okno, ani przełączenie pulpitu. Talia jest
+       widoczna albo jej nie ma, a o tym, które z dwojga, decyduje człowiek.
+
+       Znaczek stoi warstwę wyżej (patrz createWidget) — inaczej kartka
+       przeciągnięta na niego przykryłaby jedyną rzecz, którą się ją
+       chowa. */
+    alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, "..", "preload", "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  /* „Na wierzchu" ma znaczyć na wierzchu wszędzie: także na drugim pulpicie
+     i nad cudzym oknem rozwiniętym na pełny ekran. Kartka, która gubi się
+     przy przełączeniu przestrzeni, wraca do bycia oknem, którego trzeba
+     szukać — a wtedy równie dobrze mogłaby być zwykłą notatką w Notatniku.
+     Poziom „floating" jest o warstwę niżej niż znaczek, patrz createWidget. */
+  win.setAlwaysOnTop(true, "floating");
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   win.deckScale = deckScaleAt(bounds);
   win.loadFile(path.join(__dirname, "..", "renderer", "sticky.html"), {
@@ -1418,6 +1475,7 @@ function openDeck() {
   const notes = deckNotes();
   if (!notes.length) {
     deckOpen = false;
+    tellDeck();
     return false;
   }
 
@@ -1453,6 +1511,7 @@ function openDeck() {
     else fold();
   });
 
+  tellDeck();
   return true;
 }
 
@@ -1464,6 +1523,7 @@ function openDeck() {
 function hideDeck() {
   const gen = ++deckGen;
   deckOpen = false;
+  tellDeck();
   const windows = [...stickyWindows.values()].filter((win) => !win.isDestroyed() && win.isVisible());
 
   windows.forEach((win, index) => {
@@ -1491,6 +1551,31 @@ function closeDeck() {
   deckOpen = false;
   for (const win of stickyWindows.values()) if (!win.isDestroyed()) win.destroy();
   stickyWindows.clear();
+  tellDeck();
+}
+
+/**
+ * Escape zdejmuje kartki z wierzchu — także wtedy, gdy nikt nie patrzy
+ * w okno Cribro.
+ *
+ * Kartki leżą nad cudzą pracą, więc muszą dać się zdjąć stamtąd, gdzie się
+ * właśnie pracuje: bez szukania znaczka i bez sięgania po mysz. To jest ta
+ * druga połowa umowy o Escape — pierwszą, tę wewnątrz naszych okien,
+ * obsługuje każde okno u siebie (patrz „Escape" w renderer/js/*.js).
+ *
+ * WARUNEK JEST JEDEN i pilnuje granicy między tymi połowami: robimy to
+ * tylko wtedy, gdy fokusu nie ma żadne nasze okno. Inaczej Escape w kartce
+ * albo w Notatniku zdejmowałby dwie warstwy naraz — swoją i talię.
+ *
+ * Drogę do tego klawisza daje uiohook, czyli zgoda „Dostępność" (patrz
+ * onEscape w main/hotkeys.js). Bez niej Escape działa w oknach Cribro
+ * i tyle; zabranie go całemu systemowi na stałe zamykałoby cudze okna
+ * dialogowe zamiast naszych kartek.
+ */
+function escapeElsewhere() {
+  if (!deckOpen) return;
+  if (BrowserWindow.getFocusedWindow()) return;
+  hideDeck();
 }
 
 /**
@@ -1556,6 +1641,7 @@ function syncDeck() {
 
   if (!notes.length) {
     deckOpen = false;
+    tellDeck();
     return;
   }
   if (notes.some((note) => !stickyWindows.get(note.id)?.isVisible())) openDeck();
@@ -2283,6 +2369,7 @@ function bindHotkeys() {
     onStart: startCapture,
     onStop: stopCapture,
     onCancel: cancelCapture,
+    onEscape: escapeElsewhere,
     isRecording: () => state === "listening",
   });
   const backend = hotkeys.start(store.getSettings().hotkey);
@@ -2702,6 +2789,15 @@ function registerIpc() {
   ipcMain.handle("deck:show", (_e, show) => (show ? openDeck() : hideDeck()));
   ipcMain.handle("deck:state", () => ({ open: deckOpen, count: deckNotes().length }));
 
+  /* Escape w oknie, które samo nie ma już czego zdjąć. Talia jest ostatnią
+     warstwą przed schowaniem okna, więc pytanie brzmi „czy było co chować" —
+     odpowiedź decyduje, czy Escape ma iść dalej. */
+  ipcMain.handle("deck:escape", () => {
+    if (!deckOpen) return false;
+    hideDeck();
+    return true;
+  });
+
   /* Kartka melduje, że skończyła się zwijać — dopiero teraz jej okno może
      zniknąć. Numer rozdania odsiewa meldunki z talii, która w międzyczasie
      zdążyła wrócić na pulpit. */
@@ -2721,7 +2817,10 @@ function registerIpc() {
     stickyWindows.get(id)?.destroy();
     stickyWindows.delete(id);
     forgetCard(id);
-    if (!deckNotes().length) deckOpen = false;
+    if (!deckNotes().length) {
+      deckOpen = false;
+      tellDeck();
+    }
     return true;
   });
 

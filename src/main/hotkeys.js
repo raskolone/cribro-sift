@@ -20,6 +20,8 @@ const { globalShortcut, systemPreferences } = require("electron");
  *                   dwa razy, ten chciał wolnych rąk.
  *
  *   ESC             przerywa nagranie i je kasuje. Nic nie idzie do transkrypcji.
+ *                   A gdy nic nie trwa — melduje się przez onEscape i to
+ *                   proces główny decyduje, co zdjąć (kartki z pulpitu).
  *
  * O tym, czy stuknięcie było stuknięciem, decyduje czas: krócej niż
  * ARM_MS to stuknięcie, dłużej — trzymanie. Dzięki temu oba sposoby
@@ -45,10 +47,15 @@ const ARM_MS = 220; // poniżej tego progu to stuknięcie, powyżej — trzymani
 const DOUBLE_TAP_MS = 450; // ile czasu ma drugie stuknięcie
 
 class HotkeyEngine {
-  constructor({ onStart, onStop, onCancel, isRecording }) {
+  constructor({ onStart, onStop, onCancel, onEscape, isRecording }) {
     this.onStart = onStart;
     this.onStop = onStop;
     this.onCancel = onCancel;
+    /* Escape, którego nie ma co przerywać. Wysyłamy go dalej, bo poza
+       nagraniem jest jeszcze jedna rzecz, która leży na wierzchu cudzej
+       pracy i musi dać się zdjąć bez sięgania po mysz — kartki na pulpicie.
+       Co z tym zrobić, wie proces główny; tutaj jest tylko klawiatura. */
+    this.onEscape = onEscape ?? (() => {});
     // Nagranie mogło ruszyć przyciskiem w oknie albo z widgetu — Escape
     // ma je przerywać tak samo, więc pytamy o stan aplikacji, nie tylko o swój.
     this.isRecording = isRecording ?? (() => false);
@@ -185,10 +192,20 @@ class HotkeyEngine {
     const comboComplete = () => keys.every((codes) => codes.some((code) => this.down.has(code)));
 
     uIOhook.on("keydown", (event) => {
-      // Escape kasuje nagranie razem z dźwiękiem — nic nie idzie dalej.
-      if (event.keycode === ESC && this.recording) {
-        this.#reset();
-        this.onCancel();
+      if (event.keycode === ESC) {
+        // Escape kasuje nagranie razem z dźwiękiem — nic nie idzie dalej.
+        if (this.recording) {
+          this.#reset();
+          this.onCancel();
+          return;
+        }
+        /* Nagrania nie ma, więc Escape należy do kogoś innego. Podglądamy
+           go tylko — uiohook nie zabiera klawisza aplikacji, w której go
+           naciśnięto, więc Escape w cudzym oknie dalej robi tam swoje.
+           Bez zgody „Dostępność" tej drogi nie ma i zostaje Escape
+           w oknach Cribro; zabranie klawisza całemu systemowi na stałe
+           byłoby lekarstwem gorszym od choroby. */
+        this.onEscape();
         return;
       }
 

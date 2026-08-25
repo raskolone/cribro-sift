@@ -378,9 +378,18 @@ if (!window.cribro) {
        się tak samo jak w aplikacji. */
     deck: (() => {
       let open = false;
+      const tell = (value) => (emit("deck:changed", { open: value }), value);
       return {
-        toggle: async () => (open = !open),
-        show: async (next) => (open = !!next),
+        toggle: async () => tell((open = !open)),
+        show: async (next) => tell((open = !!next)),
+        // Escape zdejmuje talię i mówi, czy było co zdejmować — po tej
+        // odpowiedzi okno poznaje, czy Escape ma iść dalej.
+        escape: async () => {
+          if (!open) return false;
+          tell((open = false));
+          return true;
+        },
+        onChange: on("deck:changed"),
         state: async () => {
           const all = await window.cribro.notes.get();
           return { open, count: all.filter((note) => note.widget).length };

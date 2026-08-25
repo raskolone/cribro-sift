@@ -1126,7 +1126,7 @@ function renderWidgetCard() {
           <span>
             ${
               desk
-                ? "Każda notatka z wierzchu dostaje własną kartkę na pulpicie — jak karteczki przyklejone do ekranu. Kartki leżą tam, gdzie je położysz, zmieniają rozmiar uchwytem w rogu i chowają się wszystkie naraz, jednym kliknięciem w znaczek. Nie pływają nad innymi oknami: kliknięcie w cudze okno przykrywa je tak samo jak każdą inną kartkę."
+                ? "Każda notatka z wierzchu dostaje własną kartkę na pulpicie — jak karteczki przyklejone do ekranu. Kartki leżą tam, gdzie je położysz, zmieniają rozmiar uchwytem w rogu i zostają nad wszystkimi oknami, także po przełączeniu pulpitu. Schodzą z wierzchu tylko na wyraźny gest: kliknięcie w znaczek albo Escape — wszystkie naraz."
                 : "Kliknięcie w znaczek rozwija przy nim listę notatek z wierzchu, a wybrana wychodzi z niej kartką. Wszystko w jednym rogu ekranu i wszystko znika razem ze znaczkiem."
             }
           </span>
@@ -2169,8 +2169,9 @@ document.addEventListener("keydown", (event) => {
   if (event.target.id === "probeText") commandAction({ dataset: { act: "cmd-probe" } });
 });
 
-/* Escape ma tu trzy zadania i kolejność między nimi jest ustalona: najpierw
-   przerywa to, co trwa, a dopiero gdy nie ma czego przerwać — zamyka okno.
+/* Escape ma tu cztery zadania i kolejność między nimi jest ustalona: najpierw
+   przerywa to, co trwa, potem zdejmuje to, co leży na wierzchu, a dopiero
+   gdy nie ma już czego zdjąć — zamyka okno.
 
    1. NAGRANIE. Kasuje je w całości, bez transkrypcji i bez wpisu. Silnik
       skrótu łapie Escape globalnie; to jest droga na wypadek, gdy fokus
@@ -2178,7 +2179,11 @@ document.addEventListener("keydown", (event) => {
    2. PISANIE. Pierwszy Escape wychodzi z pola, dopiero drugi zamyka okno —
       odruchowe „escape" w środku notatki nie ma prawa sprzątnąć okna sprzed
       nosa. Zmiany i tak są zapisane, ale zniknięcie okna to zaskoczenie.
-   3. OKNO. Chowa się do paska menu, nie znika: aplikacja żyje dalej i czeka
+   3. KARTKI NA PULPICIE. Leżą nad wszystkim i schodzą z wierzchu wyłącznie
+      na wyraźny gest — Escape jest tym gestem tak samo jak kliknięcie
+      w znaczek. Przed oknem, bo talia jest wierzchnią warstwą: schowanie
+      okna zostawiłoby ją na ekranie.
+   4. OKNO. Chowa się do paska menu, nie znika: aplikacja żyje dalej i czeka
       na skrót. Wraca przez znaczek w pasku, ⌘Tab albo Dock.
 
    Rzeczy, które Escape obsługują same u siebie (przepisywanie tytułu na
@@ -2190,7 +2195,7 @@ const isEditing = (node) =>
     node.tagName === "TEXTAREA" ||
     node.tagName === "SELECT");
 
-document.addEventListener("keydown", (event) => {
+document.addEventListener("keydown", async (event) => {
   if (event.key !== "Escape" || event.defaultPrevented) return;
   event.preventDefault();
 
@@ -2202,6 +2207,9 @@ document.addEventListener("keydown", (event) => {
     document.activeElement.blur();
     return;
   }
+  // Talia mieszka w innych oknach, więc o to, czy w ogóle leży, pyta się
+  // proces główny — odpowiedź „nie było czego chować" przepuszcza Escape dalej.
+  if (await api.deck.escape()) return;
   api.system.close();
 });
 

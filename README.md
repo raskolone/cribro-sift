@@ -199,10 +199,19 @@ sięgnięciu było skutkiem ubocznym, nie odpowiedzią na kliknięcie.
 
 **Escape zamyka okno.** Zdejmuje jednak po jednej warstwie, od wierzchu:
 najpierw otwarte menu, potem trwające nagranie, potem pisanie w polu (pierwszy
-Escape wychodzi z pola, dopiero drugi zamyka), a na końcu samo okno. Odruchowe
-„escape" w środku notatki nie ma prawa sprzątnąć okna sprzed nosa. Okno główne
-**chowa się do paska menu**, nie znika — aplikacja czeka dalej na skrót.
-Notatnik i pojedyncza notatka zamykają się na dobre; notatka jest zapisana.
+Escape wychodzi z pola, dopiero drugi zamyka), potem **kartki leżące na
+pulpicie**, a na końcu samo okno. Odruchowe „escape" w środku notatki nie ma
+prawa sprzątnąć okna sprzed nosa. Okno główne **chowa się do paska menu**,
+nie znika — aplikacja czeka dalej na skrót. Notatnik i pojedyncza notatka
+zamykają się na dobre; notatka jest zapisana.
+
+Ta sama umowa obowiązuje **wszędzie**: Escape zamyka szybką notatkę, okienko
+tekstu z ekranu i każde inne okno dialogowe, a kartki z pulpitu zdejmuje
+także wtedy, gdy fokus siedzi w **cudzej aplikacji** — bo tam się właśnie
+pracuje, gdy one leżą na wierzchu. Ta ostatnia droga wymaga zgody
+**„Dostępność"**: bez niej Cribro nie widzi Escape'u spoza własnych okien,
+a zabranie tego klawisza całemu systemowi na stałe zamykałoby cudze okna
+dialogowe zamiast naszych kartek.
 
 Pas boczny w oknie **zwija się do samych ikon** — uchwyt pojawia się na jego
 krawędzi, gdy kursor wejdzie w okno. Tak samo zwija się **lista notatek**:
@@ -415,20 +424,32 @@ na końcu otwartej notatki jako nowy akapit, zamiast wklejać go pod kursor.
 Sam przycisk jest wtedy wskaźnikiem stanu — „Słucham…", potem „Przesiewam…".
 Tekst trafia też do schowka.
 
-**Pasek narzędzi notatki:**
+**Pasek narzędzi notatki** czyta się w **trzech grupach**, rozdzielonych
+kreską, i ten podział jest całą jego instrukcją: co działa na tekst pod
+kursorem, co na całą notatkę, a co jest nieodwracalne.
 
-| Przycisk | Co robi |
-| --- | --- |
-| Dyktuj | nagrywa i dopisuje przesiany tekst na końcu notatki |
-| B · I | pogrubienie · kursywa |
-| H | menu bloków: nagłówek 1, 2, 3, nagłówek składany, linia rozdzielająca |
-| listy · cytat | lista, lista zadań, cytat |
-| Linie | wyrównanie tekstu: do lewej, do środka, do prawej, wyjustowane |
-| Zegar (⌘T) | wstawia bieżącą godzinę w miejscu kursora |
-| Sito | przepuszcza **całą** notatkę przez sito; można cofnąć |
-| Okno | otwiera tę notatkę w osobnym okienku |
-| Pinezka | przypina notatkę do przegródki „Przypięte" na górze listy |
-| Udostępnij | Notatki Apple · Notion · kopiuj tekst · kopiuj jako Markdown · zapisz PDF · zapisz .md |
+| Grupa | Przycisk | Co robi |
+| --- | --- | --- |
+| | Dyktuj | nagrywa i dopisuje przesiany tekst na końcu notatki |
+| **Piszę** | B · I | pogrubienie · kursywa |
+| | H | menu bloków: nagłówek 1, 2, 3, nagłówek składany, linia rozdzielająca |
+| | listy · cytat | lista, lista zadań, cytat |
+| | Linie | wyrównanie tekstu: do lewej, do środka, do prawej, wyjustowane |
+| | Zegar (⌘T) | wstawia bieżącą godzinę w miejscu kursora |
+| **Notatka** | Sito | przepuszcza **całą** notatkę przez sito; można cofnąć |
+| | Okno | otwiera tę notatkę w osobnym okienku |
+| | Karteczka | „Widoczna w widgecie" — kładzie notatkę na wierzchu |
+| | Pinezka | przypina notatkę do przegródki „Przypięte" na górze listy |
+| | Udostępnij | Notatki Apple · Notion · kopiuj tekst · kopiuj jako Markdown · zapisz PDF · zapisz .md |
+| **Osobno** | Kosz | kasuje notatkę |
+
+Kosz stoi za własną kreską i na samym końcu, bo jako jedyny w tym pasku
+jest nieodwracalny — a wcześniej sąsiadował z pinezką. Dwa przełączniki
+(„na wierzchu", „przypięta") mówią o stanie notatki jednym znakiem, więc
+włączone dostają **obwódkę w kolorze wiodącym**, nie samo przyciemnione
+tło: tło przy ciemnym motywie nie odróżniało się od zwykłego najechania
+kursorem. Ten sam pasek stoi w Notatniku i w zakładce Notatki — ta sama
+notatka wygląda w obu miejscach tak samo.
 
 Pod paskiem stoi **metryczka notatki**: w której szufladzie leży i czego
 dotyczy. To nie są czynności, więc nie ma ich w pasku — pasek jest od tego,
@@ -1002,14 +1023,15 @@ Trzy zachowania, które wynikają z tego, po co widget jest:
 | Rzecz | Jak działa | Dlaczego |
 | --- | --- | --- |
 | **Fokus** | znaczek go nie bierze; kartka bierze, gdy się w nią kliknie | znaczek, który zabiera kursor z pola, w którym ktoś pisze, jest szkodnikiem |
-| **Nad wszystkim** | znaczek zawsze; kartki na pulpicie nie | znaczek trzeba mieć pod ręką, a notatka nie ma zasłaniać cudzej pracy |
+| **Nad wszystkim** | znaczek i kartki na pulpicie — zawsze, także po przełączeniu pulpitu | notatkę odkłada się na wierzch po to, żeby była widoczna **przy** pracy w czymś innym; znikająca przy pierwszym przełączeniu okna przestawała być notatką na wierzchu |
+| **Chowanie kartek** | tylko na wyraźny gest: kliknięcie w znaczek albo Escape | talia leży albo jej nie ma — i o tym, które z dwojga, decyduje człowiek, a nie to, w co akurat kliknął |
 | **Lista** | zamyka się, gdy uwaga idzie gdzie indziej | lista jest menu, a menu zamykają się przy kliknięciu obok |
 | **Kartka** | zostaje otwarta, także gdy pracujesz w innej aplikacji | to jest cały jej sens: dopisać zdanie bez opuszczania tego, przy czym się siedzi |
 
 **Escape** zdejmuje po jednej warstwie, tak samo jak w Notatniku: najpierw
 trwające nagranie, potem kartka, potem lista albo taca — a w widoku pulpitowym
-cała talia naraz. Mikrofon w pasku kartki dyktuje
-prosto do niej — ta sama droga co „Dyktuj" w Notatniku.
+cała talia naraz, także z klawiatury w cudzej aplikacji. Mikrofon w pasku
+kartki dyktuje prosto do niej — ta sama droga co „Dyktuj" w Notatniku.
 
 **Panel wychodzi w tę stronę, w którą jest miejsce.** Nie jedna stała strona:
 widget postawiony u góry ekranu rozwija się w dół, przy dolnej krawędzi w górę,
@@ -1019,11 +1041,28 @@ genie idzie razem z panelem: szyjka zawsze zostaje przy znaczku, choćby kartka
 wychodziła w lewo.
 
 Okno widgetu **zmienia rozmiar**, zamiast być cały czas duże i przezroczyste.
-Zwinięty widget to okno 76 na 76 pikseli. Pierwsza wersja trzymała stałe okno
-340×500 i miała wadę nie do obejścia: skoro znaczek siedział u jego dołu, to
-nie dało się go postawić wyżej niż 440 pikseli od górnej krawędzi ekranu.
-Teraz stała jest **kotwica** — środek znaczka — a okno układa się wokół niej
-i samo decyduje, czy kartka wychodzi w górę, czy w dół.
+Pierwsza wersja trzymała stałe okno 340×500 i miała wadę nie do obejścia:
+skoro znaczek siedział u jego dołu, to nie dało się go postawić wyżej niż 440
+pikseli od górnej krawędzi ekranu. Teraz stała jest **kotwica** — środek
+znaczka — a okno układa się wokół niej i samo decyduje, czy kartka wychodzi
+w górę, czy w dół.
+
+**Znaczek i zwinięta taca dzielą jedno okno** i to nie jest oszczędność, tylko
+lekarstwo na przeskok, który było widać przy samym zbliżeniu kursora. Okno
+tacy rośnie w tę stronę, w którą taca wychodzi — przy prawej krawędzi ekranu
+w lewo — więc razem z jego rozmiarem zmieniało się miejsce znaczka **wewnątrz**
+okna. Okno przestawia proces główny natychmiast, a nową kotwicę renderer
+dostawał dopiero odpowiedzią; przez klatkę albo dwie znaczek był narysowany
+sto trzydzieści osiem pikseli obok i wracał. Teraz najechanie kursorem nie
+rusza okna wcale: rozłożenie tacy jest samym atrybutem w rendererze. Poza
+znaczkiem okno jest przezroczyste i przepuszcza kliknięcia na wylot, więc
+większy prostokąt niczego nie zasłania.
+
+Podniesienie znaczka pod kursorem liczy się **z prostokąta, nie z `:hover`** —
+z tego samego powodu, dla którego liczy się tak rozłożenie tacy. Przepuszczanie
+kliknięć włącza się i wyłącza w trakcie ruchu ręki, a razem z nim okno raz po
+raz przestaje dostawać zdarzenia myszy: przeglądarka gubiła wtedy stan
+najechania i zaczynała przejście od nowa, w połowie poprzedniego.
 
 Sama szyba ma **256 na 320 pikseli** — o piątą część mniej niż pierwsze
 320×400. Tamta zajmowała ćwiartkę wysokości ekranu i zasłaniała okno, obok
@@ -1370,6 +1409,9 @@ scripts/         testy, zrzuty ekranu, ikona
   notes-test.js     kształt notatki przy dopisywaniu z dyktowania
   editor-test.js    Markdown ↔ sformatowany tekst, tam i z powrotem
                     (nagłówki, kreska, nagłówek składany)
+  toolbar-test.js   paski narzędzi i ikony w szablonach: rysunek bez fill
+                    (czarna plama), odwołanie do nieistniejącego symbolu,
+                    grupy paska notatki, menu bez przycisku
   sync-test.js      dwa „komputery" nad atrapą serwera: spór, kasowanie, kursor
   genie-test.js     sylwetka animacji widgetu: prostokąt na końcu, brak drgnięć
   oauth-test.js     logowanie przez Google bez Google: adres, kod, PKCE, odmowa

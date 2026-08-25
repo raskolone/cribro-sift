@@ -120,6 +120,28 @@
     stage.style.setProperty("--panel-h", `${next.panelH}px`);
   }
 
+  /* ══ ZNACZEK NIE PRZESKAKUJE PRZY ZMIANIE ROZMIARU OKNA ══
+
+     Zmiana widoku to dwie rzeczy naraz: proces główny przestawia okno
+     (rozmiar i róg), a renderer przesuwa znaczek wewnątrz okna o tyle samo
+     w drugą stronę. Na ekranie znaczek ma przez to stać w miejscu.
+
+     Tyle że te dwie rzeczy przychodzą osobno. Okno zmienia się natychmiast,
+     a nowa kotwica dopiero odpowiedzią na IPC — i przez klatkę albo dwie
+     znaczek jest narysowany tam, gdzie stał WZGLĘDEM STAREGO okna, czyli
+     kilkadziesiąt pikseli obok. To był ten przeskok.
+
+     Zdarzenie „resize" przychodzi w rendererze w tej samej klatce, w której
+     okno naprawdę urosło, i jeszcze przed rysowaniem. Skoro znamy kotwicę
+     w układzie EKRANU (sx, sy — liczy ją proces główny), to wystarczy odjąć
+     od niej bieżące położenie okna i znaczek siada tam, gdzie ma stać,
+     nie czekając na odpowiedź. */
+  window.addEventListener("resize", () => {
+    if (!Number.isFinite(geom.sx) || !Number.isFinite(geom.sy)) return;
+    stage.style.setProperty("--ax", `${geom.sx - window.screenX}px`);
+    stage.style.setProperty("--ay", `${geom.sy - window.screenY}px`);
+  });
+
   /* ── Genie ──────────────────────────────────────────────────────
      Sylwetkę liczy js/genie.js — osobno, bo to czysta geometria i da się
      ją sprawdzić bez przeglądarki (scripts/genie-test.js). Tutaj zostaje
@@ -179,7 +201,7 @@
   }
 
   /* Stan okna, o który prosimy proces główny. Widoków jest cztery, rozmiarów
-     okna trzy: lista i kartka mieszczą się w tym samym. */
+     okna DWA: znaczek dzieli okno ze zwiniętą tacą, a lista z kartką. */
   const layout = async (next) => applyGeometry(await api.widget.layout(next));
 
   /**
@@ -196,9 +218,20 @@
    */
   async function toBadge() {
     if (busy || view === "badge") return;
-    busy = true;
 
-    const fold = { list: 260, tray: 300, sticky: 0 }[view] ?? 0;
+    /* Taca mieszka w tym samym oknie co znaczek, więc jej zwinięcie jest
+       samym zdjęciem atrybutu: nie ma czego kurczyć i nie ma na co czekać.
+       Wcześniej stało tu trzysta milisekund zwłoki na animację i dopiero
+       potem zmiana rozmiaru okna — przez ten czas widget był `busy`
+       i ręka wracająca na znaczek nie miała czego otworzyć. */
+    if (view === "tray") {
+      setView("badge");
+      api.widget.release();
+      return void settleHover();
+    }
+
+    busy = true;
+    const fold = view === "list" ? 260 : 0;
     if (view === "sticky") {
       await flushSave();
       await animate(1, 0, 260, easeIn);
@@ -213,15 +246,12 @@
     void settleHover();
   }
 
-  /** Taca. Okno rośnie PRZED rozłożeniem kółek — inaczej wyjeżdżałyby poza
-      jego krawędź i widać by było tylko połowę ruchu. */
-  async function toTray() {
+  /** Taca. Okno jest już na nią gotowe (patrz placeWidget w main/main.js),
+      więc rozłożenie kółek jest samym atrybutem — bez pytania procesu
+      głównego i bez ani jednej klatki, w której znaczek stoi obok siebie. */
+  function toTray() {
     if (busy || view !== "badge") return;
-    busy = true;
-    await layout("tray");
     setView("tray");
-    busy = false;
-    void settleHover();
   }
 
   async function toList() {
@@ -568,17 +598,39 @@
   /* Co liczy się jako „kursor na nas". Prostokąty, nie :hover — przy
      włączonym przepuszczaniu kliknięć elementy nie dostają zdarzeń wejścia,
      a to właśnie wtedy trzeba wiedzieć, że kursor już tu jest. */
+  const inBox = (r, x, y) =>
+    x >= r.left - HOVER_PAD &&
+    x <= r.right + HOVER_PAD &&
+    y >= r.top - HOVER_PAD &&
+    y <= r.bottom + HOVER_PAD;
+
   function overUs(x, y) {
     const boxes = [badge.getBoundingClientRect()];
     if (view === "tray") for (const slot of slots) boxes.push(slot.getBoundingClientRect());
     if (view === "list" || view === "sticky") boxes.push(panel.getBoundingClientRect());
-    return boxes.some(
-      (r) =>
-        x >= r.left - HOVER_PAD &&
-        x <= r.right + HOVER_PAD &&
-        y >= r.top - HOVER_PAD &&
-        y <= r.bottom + HOVER_PAD,
-    );
+    return boxes.some((r) => inBox(r, x, y));
+  }
+
+  /* ══ PODNIESIENIE ZNACZKA LICZYMY SAMI, NIE Z :hover ══
+
+     Znaczek rośnie pod kursorem — i to powiększenie też potrafiło szarpać.
+     Powód jest ten sam, dla którego wyżej stoją prostokąty zamiast :hover:
+     przepuszczanie kliknięć włącza się i wyłącza w trakcie ruchu ręki,
+     a razem z nim okno raz po raz przestaje dostawać zdarzenia myszy.
+     Przeglądarka gubi wtedy stan najechania i zakłada go z powrotem —
+     a przejście z odbiciem (--t-lift) startuje przy każdym takim zgubieniu
+     od nowa, w połowie poprzedniego ruchu.
+
+     Ten sam rachunek co przy tacy daje stan, który się nie miga. Sam
+     znaczek, nie cała taca: kursor stojący na kółku tacy nie jest powodem,
+     żeby podnosić znaczek. */
+  function nearBadge(x, y) {
+    return inBox(badge.getBoundingClientRect(), x, y);
+  }
+
+  function setNear(near) {
+    const value = near ? "true" : "false";
+    if (stage.dataset.near !== value) stage.dataset.near = value;
   }
 
   /* ── Taca pod kursorem ──────────────────────────────────────────
@@ -606,6 +658,7 @@
     if (grab || sizing) return;
     const over = overUs(event.clientX, event.clientY);
     setPassthrough(!over);
+    setNear(nearBadge(event.clientX, event.clientY));
 
     // Przy rozwiniętej szybie taca nie ma nic do roboty: notatki są już na
     // wierzchu, a kółka pod nimi byłyby drugim menu do tego samego.
@@ -630,6 +683,7 @@
   document.addEventListener("mouseleave", () => {
     if (grab || sizing) return;
     setPassthrough(true);
+    setNear(false);
     clearTimeout(leaveTimer);
     hovering = false;
     settleHover();
@@ -676,13 +730,16 @@
       }
     }
     moved = true;
-    api.widget.move({
-      anchor: {
-        x: Math.round(event.screenX - grab.dx),
-        y: Math.round(event.screenY - grab.dy),
-      },
-      dir: geom.dir,
-    });
+    const anchor = {
+      x: Math.round(event.screenX - grab.dx),
+      y: Math.round(event.screenY - grab.dy),
+    };
+    /* Kotwica ekranowa jedzie razem z ręką. Bez tego wpisu zostałaby ta
+       sprzed przeciągnięcia — a to z niej liczy się miejsce znaczka, gdyby
+       okno akurat zmieniło rozmiar (patrz „resize" wyżej). */
+    geom.sx = anchor.x;
+    geom.sy = anchor.y;
+    api.widget.move({ anchor, dir: geom.dir });
   });
 
   badge.addEventListener("pointerup", async (event) => {
@@ -799,6 +856,15 @@
   });
 
   /* ── Wiadomości z procesu głównego ──────────────────────────── */
+
+  /* Talia bywa chowana bez udziału znaczka: Escape'em na kartce albo
+     Escape'em wciśniętym w cudzej aplikacji. Bez tej wiadomości znaczek
+     zostawałby z pamięcią o rozłożonej talii i pierwsze kliknięcie w niego
+     szłoby na nic — chowałby coś, czego już nie ma. */
+  api.deck.onChange?.(({ open } = {}) => {
+    deck = !!open;
+    renderDeck();
+  });
 
   api.notes.onChanged?.(async () => {
     await refresh();

@@ -138,6 +138,12 @@ contextBridge.exposeInMainWorld("cribro", {
     toggle: () => ipcRenderer.invoke("deck:toggle"),
     show: (open) => ipcRenderer.invoke("deck:show", open),
     state: () => ipcRenderer.invoke("deck:state"),
+    /* Escape: schowaj talię, jeśli leży. Odpowiedź mówi, czy było co chować —
+       okno pyta o to, zanim zdejmie następną własną warstwę. */
+    escape: () => ipcRenderer.invoke("deck:escape"),
+    /* Talię chowa się z kilku miejsc — ze znaczka, z kartki, Escape'em spoza
+       aplikacji. Znaczek musi o każdym z nich wiedzieć, bo to on ją zbiera. */
+    onChange: on("deck:changed"),
     // Zamknięcie kartki zdejmuje notatkę z wierzchu — patrz deck:dismiss.
     dismiss: (id) => ipcRenderer.invoke("deck:dismiss", id),
     grabFocus: () => ipcRenderer.send("deck:focus"),

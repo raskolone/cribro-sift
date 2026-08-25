@@ -404,11 +404,20 @@ function refreshFormatState() {
   for (const button of document.querySelectorAll("[data-format]")) {
     button.setAttribute("aria-pressed", String(!!active[button.dataset.format]));
   }
+  /* Nagłówki siedzą w menu, więc bez tego jednego wpisu „stoję w nagłówku"
+     dałoby się zobaczyć dopiero po rozwinięciu menu — czyli po kliknięciu
+     w coś, co miało dopiero powiedzieć, czy warto klikać. */
+  $("#format")?.setAttribute(
+    "aria-pressed",
+    String(!!(active.h1 || active.h2 || active.h3 || active.toggle)),
+  );
   // Wyrównanie nie zależy od kursora — jest cechą notatki, nie zaznaczenia.
   const align = currentNote()?.align ?? "left";
   for (const button of document.querySelectorAll("[data-align]")) {
     button.setAttribute("aria-pressed", String(button.dataset.align === align));
   }
+  // Wyrównanie inne niż domyślne widać na samym przycisku menu.
+  $("#align")?.setAttribute("aria-pressed", String(align !== "left"));
 }
 
 function render() {
@@ -457,7 +466,7 @@ async function newNote() {
 /* Naciśnięcie przycisku paska nie ma zabierać zaznaczenia z tekstu —
    inaczej „B" pogrubiałoby to, co przed chwilą było zaznaczone, albo nic. */
 document.addEventListener("mousedown", (event) => {
-  if (event.target.closest("[data-format]")) event.preventDefault();
+  if (event.target.closest("[data-format], #stamp, #format, #align")) event.preventDefault();
 });
 
 document.addEventListener("selectionchange", () => {
@@ -604,14 +613,14 @@ document.addEventListener("click", async (event) => {
 
   const align = event.target.closest("[data-align]");
   if (align) {
-    $("#formatMenu").hidden = true;
+    closeMenus();
     await setAlign(note, align.dataset.align);
     return;
   }
 
   const picked = event.target.closest("[data-set-folder]");
   if (picked) {
-    $("#folderMenu").hidden = true;
+    closeMenus();
     await setFolder(note, picked.dataset.setFolder);
     return;
   }
@@ -623,15 +632,12 @@ document.addEventListener("click", async (event) => {
   }
 
   if (event.target.closest('[data-act="folder-menu"]')) {
-    const menu = $("#folderMenu");
-    if (menu) menu.hidden = !menu.hidden;
-    $("#shareMenu").hidden = true;
-    $("#formatMenu").hidden = true;
+    toggleMenu("#folderMenu", '[data-act="folder-menu"]');
     return;
   }
 
   if (event.target.closest('[data-act="new-folder"]')) {
-    $("#folderMenu").hidden = true;
+    closeMenus();
     // Nazwa wpisuje się w ten sam przycisk, w którym potem stoi — osobne
     // okienko z pytaniem byłoby trzecim oknem dla jednego słowa.
     const field = $("#noteMeta .folder-btn span");
@@ -647,14 +653,13 @@ document.addEventListener("click", async (event) => {
 
   const share = event.target.closest("[data-share]");
   if (share) {
-    $("#shareMenu").hidden = true;
+    closeMenus();
     await runShare(share.dataset.share, note);
     return;
   }
 
   if (event.target.closest("#share")) {
-    const menu = $("#shareMenu");
-    menu.hidden = !menu.hidden;
+    toggleMenu("#shareMenu", "#share");
     return;
   }
 
@@ -668,26 +673,55 @@ document.addEventListener("click", async (event) => {
   }
 });
 
+/* ── Menu paska ─────────────────────────────────────────────────
+   Cztery menu i jedna zasada dla wszystkich: otwarte jest najwyżej jedno,
+   a przycisk, spod którego wyszło, zostaje na ten czas podświetlony
+   (aria-expanded — patrz .icon-btn[aria-expanded] w css/notes.css).
+
+   Wspólne miejsce, a nie po jednym warunku przy każdym menu: przy trzech
+   menu wyliczanka „zamknij pozostałe" zdążyła się już rozjechać — jedno
+   zamykało dwa inne i zapominało o trzecim, więc menu szuflady zostawało
+   otwarte pod menu udostępniania. */
+const BAR_MENUS = [
+  ["#formatMenu", "#format"],
+  ["#alignMenu", "#align"],
+  ["#shareMenu", "#share"],
+  ["#folderMenu", '[data-act="folder-menu"]'],
+];
+
+function closeMenus(keep = null) {
+  for (const [menu, button] of BAR_MENUS) {
+    if (menu === keep) continue;
+    const element = $(menu);
+    if (!element) continue;
+    element.hidden = true;
+    $(button)?.setAttribute("aria-expanded", "false");
+  }
+}
+
+function toggleMenu(menu, button) {
+  const element = $(menu);
+  if (!element) return;
+  const open = element.hidden;
+  closeMenus(menu);
+  element.hidden = !open;
+  $(button)?.setAttribute("aria-expanded", String(open));
+}
+
+const anyMenuOpen = () => BAR_MENUS.some(([menu]) => $(menu) && !$(menu).hidden);
+
 /* Menu zamyka się przy kliknięciu obok — inaczej zostaje otwarte
    nad tekstem i zasłania to, co się właśnie pisze. */
 document.addEventListener("click", (event) => {
-  if (!event.target.closest(".menu-wrap")) {
-    $("#shareMenu").hidden = true;
-    $("#formatMenu").hidden = true;
-    const folders = $("#folderMenu");
-    if (folders) folders.hidden = true;
-  }
+  if (!event.target.closest(".menu-wrap")) closeMenus();
 });
 
 document.addEventListener("click", (event) => {
-  if (event.target.closest("#format")) {
-    $("#formatMenu").hidden = !$("#formatMenu").hidden;
-    $("#shareMenu").hidden = true;
-    return;
-  }
+  if (event.target.closest("#format")) return toggleMenu("#formatMenu", "#format");
+  if (event.target.closest("#align")) return toggleMenu("#alignMenu", "#align");
   const item = event.target.closest("[data-format]");
   if (item) {
-    $("#formatMenu").hidden = true;
+    closeMenus();
     applyFormat(item.dataset.format);
   }
 });
@@ -722,10 +756,13 @@ document.addEventListener("keydown", (event) => {
 api.notes.onNew?.(() => newNote());
 
 /* Escape zdejmuje po jednej warstwie, od wierzchu: otwarte menu, potem
-   trwające nagranie, potem pisanie w polu, a na końcu — gdy nie ma już czego
-   przerwać — samo okno. Notatka jest przy tym zapisana; okno jest ostatnie
-   właśnie dlatego, że odruchowe „escape" w środku pisania nie może go
-   sprzątnąć sprzed nosa. */
+   trwające nagranie, potem pisanie w polu, potem kartki leżące na pulpicie,
+   a na końcu — gdy nie ma już czego przerwać — samo okno. Notatka jest przy
+   tym zapisana; okno jest ostatnie właśnie dlatego, że odruchowe „escape"
+   w środku pisania nie może go sprzątnąć sprzed nosa.
+
+   Kartki idą przed oknem, bo leżą NAD nim: schowanie okna zostawiłoby je
+   na ekranie i Escape wyglądałby na klawisz, który zrobił połowę rzeczy. */
 const editingNow = () => {
   const node = document.activeElement;
   return (
@@ -737,17 +774,13 @@ const editingNow = () => {
   );
 };
 
-function onEscape() {
-  const folders = $("#folderMenu");
-  if (!$("#shareMenu").hidden || !$("#formatMenu").hidden || (folders && !folders.hidden)) {
-    $("#shareMenu").hidden = true;
-    $("#formatMenu").hidden = true;
-    if (folders) folders.hidden = true;
-    return;
-  }
+async function onEscape() {
+  if (anyMenuOpen()) return closeMenus();
   // Escape kasuje nagranie w całości — także to zamówione z notatki.
   if (state.runtime === "listening") return api.system.cancelCapture?.();
   if (editingNow()) return document.activeElement.blur();
+  // Talia leży w innych oknach, więc pyta się o nią proces główny.
+  if (await api.deck.escape()) return;
   api.notes.closeWindow();
 }
 
@@ -755,7 +788,7 @@ document.addEventListener("keydown", (event) => {
   // ⌘B i ⌘I obsługuje sam edytor — tu byłoby to drugie przełączenie.
   if (event.defaultPrevented) return;
   if (!event.metaKey) {
-    if (event.key === "Escape") onEscape();
+    if (event.key === "Escape") void onEscape();
     return;
   }
   if (event.key === "n") {
