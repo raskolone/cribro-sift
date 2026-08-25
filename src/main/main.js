@@ -1028,6 +1028,37 @@ function widgetAnchor() {
   return { x: x + widgetAnchorIn.x, y: y + widgetAnchorIn.y };
 }
 
+/* ══ OKNEM RUSZYŁ PROCES GŁÓWNY — TRZEBA O TYM POWIEDZIEĆ ══
+
+   Renderer zna swoje miejsce w oknie wyłącznie z ODPOWIEDZI na własne
+   żądanie (widget:layout). Gdy oknem rusza proces główny — po zmianie
+   układu ekranów albo po „Przywróć na miejsce" — takiego żądania nie ma
+   i nie ma czym odpowiedzieć.
+
+   To NIE jest kosmetyka. Znaczek rysuje się na kotwicy wewnątrzokiennej,
+   a okno przycina swoją zawartość (overflow: hidden w widget.html). Przy
+   większym skoku — a odłączenie monitora jest właśnie takim skokiem —
+   znaczek ląduje poza oknem i znika z ekranu w całości: okno stoi tam,
+   gdzie trzeba, jest widoczne i nieprzezroczyste, tylko puste. Dlatego
+   świeża geometria idzie tu sama, bez pytania. */
+function tellWidget(spot) {
+  if (spot && widget && !widget.isDestroyed()) widget.webContents.send("widget:geometry", spot);
+  return spot;
+}
+
+/**
+ * Znaczek po zmianie układu ekranów.
+ *
+ * Monitor można odłączyć w każdej chwili — także ten, na którym stoi
+ * znaczek. Współrzędnych, na których został, nie ma wtedy na żadnym
+ * ekranie. Wracamy więc kotwicą w obszar roboczy najbliższego ekranu
+ * (robi to samo przyklamrowanie w placeWidget) i mówimy o tym rendererowi.
+ */
+function reflowWidget() {
+  if (!widget || widget.isDestroyed()) return;
+  tellWidget(placeWidget(widgetAnchor(), widgetView));
+}
+
 function showWidget(show) {
   if (show) {
     createWidget();
@@ -1082,7 +1113,9 @@ function reopenIsOurs() {
 /** Widget zapamiętany na monitorze, którego już nie ma, wraca na swoje miejsce. */
 function resetWidget() {
   store.saveSettings({ widget: { x: null, y: null } });
-  return placeWidget(widgetHome(), widgetView) ?? true;
+  // O tym przestawieniu prosi okno ustawień, a nie znaczek — więc to on
+  // musi dostać nową geometrię osobno (patrz tellWidget).
+  return tellWidget(placeWidget(widgetHome(), widgetView)) ?? true;
 }
 
 /* ── Kartki na pulpicie ───────────────────────────────────────
@@ -1670,6 +1703,42 @@ function reflowDeck() {
     // inaczej po restarcie kartka wróciłaby na nieistniejący monitor.
     rememberCard(id, win);
   });
+}
+
+/* Ile czekamy, aż macOS skończy przestawiać okna po swojemu. */
+const SCREENS_SETTLE_MS = 400;
+let screensSettle = null;
+
+/**
+ * Jedno wejście na każdą zmianę układu ekranów.
+ *
+ * Powodów jest trzy i wszystkie kończą się tak samo — czymś naszym poza
+ * pulpitem:
+ *
+ *   ODŁĄCZENIE   znaczek i kartki zostają na współrzędnych, których już
+ *                nie ma na żadnym ekranie,
+ *   PODŁĄCZENIE  razem z nowym monitorem przesuwa się początek układu
+ *                współrzędnych i obszar roboczy tego, na którym stoimy,
+ *   ZMIANA EKRANU rozdzielczość, skala, Dock albo pasek menu — obszar
+ *                roboczy kurczy się pod stojącym oknem.
+ *
+ * Znaczek idzie PRZED kartkami, bo to przy jego ekranie się je układa
+ * (patrz reflowDeck) — a zanim wróci, ten ekran wskazuje nieistniejący.
+ *
+ * DRUGIE PRZEJŚCIE PO CHWILI nie jest ostrożnością na zapas: macOS
+ * przestawia okna z odłączonego ekranu PO tym, jak ogłosi zmianę, i potrafi
+ * przesunąć to, co właśnie ustawiliśmy. Zdarzenia przychodzą przy tym
+ * seriami (każdy ekran osobno), więc zwłoka jest jedna na całą serię.
+ */
+function screensChanged() {
+  reflowWidget();
+  reflowDeck();
+  clearTimeout(screensSettle);
+  screensSettle = setTimeout(() => {
+    screensSettle = null;
+    reflowWidget();
+    reflowDeck();
+  }, SCREENS_SETTLE_MS);
 }
 
 /**
@@ -3318,17 +3387,13 @@ if (!app.requestSingleInstanceLock()) {
     if (store.getSettings().widget?.enabled) showWidget(true);
     applyDockIcon(store.getSettings().showInDock !== false);
 
-    // Widget zapamiętany na monitorze, którego już nie ma, wraca w obszar roboczy.
-    screen.on("display-removed", () => widget && placeWidget(widgetAnchor(), widgetView));
-    // To samo z kartkami na pulpicie — z tą różnicą, że jest ich kilka i że
-    // każda musi jeszcze urosnąć albo zmaleć do ekranu, na który wróciła.
-    screen.on("display-removed", reflowDeck);
-    screen.on("display-metrics-changed", reflowDeck);
-    /* Podłączony monitor też przestawia talię — bo razem z nim przestawia
-       się obszar roboczy tego, na którym stoi znaczek (pasek menu, Dock,
-       rozdzielczość zależna od układu). Bez tego kartki zostawały na
-       współrzędnych sprzed podłączenia i część wychodziła poza pulpit. */
-    screen.on("display-added", reflowDeck);
+    /* Znaczek i kartki zapamiętane na monitorze, którego już nie ma, wracają
+       w obszar roboczy — tak samo po podłączeniu monitora i po zmianie
+       samego ekranu. Co dokładnie robi każde z tych zdarzeń i dlaczego
+       wszystkie trzy prowadzą w to samo miejsce: patrz screensChanged. */
+    screen.on("display-removed", screensChanged);
+    screen.on("display-added", screensChanged);
+    screen.on("display-metrics-changed", screensChanged);
 
     if (process.platform === "darwin") {
       systemPreferences.askForMediaAccess("microphone").catch(() => {});

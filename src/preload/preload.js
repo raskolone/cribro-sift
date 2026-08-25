@@ -112,6 +112,10 @@ contextBridge.exposeInMainWorld("cribro", {
     /* Stan okna: "badge", "tray" albo "panel". Każdy ma inny rozmiar, więc
        zmienia go proces główny — w odpowiedzi wraca gotowa geometria. */
     layout: (view) => ipcRenderer.invoke("widget:layout", view),
+    /* Ta sama geometria, ale bez pytania — gdy oknem ruszył proces główny
+       (odłączony monitor, „Przywróć na miejsce"). Bez niej znaczek zostałby
+       narysowany względem starego okna, czyli poza nowym: niewidoczny. */
+    onGeometry: on("widget:geometry"),
     /* Czynności z tacy: dyktowanie, szybka notatka, gęstość sita, język. */
     run: (action) => ipcRenderer.invoke("widget:run", action),
     /* Poziom głosu z HUD-a: znaczek reaguje na mowę, kiedy pigułka HUD-a

@@ -135,11 +135,21 @@
      okno naprawdę urosło, i jeszcze przed rysowaniem. Skoro znamy kotwicę
      w układzie EKRANU (sx, sy — liczy ją proces główny), to wystarczy odjąć
      od niej bieżące położenie okna i znaczek siada tam, gdzie ma stać,
-     nie czekając na odpowiedź. */
+     nie czekając na odpowiedź.
+
+     SKRÓT MA KLAMRĘ i to ona pilnuje, żeby nie zrobił szkody większej niż
+     przeskok, przed którym broni. Działa przy założeniu, że znaczek stoi
+     na ekranie tam, gdzie stał — a to nieprawda dokładnie wtedy, gdy oknem
+     ruszył ktoś inny niż my: po odłączeniu monitora kotwica sprzed zmiany
+     jest o pół pulpitu obok i różnica wypadałaby daleko POZA okno. Okno
+     przycina zawartość, więc znaczek nie przeskoczyłby — po prostu by
+     zniknął. Zaraz potem i tak przychodzi świeża geometria (onGeometry
+     niżej); klamra ma tylko przetrwać te kilka klatek na ekranie. */
   window.addEventListener("resize", () => {
     if (!Number.isFinite(geom.sx) || !Number.isFinite(geom.sy)) return;
-    stage.style.setProperty("--ax", `${geom.sx - window.screenX}px`);
-    stage.style.setProperty("--ay", `${geom.sy - window.screenY}px`);
+    const inside = (value, span) => Math.min(Math.max(value, 0), span);
+    stage.style.setProperty("--ax", `${inside(geom.sx - window.screenX, window.innerWidth)}px`);
+    stage.style.setProperty("--ay", `${inside(geom.sy - window.screenY, window.innerHeight)}px`);
   });
 
   /* ── Genie ──────────────────────────────────────────────────────
@@ -928,6 +938,15 @@
     badge.dataset.state = state;
     if (state !== "listening") stage.style.setProperty("--level", "0");
   });
+
+  /* Geometria, o którą nie prosiliśmy.
+
+     Oknem rusza czasem sam proces główny — po odłączeniu monitora albo po
+     „Przywróć na miejsce" w ustawieniach. Nie ma wtedy żądania, w którego
+     odpowiedzi przyszłaby nowa kotwica, a stara wskazuje miejsce POZA
+     oknem: znaczek jest wtedy rysowany za jego krawędzią i po prostu go
+     nie widać, choć okno stoi na wierzchu, tam gdzie trzeba. */
+  api.widget.onGeometry?.((spot) => applyGeometry(spot));
 
   /* Poziom głosu przychodzi z HUD-a (tylko on ma dostęp do mikrofonu), przez
      proces główny. Po trzech sekundach pigułka HUD-a znika i znaczek jest
