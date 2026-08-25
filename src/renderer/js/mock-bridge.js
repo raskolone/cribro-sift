@@ -348,7 +348,15 @@ if (!window.cribro) {
       show: async () => true,
       settings: async () => ({ enabled: false, x: null, y: null }),
       passthrough: () => {},
-      run: async () => true,
+      /* Pokrętła z tacy działają też w makiecie — bo to po nich widać,
+         że kliknięcie w kółko przestawia ustawienie, a nie otwiera okna. */
+      run: async (action) => {
+        if (action !== "sieve") return true;
+        const order = ["zgrubne", "srednie", "drobne"];
+        settings.mesh = order[(order.indexOf(settings.mesh) + 1) % order.length] ?? order[0];
+        emit("settings:changed", structuredClone(settings));
+        return settings.mesh;
+      },
       onLevel: on("widget:level"),
       // W przeglądarce nie ma okna do zmieniania rozmiaru, więc oddajemy
       // geometrię, jaką ustawiłby proces główny dla widgetu przy dolnej

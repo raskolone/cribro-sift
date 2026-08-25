@@ -289,7 +289,10 @@
      zaczyna nagrywanie i taca nie ma tam czego szukać. */
   async function runAction(action) {
     await api.widget.run(action);
-    if (action === "language") return;
+    /* Pokrętła zostają rozłożone: po przestawieniu chce się zobaczyć wynik,
+       a często kliknąć jeszcze raz. Reszta otwiera okno albo zaczyna
+       nagrywanie i taca nie ma tam czego szukać. */
+    if (action === "language" || action === "sieve") return;
     hovering = false;
     await toBadge();
   }
@@ -360,6 +363,31 @@
      Sam napis niesie też tryb rozpoznawania, więc dymek nie musi go
      powtarzać: para kodów to „dwujęzycznie", jeden kod to „jeden język",
      AUTO to rozpoznawanie. Kliknięcie krąży między tymi trzema. */
+
+  /* ── Gęstość sita na tacy ───────────────────────────────────────
+     Pokrętło o trzech położeniach. Położenie widać po gałce na suwaku,
+     a nazwę i opis niesie dymek — razem tyle, ile mówił widok „Sito"
+     w oknie aplikacji, po które trzeba było wcześniej sięgać. */
+
+  const MESH_ORDER = ["zgrubne", "srednie", "drobne"];
+  const MESH_NAME = { zgrubne: "Zgrubne", srednie: "Średnie", drobne: "Drobne" };
+  /* Opisy jeden w jeden z main/sieve.js — te same zdania stoją w pasku menu
+     i w oknie aplikacji, więc mają już swoje tłumaczenia. */
+  const MESH_HINT = {
+    zgrubne: "Zostaje prawie wszystko. Znikają tylko zacięcia.",
+    srednie: "Czysta wypowiedź, twój głos.",
+    drobne: "Zwięźle i formalnie. Gotowe do wysłania.",
+  };
+
+  function applyMesh(settings) {
+    const mesh = MESH_ORDER.includes(settings.mesh) ? settings.mesh : "srednie";
+    $("#meshMark").setAttribute("href", `#w-mesh-${MESH_ORDER.indexOf(mesh) + 1}`);
+    $("#slotMesh").dataset.mesh = mesh;
+    $("#meshTip").textContent = `${t("Gęstość sita")} — ${t(MESH_NAME[mesh])}`;
+    // Opis idzie w tytuł okna gniazda: dymek ma jedną linijkę, a przy
+    // dłuższym najechaniu system i tak pokaże pełne zdanie.
+    $("#slotMesh").title = `${t(MESH_NAME[mesh])} — ${t(MESH_HINT[mesh])}`;
+  }
 
   function applyLanguage(settings) {
     const language = settings.language ?? {};
@@ -914,6 +942,7 @@
     setLanguage(settings.uiLanguage ?? "pl");
     await applyMode(settings.widget?.mode);
     applyLanguage(settings);
+    applyMesh(settings);
     renderList();
     translateTree();
   });
@@ -927,6 +956,7 @@
     stage.dataset.mode = mode;
     buildPalette();
     applyLanguage(settings);
+    applyMesh(settings);
     await layout("badge");
     paintGenie(0);
     await refresh();

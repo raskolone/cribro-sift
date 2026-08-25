@@ -651,17 +651,23 @@ const WIDGET_COLLAPSED = {
 
 /* ── Taca ──────────────────────────────────────────────────────
 
-   To, co rozkłada się pod znaczkiem po najechaniu kursorem: cztery
-   czynności robione w biegu, kolumną w dół, i ikonka notatek z boku.
+   To, co rozkłada się pod znaczkiem po najechaniu kursorem: pięć rzeczy
+   kolumną w dół i ikonka notatek z boku.
 
    W DÓŁ, a nie w bok jak dawna listwa: znaczek stoi zwykle przy krawędzi
    ekranu, więc w poziomie miejsca nie ma, a w pionie jest go zawsze tyle,
-   ile trzeba na cztery kółka. Przy dolnej krawędzi kolumna wychodzi
+   ile trzeba na kilka kółek. Przy dolnej krawędzi kolumna wychodzi
    w górę — kierunek liczy się z miejsca, tak samo jak przy szybie.
 
-   Ikonka notatek NIE jest piątym kółkiem w kolumnie i to jest celowe:
-   cztery czynności robi się „przy okazji", a notatki się otwiera. Stoi
-   więc osobno, w bok — w stronę, w którą jest miejsce.
+   Kolumna jest uporządkowana od tego, co robi się najczęściej i najszybciej,
+   do tego, co wyprowadza z biegu: dyktowanie, szybka notatka, gęstość sita,
+   język, a na końcu — najdalej od znaczka — okno aplikacji. Ostatnie stoi
+   na końcu, bo jako jedyne otwiera duże okno; przypadkowe kliknięcie ma
+   trafić w cokolwiek innego.
+
+   Ikonka notatek NIE jest kolejnym kółkiem w kolumnie i to jest celowe:
+   czynności robi się „przy okazji", a notatki się otwiera. Stoi więc
+   osobno, w bok — w stronę, w którą jest miejsce.
 
    `room` to miejsce na dymek z nazwą czynności. Bez niego okno ucinałoby
    go na krawędzi, a same ikony nie mówią, co robią — listwa miała te
@@ -669,10 +675,10 @@ const WIDGET_COLLAPSED = {
 const WIDGET_TRAY = {
   item: 34, // średnica kółka z ikoną
   step: 9, // odstęp między kółkami w kolumnie
-  count: 4, // dyktowanie, szybka notatka, gęstość sita, język
+  count: 5, // dyktowanie, szybka notatka, gęstość sita, język, okno aplikacji
   gap: 12, // odstęp od krawędzi znaczka
   tip: 8, // odstęp ikona ↔ dymek
-  room: 144, // najszerszy dymek kolumny („Język dyktowania")
+  room: 168, // najszerszy dymek kolumny („Gęstość sita — Zgrubne")
   roomNotes: 96, // dymek przy notatkach — jedno słowo, więc węższy
   margin: 10, // zapas na powiększenie pod kursorem i na cień
 };
@@ -745,6 +751,12 @@ let widgetView = "badge";
 let widgetDir = "up";
 /** Środek znaczka WEWNĄTRZ okna. Zmienia się przy rozwijaniu i zwijaniu. */
 let widgetAnchorIn = { x: WIDGET_COLLAPSED.width / 2, y: WIDGET_COLLAPSED.height / 2 };
+/* Czy okno widgetu przepuszcza w tej chwili kliknięcia na wylot. Renderer
+   przełącza to za każdym razem, gdy kursor wchodzi na znaczek albo z niego
+   schodzi — czyli „nie przepuszcza" znaczy dokładnie „kursor jest na
+   widgecie". Poza samym ustawieniem okna przydaje się to przy pytaniu,
+   skąd wzięła się aktywacja aplikacji (patrz reopenIsOurs). */
+let widgetPassing = true;
 
 function createWidget() {
   if (widget && !widget.isDestroyed()) return widget;
@@ -1028,6 +1040,43 @@ function showWidget(show) {
     // po wyłączeniu widgetu byłyby oknami, których nie ma czym zamknąć.
     closeDeck();
   }
+}
+
+/**
+ * Czy to „otwórz aplikację", czy tylko kliknięcie w coś, co i tak leży
+ * na wierzchu.
+ *
+ * macOS zgłasza aplikacji jedno zdarzenie („reopen") na kilka bardzo
+ * różnych gestów: kliknięcie ikony w Docku, ponowne uruchomienie i —
+ * zależnie od wersji systemu i od tego, co akurat jest widoczne — samo
+ * uaktywnienie aplikacji. Cribro odpowiada na nie oknem, bo w Docku to
+ * jest właściwa odpowiedź. Kliknięcie w znaczek albo w kartkę leżącą na
+ * pulpicie TEŻ uaktywnia aplikację — i tam ta sama odpowiedź jest
+ * najgorszą z możliwych: na wierzch cudzej pracy wjeżdża okno, po które
+ * nikt nie sięgał.
+ *
+ * Rozstrzyga miejsce kursora, bo ono rozdziela te gesty bez reszty: nie
+ * da się kliknąć ikony w Docku, trzymając kursor na znaczku.
+ */
+function reopenIsOurs() {
+  // Kursor na znaczku albo na jego szybie — renderer mówi to samym faktem,
+  // że kazał oknu przestać przepuszczać kliknięcia.
+  if (widget && !widget.isDestroyed() && widget.isVisible() && !widgetPassing) return true;
+
+  const point = screen.getCursorScreenPoint();
+  for (const win of stickyWindows.values()) {
+    if (win.isDestroyed() || !win.isVisible()) continue;
+    const b = win.getBounds();
+    if (
+      point.x >= b.x &&
+      point.x <= b.x + b.width &&
+      point.y >= b.y &&
+      point.y <= b.y + b.height
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Widget zapamiętany na monitorze, którego już nie ma, wraca na swoje miejsce. */
@@ -2692,8 +2741,17 @@ function registerIpc() {
     placeWidget(widgetAnchor(), ["badge", "tray", "panel"].includes(view) ? view : "badge"),
   );
 
-  /* Czynności z tacy. Wszystkie robi się w biegu i żadna nie otwiera okna
-     dialogowego — widget nie ma fokusu i nie ma go dostać. */
+  /* ══ CZYNNOŚCI Z TACY ══
+
+     Wszystkie robi się W BIEGU i to jest reguła, nie opis: żadna nie ma
+     prawa wywołać okna aplikacji sama z siebie. Taca rozkłada się pod
+     kursorem, więc jej kółka bywają klikane przez pomyłkę — a okno
+     wyskakujące na wierzch cudzej pracy jest najgorszą rzeczą, jaką może
+     zrobić pomyłkowe kliknięcie w coś, co miało tylko przełączyć pokrętło.
+
+     JEDEN WYJĄTEK jest podpisany wprost i po to został dodany: gniazdo
+     „Otwórz Cribro Sift". Okno otwiera się wtedy, gdy ktoś o nie poprosił,
+     a nie przy okazji czegoś innego. */
   ipcMain.handle("widget:run", async (_e, action) => {
     if (action === "dictate") {
       await toggleCapture("widget");
@@ -2711,10 +2769,30 @@ function registerIpc() {
       refreshMenus();
       return shortLabel(settings.language);
     }
-    /* Gęstość sita zostaje w oknie aplikacji — to pokrętło z trzema
-       położeniami i opisem przy każdym, a nie przycisk. */
+    /* Gęstość sita krąży tak samo jak język: zgrubne → średnie → drobne.
+
+       Wcześniej to gniazdo wołało CAŁE OKNO APLIKACJI na widok „Sito"
+       i było jedynym miejscem w tacy, które to robiło — stąd brało się
+       okno wyskakujące „czasem po kliknięciu w widget". Argument za oknem
+       brzmiał: pokrętło ma trzy położenia i opis przy każdym, a to nie
+       mieści się w kółku. Mieści się: położenie widać po gęstości siatki
+       na ikonie, a opis stoi w dymku obok. */
     if (action === "sieve") {
-      createMainWindow().webContents.send("view:go", "sieve");
+      const order = Object.keys(MESH);
+      const now = store.getSettings().mesh;
+      const next = order[(order.indexOf(now) + 1) % order.length] ?? order[0];
+      const settings = store.saveSettings({ mesh: next });
+      broadcast("settings:changed", settings);
+      refreshMenus();
+      return next;
+    }
+
+    /* Okno aplikacji — jedyna droga z tacy do pełnego okna i jedyne
+       gniazdo, które je otwiera. Poza widgetem prowadzi tam znaczek
+       w pasku menu; tutaj jest po to, żeby nie trzeba było celować
+       w pasek, gdy widget stoi na drugim końcu ekranu. */
+    if (action === "app") {
+      createMainWindow();
       return true;
     }
     return false;
@@ -2753,7 +2831,8 @@ function registerIpc() {
   });
 
   ipcMain.on("widget:passthrough", (_e, ignore) => {
-    widget?.setIgnoreMouseEvents(!!ignore, { forward: true });
+    widgetPassing = !!ignore;
+    widget?.setIgnoreMouseEvents(widgetPassing, { forward: true });
   });
 
   /* Przeciąganie liczy renderer, bo tylko on widzi kursor. Przysyła jednak
@@ -3252,7 +3331,10 @@ if (!app.requestSingleInstanceLock()) {
       systemPreferences.askForMediaAccess("microphone").catch(() => {});
     }
 
-    app.on("activate", () => createMainWindow());
+    app.on("activate", () => {
+      if (reopenIsOurs()) return;
+      createMainWindow();
+    });
   });
 
   // Aplikacja żyje w pasku menu. Sam fakt, że ten listener istnieje,

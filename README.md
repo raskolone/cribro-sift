@@ -843,7 +843,7 @@ Widok kompaktowy — jedno okno, trzy stany:
                                           └──────────────┘
 ```
 
-#### Taca — cztery rzeczy robione w biegu
+#### Taca — pięć rzeczy pod znaczkiem
 
 Do niedawna były dwie pływające rzeczy: listwa nad Dockiem od czynności
 i znaczek od notatek. Dwa paski od jednej aplikacji to o jeden za dużo —
@@ -859,26 +859,44 @@ w dół, jedno po drugim, a ikonka notatek w bok:
                      │
                      ◉  dyktuj — ⌃⌥
                      ◉  szybka notatka
-                     ◉  gęstość sita
+                    ▁▄█  gęstość sita
                     PL·EN  język dyktowania
+                     ▭  otwórz Cribro Sift
 ```
 
 Kolumna idzie **w pionie**, bo znaczek stoi zwykle przy krawędzi ekranu i tam
 w poziomie miejsca nie ma. Przy dolnej krawędzi wychodzi w górę, a notatki
 w tę stronę, w którą jest miejsce — kierunek liczy się z położenia, tak samo
-jak przy szybie z notatkami. Kliknięcie w dwuliterowy kod krąży między dwoma
-językami, jednym i rozpoznawaniem automatycznym; taca zostaje wtedy rozłożona,
-bo wynik chce się zobaczyć. Reszta otwiera okno albo zaczyna nagrywanie, więc
-taca chowa się sama.
+jak przy szybie z notatkami.
+
+**Żadne kółko nie wywołuje okna aplikacji samo z siebie** — poza jednym, które
+jest po to podpisane. To nie jest drobiazg: taca rozkłada się sama pod
+kursorem, więc jej kółka bywają klikane przez pomyłkę, a okno wjeżdżające na
+wierzch cudzej pracy jest najgorszą rzeczą, jaką pomyłka może zrobić. Gęstość
+sita otwierała je do niedawna i to od niej brało się „czasem po kliknięciu
+w widget otwiera się cała aplikacja".
+
+Dwa kółka są **pokrętłami** i kliknięcie krąży po ich położeniach: gęstość sita
+(zgrubne → średnie → drobne, stopień widać po trzech słupkach, opis stoi
+w dymku) i język dyktowania (dwa języki → jeden → automat). Taca zostaje przy
+nich rozłożona, bo wynik chce się zobaczyć — a często kliknąć jeszcze raz.
+Reszta zaczyna nagrywanie albo otwiera okno, więc taca chowa się sama.
+
+**Otwórz Cribro Sift** stoi na samym końcu kolumny, najdalej od znaczka, bo
+jako jedyne prowadzi do dużego okna — przypadkowe kliknięcie ma trafić
+w cokolwiek innego. Ta sama droga jest w znaczku w pasku menu; na tacy jest po
+to, żeby nie trzeba było celować w pasek, gdy widget stoi na drugim końcu
+ekranu.
 
 Zejście kursorem **zwija ją po chwili zwłoki** — inaczej uciekałaby spod ręki
 w drodze między kółkami. Zwijanie idzie od końca kolumny i szybciej niż
 rozkładanie: zamykanie ma być mniej widowiskowe, bo dzieje się wtedy, gdy
 uwaga jest już gdzie indziej.
 
-Notatnik, Przesiane i Ustawienia **na tacy nie są** — to otwieranie okien,
-a te siedzą w menu aplikacji, mają klawisze skrótu i są pod ręką tak samo.
-Taca jest od czynności, przy których nie odchodzi się od tego, co się robi.
+Przesiane i Ustawienia **na tacy nie są** — to widoki w oknie, a do samego
+okna prowadzi już jedno kółko; poza tym siedzą w menu aplikacji i mają klawisze
+skrótu. Taca jest od czynności, przy których nie odchodzi się od tego, co się
+robi.
 
 **W czasie nagrywania znaczek jest fioletowy**, pokazuje mikrofon zamiast
 sita, pulsuje dwoma pierścieniami i oddycha z głosem — to on przejmuje pałeczkę

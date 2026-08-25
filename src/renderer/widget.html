@@ -917,11 +917,33 @@
           <path d="M5 9.5h14M5 14.5h14M9.5 4v16M14.5 4v16" opacity=".7" />
         </symbol>
         <!-- Gęstość sita to POKRĘTŁO, nie sito: znak sita nosi już znaczek
-             i dwa takie same rysunki obok siebie znaczyłyby dwie różne rzeczy. -->
-        <symbol id="w-mesh" viewBox="0 0 24 24">
-          <path d="M4 8.5h16M4 15.5h16" />
-          <circle cx="9" cy="8.5" r="2.4" fill="currentColor" stroke="none" />
-          <circle cx="16" cy="15.5" r="2.4" fill="currentColor" stroke="none" />
+             i dwa takie same rysunki obok siebie znaczyłyby dwie różne rzeczy.
+
+             Trzy rysunki, bo pokrętło ma trzy położenia i to położenie jest
+             tu całą treścią: trzy słupki, tyle zapalonych, na którym
+             stopniu stoi sito. Wcześniej ikona była jedna i nie mówiła
+             o ustawieniu nic — po to trzeba było otwierać okno aplikacji.
+
+             Słupki, a nie suwak z gałką: przy szesnastu pikselach szyna
+             suwaka zlewa się z zaczepami w jedną kreskę i widać „kropkę
+             obok kreski", a nie położenie. Trzy słupki różnej wysokości
+             czyta się z tej odległości od razu, tak jak zasięg sieci. -->
+        <symbol id="w-mesh-1" viewBox="0 0 24 24">
+          <path d="M6 18.5v-4" stroke-width="2.6" />
+          <path d="M12 18.5v-8M18 18.5v-12" stroke-width="2.6" opacity=".26" />
+        </symbol>
+        <symbol id="w-mesh-2" viewBox="0 0 24 24">
+          <path d="M6 18.5v-4M12 18.5v-8" stroke-width="2.6" />
+          <path d="M18 18.5v-12" stroke-width="2.6" opacity=".26" />
+        </symbol>
+        <symbol id="w-mesh-3" viewBox="0 0 24 24">
+          <path d="M6 18.5v-4M12 18.5v-8M18 18.5v-12" stroke-width="2.6" />
+        </symbol>
+        <!-- Okno aplikacji. Ten sam znak, którym w Notatniku odrywa się
+             notatkę do własnego okienka — bo znaczy dokładnie to samo. -->
+        <symbol id="w-app" viewBox="0 0 24 24">
+          <rect x="3.5" y="5" width="17" height="14" rx="2.6" />
+          <path d="M3.5 9h17" />
         </symbol>
         <symbol id="w-bolt" viewBox="0 0 24 24">
           <path d="M12.5 4.5H5v15h10v-7.5" />
@@ -1000,15 +1022,25 @@
           <span class="slot__face"><svg><use href="#w-bolt" /></svg></span>
           <span class="tip">Szybka notatka</span>
         </button>
-        <button class="slot" data-do="sieve" style="--i: 2">
-          <span class="slot__face"><svg><use href="#w-mesh" /></svg></span>
-          <span class="tip">Gęstość sita</span>
+        <!-- Gęstość sita. Kliknięcie krąży po trzech położeniach i NIE
+             otwiera okna aplikacji — patrz widget:run w main/main.js. -->
+        <button class="slot" data-do="sieve" id="slotMesh" style="--i: 2">
+          <span class="slot__face"><svg><use href="#w-mesh-2" id="meshMark" /></svg></span>
+          <span class="tip" id="meshTip" data-i18n="skip">Gęstość sita</span>
         </button>
         <!-- Język dyktowania: kliknięcie krąży między dwoma językami,
              jednym i rozpoznawaniem automatycznym. -->
         <button class="slot slot--lang" data-do="language" id="slotLang" style="--i: 3">
           <span class="slot__face" id="langLabel" data-i18n="skip">PL·EN</span>
           <span class="tip">Język dyktowania</span>
+        </button>
+
+        <!-- Jedyne gniazdo, które otwiera duże okno — i dlatego stoi na
+             samym końcu kolumny, najdalej od znaczka. Poza widgetem ta
+             sama droga prowadzi przez znaczek w pasku menu. -->
+        <button class="slot" data-do="app" style="--i: 4">
+          <span class="slot__face"><svg><use href="#w-app" /></svg></span>
+          <span class="tip">Otwórz Cribro Sift</span>
         </button>
 
         <button class="slot slot--notes" id="slotNotes">
