@@ -9,6 +9,13 @@
 
 .prose {
   position: relative;
+  /* Pasek na uchwyt przenoszenia linii. Uchwyt stoi W notatce, nie obok
+     niej — odmierzany od krawędzi tekstu wychodziłby poza kartkę i wyglądał
+     jak rzecz, która się od niej odczepiła. Wartość czyta z tego miejsca
+     js/editor.js, więc zwężenie paska wystarczy zapisać raz: kartka na
+     pulpicie jest wąska i ma go węższy (patrz sticky.html). */
+  --grip-gutter: 26px;
+  padding-left: var(--grip-gutter);
   font-family: var(--font-body);
   font-size: var(--fs-body);
   line-height: 1.75;
@@ -332,6 +339,12 @@
   border-radius: 5px;
   color: var(--text-faint);
   cursor: grab;
+  /* Uchwyt jest chwytem, nie tekstem: nie zaznacza się, nie daje się
+     przeciągnąć jako obrazek i nie jest gestem przewijania. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
   transition: color var(--t-fast), background var(--t-fast);
 }
 .prose-grip:hover,

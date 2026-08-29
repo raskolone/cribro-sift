@@ -1,18 +1,27 @@
 "use strict";
 /**
- * Przenoszenie linii w prawdziwym drzewie.
+ * Przenoszenie linii — prawdziwą myszą, w prawdziwym drzewie.
  *   node scripts/drag-test.js
  *
  * shared/blockmove.js rozstrzyga, CO ma się stać, i sprawdza to
- * scripts/blockmove-test.js bez przeglądarki. Ten test sprawdza drugą
- * połowę: czy js/editor.js robi to, co tamten rozstrzygnął — a to wymaga
- * układu strony, bo szczeliny między liniami są współrzędnymi na ekranie,
- * a nie liczbami w tablicy.
+ * scripts/blockmove-test.js bez przeglądarki. Tutaj sprawdzamy drugą
+ * połowę — czy gest w ogóle dochodzi do skutku.
  *
- * Stąd Electron, nie atrapa drzewa: to jest ten sam Chromium, w którym
- * notatka stoi naprawdę. Test składa stronę wyłącznie z prawdziwych
- * plików źródłowych i steruje edytorem tak, jak steruje nim ręka —
- * zdarzeniami wskaźnika, nie wywołaniem funkcji wewnętrznej.
+ * ── DLACZEGO sendInputEvent, A NIE dispatchEvent ──
+ *
+ * Pierwsza wersja tego testu składała zdarzenia sama, przez
+ * `new PointerEvent(...)` i `dispatchEvent`. Przechodziła w całości przy
+ * funkcji, która NIE DZIAŁAŁA — bo sztuczne zdarzenie omija wszystko, co
+ * w tym geście jest trudne: przechwytywanie wskaźnika, zdarzenia myszy
+ * zgodnościowe i zaznaczanie tekstu, które przeglądarka zaczyna sama.
+ * Sprawdzała więc, czy da się wywołać funkcje edytora — a nie to, czy
+ * chwycenie uchwytu przenosi linię.
+ *
+ * `webContents.sendInputEvent` wpuszcza zdarzenie od góry, tam gdzie wchodzi
+ * ruch prawdziwej myszy. Przechodzi całą drogę przez Chromium i po drodze
+ * robi wszystko to, co robi naprawdę — łącznie z zaznaczaniem, którego ten
+ * gest ma właśnie NIE robić. Stąd osobne sprawdzenie na końcu każdego
+ * przeciągnięcia: czy po puszczeniu myszy nie zostało zaznaczenie.
  */
 
 const assert = require("assert");
@@ -34,7 +43,11 @@ fs.writeFileSync(
   `<!doctype html><html lang="pl"><head><meta charset="utf-8" />
 <link rel="stylesheet" href="${url("src/renderer/css/tokens.css")}" />
 <link rel="stylesheet" href="${url("src/renderer/css/prose.css")}" />
-<style>body{margin:0;padding:40px}#text{width:600px}</style>
+<style>
+  html,body{margin:0;height:100%}
+  body{padding:40px 40px 40px 90px;background:#09101c}
+  #text{width:520px}
+</style>
 </head><body>
 <div id="text" class="prose"></div>
 <script src="${url("src/shared/richtext.js")}"></script>
@@ -43,12 +56,14 @@ fs.writeFileSync(
 </body></html>`,
 );
 
-/* ── Sterowanie ─────────────────────────────────────────────────
-   Wszystko poniżej biegnie W OKNIE, nie tutaj: `drive` dostaje treść
-   notatki i opis ruchu, oddaje Markdown po ruchu. */
+/* ── Co biegnie w oknie ─────────────────────────────────────────
+   Wyłącznie przygotowanie i odczyt. Sam gest robi proces główny, myszą. */
 
-const HARNESS = `
-window.__run = (markdown, move) => {
+const HARNESS = String.raw`
+window.__editor = null;
+window.__inputs = 0;
+
+window.__setup = (markdown) => {
   /* Świeży element na każdy przypadek — tak samo, jak Notatnik przebudowuje
      swój szkielet (root.innerHTML = SKELETON). Element użyty ponownie
      trzymałby nasłuchy poprzedniego edytora i ⌥↓ przesuwałoby linię tyle
@@ -57,87 +72,90 @@ window.__run = (markdown, move) => {
   host.id = "text";
   host.className = "prose";
   document.getElementById("text").replaceWith(host);
-  let inputs = 0;
-  const editor = window.CribroEditor.create(host, { onInput: () => { inputs += 1; } });
-  editor.setMarkdown(markdown);
-
-  const lines = () => {
-    const out = [];
-    for (const block of host.children) {
-      if (block.getAttribute("data-folded") === "true") continue;
-      if (block.tagName === "UL" || block.tagName === "OL") out.push(...block.children);
-      else out.push(block);
-    }
-    return out;
-  };
-
-  const find = (needle) => lines().find((node) => node.textContent.trim() === needle);
-  const point = (type, target, y) =>
-    target.dispatchEvent(new PointerEvent(type, {
-      bubbles: true, cancelable: true, composed: true,
-      pointerId: 1, pointerType: "mouse", button: 0, buttons: type === "pointerup" ? 0 : 1,
-      clientX: 20, clientY: y,
-    }));
-
-  if (move.key) {
-    // Kursor w linii, potem skrót — dokładnie jak przy pisaniu.
-    const line = find(move.grab);
-    const range = document.createRange();
-    range.setStart(line.firstChild || line, 0);
-    range.collapse(true);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-    host.dispatchEvent(new KeyboardEvent("keydown", {
-      key: move.key, altKey: true, bubbles: true, cancelable: true,
-    }));
-  } else {
-    const line = find(move.grab);
-    // 1. kursor wjeżdża na linię — pokazuje się uchwyt
-    point("pointermove", line, line.getBoundingClientRect().top + 4);
-    const grip = document.querySelector(".prose-grip");
-    if (!grip || grip.hidden) return { error: "uchwyt się nie pokazał" };
-
-    // 2. celujemy w krawędź linii docelowej: nad nią albo pod nią
-    const target = find(move.over);
-    const box = target.getBoundingClientRect();
-    const y = move.below ? box.bottom : box.top;
-
-    // 3. chwyt, przeciągnięcie, puszczenie
-    point("pointerdown", grip, box.top);
-    point("pointermove", grip, y);
-    const mark = document.querySelector(".prose-drop");
-    const marked = mark && !mark.hidden;
-    point("pointerup", grip, y);
-    return { markdown: editor.getMarkdown(), inputs, marked };
-  }
-
-  return { markdown: editor.getMarkdown(), inputs };
+  window.__inputs = 0;
+  window.__editor = window.CribroEditor.create(host, { onInput: () => { window.__inputs += 1; } });
+  window.__editor.setMarkdown(markdown);
+  window.getSelection().removeAllRanges();
+  return true;
 };
-/* Wartość ostatniego wyrażenia wraca przez IPC, a funkcji nie da się
-   przesłać („An object could not be cloned”). Stąd zero na końcu. */
+
+window.__lines = () => {
+  const host = document.getElementById("text");
+  const out = [];
+  for (const block of host.children) {
+    if (block.getAttribute("data-folded") === "true") continue;
+    if (block.tagName === "UL" || block.tagName === "OL") out.push(...block.children);
+    else out.push(block);
+  }
+  return out;
+};
+
+window.__find = (needle) =>
+  window.__lines().find((node) => node.textContent.trim() === needle) ?? null;
+
+/** Punkt w środku tekstu linii — tam, gdzie stanie kursor, żeby wywołać uchwyt. */
+window.__onLine = (needle) => {
+  const line = window.__find(needle);
+  if (!line) return null;
+  const box = line.getBoundingClientRect();
+  return { x: Math.round(box.left + 20), y: Math.round(box.top + 6) };
+};
+
+/** Środek uchwytu — o ile w ogóle jest widoczny — i pasek, w którym stoi. */
+window.__grip = () => {
+  const grip = document.querySelector(".prose-grip");
+  if (!grip || grip.hidden) return null;
+  const box = grip.getBoundingClientRect();
+  const host = document.getElementById("text");
+  const note = host.getBoundingClientRect();
+  const gutter = parseFloat(getComputedStyle(host).paddingLeft) || 0;
+  return {
+    x: Math.round(box.left + box.width / 2),
+    y: Math.round(box.top + box.height / 2),
+    left: Math.round(box.left),
+    right: Math.round(box.right),
+    noteLeft: Math.round(note.left),
+    gutter: Math.round(gutter),
+  };
+};
+
+/** Krawędź, w którą celujemy: górna linii docelowej albo jej dolna. */
+window.__edge = (needle, below) => {
+  const line = window.__find(needle);
+  if (!line) return null;
+  const box = line.getBoundingClientRect();
+  return { x: Math.round(box.left + 20), y: Math.round(below ? box.bottom : box.top) };
+};
+
+window.__mark = () => {
+  const mark = document.querySelector(".prose-drop");
+  return !!mark && !mark.hidden;
+};
+
+/** Kursor w pierwszym znaku linii — punkt wyjścia dla ⌥↑ i ⌥↓. */
+window.__caret = (needle) => {
+  const line = window.__find(needle);
+  if (!line) return false;
+  const range = document.createRange();
+  range.setStart(line.firstChild || line, 0);
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(range);
+  document.getElementById("text").focus();
+  return true;
+};
+
+window.__result = () => ({
+  markdown: window.__editor.getMarkdown(),
+  inputs: window.__inputs,
+  // Zaznaczenie po przeciągnięciu znaczy, że gest poszedł w przeglądarkę
+  // zamiast w edytor — i to jest dokładnie ten błąd, którego sztuczne
+  // zdarzenia nie potrafiły zobaczyć.
+  selected: (window.getSelection()?.toString() ?? "").trim(),
+});
 0;
 `;
-
-const MAIN = `
-const { app, BrowserWindow } = require("electron");
-app.disableHardwareAcceleration();
-app.whenReady().then(async () => {
-  const win = new BrowserWindow({ show: false, width: 900, height: 800 });
-  await win.loadURL(${JSON.stringify("file://" + path.join(work, "harness.html"))});
-  await win.webContents.executeJavaScript(${JSON.stringify(HARNESS)});
-  const out = [];
-  for (const item of JSON.parse(require("fs").readFileSync(${JSON.stringify(path.join(work, "cases.json"))}, "utf8"))) {
-    out.push(await win.webContents.executeJavaScript(
-      "window.__run(" + JSON.stringify(item.markdown) + "," + JSON.stringify(item.move) + ")",
-    ));
-  }
-  process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
-  app.exit(0);
-});
-`;
-
-fs.writeFileSync(path.join(work, "main.js"), MAIN);
 
 /* ── Przypadki ──────────────────────────────────────────────────
    Połowa z nich to takie, w których coś ma NIE ruszyć albo ma zmienić
@@ -185,22 +203,97 @@ const cases = [
   {
     name: "⌥↓ przesuwa punkt o jedno miejsce w dół",
     markdown: "- pierwszy\n- drugi\n- trzeci",
-    move: { grab: "pierwszy", key: "ArrowDown" },
+    move: { grab: "pierwszy", key: "Down" },
     expect: "- drugi\n- pierwszy\n- trzeci",
   },
   {
     name: "⌥↑ z pierwszej linii nie robi nic",
     markdown: "- pierwszy\n- drugi",
-    move: { grab: "pierwszy", key: "ArrowUp" },
+    move: { grab: "pierwszy", key: "Up" },
     expect: "- pierwszy\n- drugi",
     quiet: true,
   },
 ];
 
-fs.writeFileSync(
-  path.join(work, "cases.json"),
-  JSON.stringify(cases.map(({ markdown, move }) => ({ markdown, move }))),
-);
+fs.writeFileSync(path.join(work, "cases.json"), JSON.stringify(cases.map(({ markdown, move }) => ({ markdown, move }))));
+
+/* ── Proces główny: gest ────────────────────────────────────────
+   Ruch myszy idzie krokami, nie skokiem. Przeciągnięcie złożone z jednego
+   przeskoku bywa dla przeglądarki czymś innym niż przeciągnięcie — a my
+   sprawdzamy właśnie to, co robi przeglądarka. */
+
+const MAIN = `
+const { app, BrowserWindow } = require("electron");
+const fs = require("fs");
+app.disableHardwareAcceleration();
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+app.whenReady().then(async () => {
+  const win = new BrowserWindow({
+    show: true, x: -2400, y: 80, width: 900, height: 760, backgroundColor: "#09101c",
+  });
+  await win.loadURL(${JSON.stringify("file://" + path.join(work, "harness.html"))});
+  await win.webContents.executeJavaScript(${JSON.stringify(HARNESS)});
+  const js = (code) => win.webContents.executeJavaScript(code);
+  const send = (event) => win.webContents.sendInputEvent(event);
+
+  const mouse = (type, x, y) =>
+    send({ type, x, y, button: "left", clickCount: type === "mouseDown" ? 1 : 0 });
+
+  const out = [];
+  for (const item of JSON.parse(fs.readFileSync(${JSON.stringify(path.join(work, "cases.json"))}, "utf8"))) {
+    await js("window.__setup(" + JSON.stringify(item.markdown) + ")");
+    await wait(60);
+    const note = { grip: null, marked: false };
+
+    if (item.move.key) {
+      await js("window.__caret(" + JSON.stringify(item.move.grab) + ")");
+      await wait(40);
+      send({ type: "keyDown", keyCode: item.move.key, modifiers: ["alt"] });
+      send({ type: "keyUp", keyCode: item.move.key, modifiers: ["alt"] });
+      await wait(80);
+    } else {
+      // 1. mysz wjeżdża na linię — uchwyt ma się pokazać
+      const on = await js("window.__onLine(" + JSON.stringify(item.move.grab) + ")");
+      mouse("mouseMove", on.x, on.y);
+      await wait(80);
+      const grip = await js("window.__grip()");
+      note.grip = grip;
+      if (!grip) { out.push({ error: "uchwyt się nie pokazał" }); continue; }
+
+      // 2. mysz przechodzi NA uchwyt, potem chwyta
+      mouse("mouseMove", grip.x, grip.y);
+      await wait(60);
+      mouse("mouseDown", grip.x, grip.y);
+      await wait(40);
+
+      // 3. przeciągnięcie krokami do krawędzi linii docelowej
+      const to = await js("window.__edge(" + JSON.stringify(item.move.over) + "," + (item.move.below ? "true" : "false") + ")");
+      const steps = 8;
+      for (let step = 1; step <= steps; step += 1) {
+        mouse("mouseMove",
+          Math.round(grip.x + ((to.x - grip.x) * step) / steps),
+          Math.round(grip.y + ((to.y - grip.y) * step) / steps));
+        await wait(20);
+      }
+      note.marked = await js("window.__mark()");
+
+      // 4. puszczenie
+      mouse("mouseUp", to.x, to.y);
+      await wait(120);
+    }
+
+    const result = await js("window.__result()");
+    out.push({ ...result, ...note });
+  }
+
+  process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
+  app.exit(0);
+});
+`;
+
+fs.writeFileSync(path.join(work, "main.js"), MAIN);
 
 /* ── Przebieg ───────────────────────────────────────────────── */
 
@@ -213,7 +306,7 @@ try {
     // Powłoka rozszerzeń VS Code eksportuje ELECTRON_RUN_AS_NODE=1, przez co
     // Electron startuje jako zwykły Node i cicho ginie z kodem 0.
     env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, ELECTRON_ENABLE_LOGGING: "" },
-    timeout: 90_000,
+    timeout: 120_000,
   });
 } catch (problem) {
   console.error(problem.stdout ?? "");
@@ -233,13 +326,42 @@ for (const [index, item] of cases.entries()) {
   const got = results[index];
   assert.ok(got, `${item.name} — brak wyniku`);
   assert.ok(!got.error, `${item.name} — ${got.error}`);
+
   assert.strictEqual(got.markdown, item.expect, item.name);
   if (item.quiet) {
     assert.strictEqual(got.inputs, 0, `${item.name} — notatka zapisała się bez powodu`);
   }
+  if (!item.move.key) {
+    // Chwytanie za uchwyt nie ma prawa zaznaczać treści notatki.
+    assert.strictEqual(
+      got.selected,
+      "",
+      `${item.name} — gest zaznaczył tekst („${got.selected}") zamiast przenieść linię`,
+    );
+  }
   console.log("✓", item.name);
   passed += 1;
 }
+
+/* Uchwyt ma mieścić się W NOTATCE — w pasku wolnym po jej lewej stronie,
+   a nie obok kartki. Wymiar bierzemy z tego samego przebiegu, w którym
+   linia naprawdę się przeniosła. */
+const withGrip = results.find((item) => item.grip);
+assert.ok(withGrip, "żaden przypadek nie pokazał uchwytu");
+const { left, right, noteLeft, gutter } = withGrip.grip;
+assert.ok(gutter > 0, "notatka nie ma paska na uchwyt (--grip-gutter)");
+assert.ok(
+  left >= noteLeft,
+  `uchwyt wystaje poza notatkę w lewo (${left} < ${noteLeft})`,
+);
+assert.ok(
+  right <= noteLeft + gutter,
+  `uchwyt wchodzi na tekst (kończy się na ${right}, tekst zaczyna ${noteLeft + gutter})`,
+);
+console.log(
+  `✓ Uchwyt mieści się w pasku notatki (${left - noteLeft}…${right - noteLeft} z ${gutter} px)`,
+);
+passed += 1;
 
 fs.rmSync(work, { recursive: true, force: true });
 console.log(`\n${passed} przypadków przeszło.`);

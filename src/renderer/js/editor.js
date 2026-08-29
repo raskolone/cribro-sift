@@ -27,7 +27,6 @@
      w marginesie, po lewej stronie notatki, i nigdy nad literami. */
   const GRIP_W = 16;
   const GRIP_H = 20;
-  const GRIP_GAP = 6;
   /* Szerokość strzałki przy nagłówku składanym. Tak samo jak przy liście
      zadań: rysuje ją CSS, więc kliknięcie w nią jest kliknięciem w lewy
      skraj bloku i tylko tutaj wiadomo, gdzie ten skraj przebiega. */
@@ -526,6 +525,11 @@
       this.onDragMove = (event) => this.#dragMove(event);
       this.onDragEnd = (event) => this.#dragEnd(event);
       this.onDragCancel = () => this.#dragCleanup();
+      /* Przeglądarka chce w trakcie przeciągania zaznaczać tekst — bo z jej
+         punktu widzenia trzymamy przycisk i wodzimy myszą po dokumencie.
+         `user-select: none` nie wystarcza: w contenteditable Chromium
+         zaznacza mimo niego. Trzeba odmówić samego rozpoczęcia. */
+      this.onNoSelect = (event) => event.preventDefault();
       this.onDragKey = (event) => {
         if (event.key !== "Escape") return;
         event.preventDefault();
@@ -628,15 +632,23 @@
       this.gripLine = line;
 
       const box = line.getBoundingClientRect();
-      // Punkt listy zaczyna się dopiero za punktorem, więc uchwyt
-      // odmierzamy od krawędzi całej listy — inaczej siadałby na kropce.
-      const owner = line.tagName === "LI" ? line.parentElement : line;
-      const left = owner.getBoundingClientRect().left - GRIP_W - GRIP_GAP;
       const view = this.root.ownerDocument.defaultView;
       const leading = parseFloat(view.getComputedStyle(line).lineHeight) || 24;
 
+      /* Uchwyt stoi W NOTATCE, w pasku wolnym po jej lewej stronie
+         (--grip-gutter w css/prose.css) — nie obok niej. Odmierzanie od
+         krawędzi punktu listy wystawiało go poza kartkę, bo tam kartki
+         już nie ma; a wystający uchwyt wygląda jak rzecz, która się
+         odczepiła, a nie jak część notatki.
+
+         Pasek czytamy ze stylu, zamiast wpisywać liczbę: kartka na pulpicie
+         jest wąska i ma go węższy, a uchwyt ma się mieścić w obu. */
+      const bounds = this.root.getBoundingClientRect();
+      const gutter = parseFloat(view.getComputedStyle(this.root).paddingLeft) || GRIP_W + 8;
+      const left = bounds.left + Math.max(2, (gutter - GRIP_W) / 2);
+
       this.grip.hidden = false;
-      this.grip.style.left = `${Math.max(2, left)}px`;
+      this.grip.style.left = `${left}px`;
       // Do PIERWSZEGO wiersza bloku, nie do jego środka: akapit na cztery
       // wiersze ma uchwyt przy górze, tam gdzie się zaczyna.
       this.grip.style.top = `${box.top + Math.min(leading, box.height) / 2 - GRIP_H / 2}px`;
@@ -671,19 +683,33 @@
         gaps: [],
       };
 
+      /* Przechwycenie wskaźnika bierzemy, jeśli się da — ale NIE WOLNO na nim
+         stać. Chromium potrafi oddać je natychmiast po przyznaniu (widać to
+         w śladzie jako gotpointercapture i zaraz lostpointercapture), a wtedy
+         ruchy myszy idą już do notatki pod spodem: gest wygląda na martwy,
+         a przeglądarka zaczyna zaznaczać tekst. Dlatego nasłuchy wiszą na
+         DOKUMENCIE, w fazie przechwytywania — dochodzą niezależnie od tego,
+         nad czym akurat jest kursor i czy przechwycenie żyje. */
+      const doc = this.root.ownerDocument;
       try {
         this.grip.setPointerCapture(event.pointerId);
       } catch {
         /* wskaźnik zniknął między naciśnięciem a przechwyceniem */
       }
       this.grip.dataset.dragging = "true";
-      this.root.ownerDocument.body.classList.add("is-moving-line");
+      doc.body.classList.add("is-moving-line");
       for (const node of this.drag.group) node.setAttribute("data-moving", "true");
 
-      this.grip.addEventListener("pointermove", this.onDragMove);
-      this.grip.addEventListener("pointerup", this.onDragEnd);
-      this.grip.addEventListener("pointercancel", this.onDragCancel);
-      this.root.ownerDocument.addEventListener("keydown", this.onDragKey, true);
+      // Zaznaczenie sprzed chwytu tylko przeszkadza: po upuszczeniu i tak
+      // wracamy kursorem do przeniesionej linii.
+      doc.getSelection?.()?.removeAllRanges();
+
+      doc.addEventListener("pointermove", this.onDragMove, true);
+      doc.addEventListener("pointerup", this.onDragEnd, true);
+      doc.addEventListener("pointercancel", this.onDragCancel, true);
+      doc.addEventListener("selectstart", this.onNoSelect, true);
+      doc.addEventListener("dragstart", this.onNoSelect, true);
+      doc.addEventListener("keydown", this.onDragKey, true);
     }
 
     #dragMove(event) {
@@ -735,18 +761,21 @@
       this.drag = null;
       if (!drag) return;
 
+      const doc = this.root.ownerDocument;
       try {
         this.grip.releasePointerCapture(drag.pointerId);
       } catch {
-        /* wskaźnik już puszczony */
+        /* wskaźnik już puszczony albo przechwycenie i tak nie dożyło */
       }
-      this.grip.removeEventListener("pointermove", this.onDragMove);
-      this.grip.removeEventListener("pointerup", this.onDragEnd);
-      this.grip.removeEventListener("pointercancel", this.onDragCancel);
-      this.root.ownerDocument.removeEventListener("keydown", this.onDragKey, true);
+      doc.removeEventListener("pointermove", this.onDragMove, true);
+      doc.removeEventListener("pointerup", this.onDragEnd, true);
+      doc.removeEventListener("pointercancel", this.onDragCancel, true);
+      doc.removeEventListener("selectstart", this.onNoSelect, true);
+      doc.removeEventListener("dragstart", this.onNoSelect, true);
+      doc.removeEventListener("keydown", this.onDragKey, true);
 
       delete this.grip.dataset.dragging;
-      this.root.ownerDocument.body.classList.remove("is-moving-line");
+      doc.body.classList.remove("is-moving-line");
       for (const node of drag.group) node.removeAttribute("data-moving");
 
       this.dropMark.hidden = true;
