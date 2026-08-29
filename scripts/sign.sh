@@ -65,6 +65,16 @@ find "$APP/Contents/Resources/app.asar.unpacked" -name "*.node" 2>/dev/null | wh
   sign "$node" 2>/dev/null || true
 done
 
+# Program pomocniczy od dźwięku spotkań. Podpis tą samą tożsamością nie jest
+# formalnością: zgoda „Nagrywanie ekranu” pamięta, CZYM program jest
+# podpisany, tak samo jak zgoda „Dostępność” (patrz komentarz na górze).
+# Podpisany inaczej niż bundle byłby dla systemu osobnym programem — z osobną
+# zgodą do klikania i osobnym wpisem w Ustawieniach.
+if [ -f "$APP/Contents/Resources/cribro-tap" ]; then
+  sign --options runtime --entitlements "$ROOT/build/entitlements.tap.plist" \
+    "$APP/Contents/Resources/cribro-tap"
+fi
+
 for helper in "$APP/Contents/Frameworks/"*.app; do
   [ -d "$helper" ] && sign --options runtime --entitlements "$ENTS" "$helper"
 done
