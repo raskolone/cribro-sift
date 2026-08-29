@@ -171,6 +171,13 @@ if (!window.cribro) {
       minSeconds: 90,
       folder: "Spotkania",
       exclude: ["Spotify", "Music"],
+      summarize: true,
+      template: "generic",
+      instructions: "",
+      rename: true,
+      stopWithMeeting: true,
+      calendar: true,
+      armed: ["cal-2"],
     },
   };
 
@@ -373,6 +380,12 @@ if (!window.cribro) {
           title: "Przegląd tygodnia",
           state: "done",
           tracks: { mic: "", system: "" },
+          transcript: [
+            { speaker: "Rozmówcy", lane: "system", at: 0, text: "Czy zdążymy z raportem przed poniedziałkiem?" },
+            { speaker: "Ty", lane: "mic", at: 14, text: "Dam radę, ale potrzebuję danych z wtorku — bez nich to zgadywanie." },
+            { speaker: "Rozmówcy", lane: "system", at: 41, text: "Wyślę je dziś wieczorem, najpóźniej do dwudziestej." },
+          ],
+          notes: "Ania przysyła dane z wtorku do czwartku.",
         },
         {
           id: "m-demo-2",
@@ -390,7 +403,17 @@ if (!window.cribro) {
          więc stoi tu wpisana — bez niej nie da się obejrzeć ani pytania
          znaczka, ani tego, co jest po powiedzeniu „Notuj". */
       let spotted = null;
-      const tell = () => emit("meeting:changed", { recording: live, id, seconds: 0, spotted });
+      const hour = 3600e3;
+      const plan = {
+        access: "granted",
+        armed: ["cal-2"],
+        events: [
+          { id: "cal-1", title: "Przegląd tygodnia", from: Date.now() + 0.4 * hour, to: Date.now() + 1.4 * hour, guests: 4, link: "https://meet.google.com/abc-defg-hij" },
+          { id: "cal-2", title: "Rozmowa z klientem", from: Date.now() + 3 * hour, to: Date.now() + 3.75 * hour, guests: 2, link: null },
+        ],
+      };
+      const tell = () =>
+        emit("meeting:changed", { recording: live, id, seconds: 0, spotted, agenda: plan });
       return {
         toggle: async () => {
           live = !live;
@@ -416,7 +439,10 @@ if (!window.cribro) {
           tell();
           return true;
         },
-        state: async () => ({ recording: live, id, seconds: 0, spotted }),
+        /* Kalendarz w makiecie jest wpisany: w przeglądarce nie ma EventKit,
+           a bez dwóch wpisów nie da się obejrzeć ani układu, ani tego, jak
+           wygląda zgoda wyrażona przed czasem. */
+        state: async () => ({ recording: live, id, seconds: 0, spotted, agenda: plan }),
         answer: async (yes) => {
           if (yes) return window.cribro.meetings.toggle();
           spotted = null;
@@ -426,6 +452,46 @@ if (!window.cribro) {
         note: async (which, text) => {
           const row = rows.find((item) => item.id === which);
           if (row) row.notes = text;
+          return true;
+        },
+        /* Podsumowanie w makiecie nie woła modelu — pokazuje, jak wygląda
+           czekanie i jak wygląda wynik. To jedyne, co da się obejrzeć
+           w przeglądarce, a jedno i drugie ma swój układ. */
+        summarize: async (which) => {
+          const row = rows.find((item) => item.id === which);
+          if (!row) return null;
+          row.summarizing = true;
+          tell();
+          await new Promise((r) => setTimeout(r, 1400));
+          row.summarizing = false;
+          row.summary = [
+            "**O czym było**",
+            "Termin raportu i dane potrzebne do jego zamknięcia.",
+            "",
+            "**Ustalenia**",
+            "- Raport ma być gotowy przed poniedziałkiem.",
+            "- Dane z wtorku przychodzą dziś wieczorem.",
+            "",
+            "**Zadania**",
+            "- Rozmówcy: wysłać dane z wtorku, dziś wieczorem.",
+            "- Ty: zamknąć raport do niedzieli.",
+          ].join("\n");
+          if (!row.titleByHand) row.title = "Raport przed poniedziałkiem";
+          tell();
+          return { summary: row.summary };
+        },
+        arm: async (which, on) => {
+          const armed = new Set(plan.armed);
+          if (on) armed.add(which);
+          else armed.delete(which);
+          plan.armed = [...armed];
+          tell();
+          return plan.armed;
+        },
+        rename: async (which, title) => {
+          const row = rows.find((item) => item.id === which);
+          if (row) Object.assign(row, { title: title || null, titleByHand: !!title });
+          tell();
           return true;
         },
         /* Wyłącznie dla makiety: udaje wykrycie rozmowy, żeby dało się

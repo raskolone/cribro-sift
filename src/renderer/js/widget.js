@@ -212,6 +212,10 @@
   function setView(next) {
     view = next;
     stage.dataset.view = next;
+    /* Uchwyt do przenoszenia linii żyje w kartce, ale leży w <body> i stoi
+       na współrzędnych ekranu — więc zwinięcie kartki go nie zabiera.
+       Zostawiony wisi obok znaczka jako sześć kropek. */
+    if (next !== "sticky") editor.parkGrip?.();
   }
 
   /* Stan okna, o który prosimy proces główny. Widoków jest cztery, rozmiarów
@@ -661,6 +665,10 @@
   function setPassthrough(ignore) {
     if (passing === ignore) return;
     passing = ignore;
+    /* Od tej chwili okno nie dostaje ruchów myszy, więc nic już samo nie
+       zniknie. Uchwyt kartki musi więc zejść TERAZ — potem nie będzie
+       czym go zdjąć. */
+    if (ignore) editor.parkGrip?.();
     api.widget.passthrough(ignore);
   }
 
@@ -792,6 +800,10 @@
      na którym stoi rozciąganie szyby uchwytem (patrz `sizing` wyżej). */
   badge.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
+    /* Znaczek rusza — a razem z nim całe okno. Wszystko, co stoi na
+       współrzędnych okna, a nie należy do znaczka, musi wtedy zejść:
+       uchwyt kartki pojechałby z oknem jako sześć kropek obok znaczka. */
+    editor.parkGrip?.();
     grab = {
       // skąd znaczek startuje na ekranie
       ax: geom.sx,

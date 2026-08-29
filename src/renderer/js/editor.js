@@ -566,6 +566,11 @@
          zawisnąć nad cudzym zdaniem. */
       doc.addEventListener("scroll", () => this.#gripHide(), true);
       doc.defaultView?.addEventListener("resize", () => this.#gripHide());
+      /* Okno przestało być tym, w którym się pracuje — uchwyt nie ma przy
+         czym stać. Bez tego zostawał namalowany na oknie, które właśnie
+         zeszło pod spód: przy widgecie widać go było wtedy jako sześć
+         kropek obok znaczka, bo okno widgetu jest przezroczyste. */
+      doc.defaultView?.addEventListener("blur", () => this.parkGrip());
 
       /* Uchwyt leży w <body>, więc nie ma jak zniknąć razem z tym, przy
          czym stał. Przejście na inną zakładkę podmienia cały szkielet
@@ -756,6 +761,21 @@
       if (this.drag) return;
       this.grip.hidden = true;
       this.gripLine = null;
+    }
+
+    /**
+     * Uchwyt schodzi na żądanie, a nie za kursorem.
+     *
+     * Potrzebne wszędzie tam, gdzie notatka znika Z OKNEM, a nie spod myszy.
+     * Widget jest tego przypadkiem skrajnym: kartka zwija się do znaczka,
+     * a okno w tej samej chwili zaczyna przepuszczać kliknięcia na wylot —
+     * czyli przestaje dostawać ruchy myszy. Żadne pointerleave wtedy nie
+     * pada i uchwyt zostaje wisieć obok znaczka jako sześć kropek, których
+     * nic już nie chowa. Widać to było przy przeciąganiu widgetu.
+     */
+    parkGrip() {
+      if (this.drag) this.#dragCleanup();
+      this.#gripHide();
     }
 
     #dragStart(event) {

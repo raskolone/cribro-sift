@@ -192,6 +192,29 @@ const DEFAULTS = {
     // Dźwięk systemu to dźwięk wszystkich aplikacji z oknami, więc muzyka
     // z tła weszłaby do transkrypcji jako czyjaś wypowiedź.
     exclude: ["Spotify", "Music"],
+
+    /* Co się dzieje PO rozmowie.
+
+       Podsumowanie domyślnie samo, bo po to się nagrywa: zapisu godzinnej
+       rozmowy nikt nie czyta, wniosku z niej — owszem. Zmiana nazwy też
+       sama, bo nazwa wzięta z okna przeglądarki to zwykle kod pokoju
+       („jxg-hfsa-qvb"), po którym za tydzień nikt niczego nie znajdzie. */
+    summarize: true,
+    template: "generic", // generic | custom
+    instructions: "",
+    rename: true,
+
+    /* Kalendarz systemowy — a w nim także Google Calendar, o ile konto jest
+       dodane w macOS. Domyślnie wyłączony, bo włączenie prosi o zgodę na
+       czytanie kalendarza, a to jest pytanie, które ma paść wtedy, gdy ktoś
+       naprawdę tego chce. Patrz main/agenda.js. */
+    calendar: false,
+    /* Wpisy, przy których powiedziano „notuj". Identyfikatory z kalendarza:
+       spotkanie zaczyna się samo, bez pytania, i tylko to jedno. */
+    armed: [],
+    /* Czy zniknięcie okna rozmowy kończy nagranie. Domyślnie tak — inaczej
+       spotkanie wykryte automatycznie nagrywałoby się do wieczora. */
+    stopWithMeeting: true,
   },
 
   /* Przewodnik — kilka slajdów o tym, co aplikacja właściwie robi.

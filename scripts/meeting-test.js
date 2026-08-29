@@ -25,6 +25,24 @@ const path = require("path");
 const root = path.join(__dirname, "..");
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-meeting-"));
 
+/* Ekran nie może zasnąć w trakcie tego testu.
+
+   ScreenCaptureKit przy uśpionym ekranie nie zgłasza ŻADNEGO ekranu, więc
+   nagrywanie odpada — i wygląda to na zepsutą funkcję, choć zepsuty jest
+   tylko moment. `caffeinate -w` trzyma czuwanie dokładnie tak długo, jak
+   żyje ten proces, i nie budzi niczego, co już śpi. */
+try {
+  require("child_process")
+    .spawn("caffeinate", ["-d", "-i", "-w", String(process.pid)], {
+      stdio: "ignore",
+      detached: true,
+    })
+    .unref();
+} catch {
+  /* nie macOS albo brak caffeinate — test poleci jak dotąd */
+}
+
+
 const MAIN = `
 const { app } = require("electron");
 const fs = require("fs");
@@ -35,10 +53,17 @@ app.disableHardwareAcceleration();
    Electron nie honoruje — zawieszony test potrafił wisieć kwadrans zamiast
    minuty i zabierał ze sobą cały przebieg npm test. Program musi umieć
    skończyć się sam. */
-setTimeout(() => {
-  process.stdout.write("\\n@@WYNIK@@" + JSON.stringify({ steps: [], skip: "nagrywanie nie odpowiedziało w 45 s" }) + "@@KONIEC@@\\n");
+const out = { steps: [] };
+const finish = (why) => {
+  if (why) out.skip = why;
+  process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
   app.exit(0);
-}, 45000);
+};
+/* Strażnik oddaje TO, CO ZDĄŻYŁO SIĘ SPRAWDZIĆ, a nie pustą listę.
+   Nagrywanie potrafi odpaść w połowie — najczęściej dlatego, że ekran
+   zdążył zasnąć i ScreenCaptureKit nie widzi wtedy żadnego ekranu — a to,
+   co sprawdziło się przed tym momentem, jest nadal warte pokazania. */
+setTimeout(() => finish("nagrywanie nie odpowiedziało w 45 s"), 45000);
 // Własny katalog danych: test nie ma prawa dotknąć ustawień na tym komputerze.
 app.setPath("userData", ${JSON.stringify(path.join(work, "dane"))});
 
@@ -48,7 +73,6 @@ app.whenReady().then(async () => {
   const { Store } = require(${JSON.stringify(path.join(root, "src/main/store.js"))});
   const { Meetings } = require(${JSON.stringify(path.join(root, "src/main/meeting.js"))});
 
-  const out = { steps: [] };
   const say = (name, value) => out.steps.push({ name, value });
 
   const store = new Store();
@@ -76,7 +100,7 @@ app.whenReady().then(async () => {
   /* Błąd helpera rozstrzyga się TUTAJ, przed asercjami o odrzuceniu.
      Gdy nagrywanie odmówi, #fail zatrzymuje je samo — a wtedy stop() nie ma
      już czego odrzucać i test pytałby o zachowanie, którego nie wywołał. */
-  if (problem) { out.skip = problem; process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n"); app.exit(0); return; }
+  if (problem) return finish(problem);
 
   say("krótkie nagranie zostaje odrzucone", short.discarded);
   say("i nie zostawia wpisu", store.getMeetings().length);
@@ -84,6 +108,7 @@ app.whenReady().then(async () => {
 
   // ── Prawdziwe spotkanie ──
   store.saveSettings({ meetings: { minSeconds: 1 } });
+  if (problem) return finish(problem);
   await meetings.start();
   await wait(3000);
   const done = await meetings.stop();
@@ -109,6 +134,7 @@ app.whenReady().then(async () => {
      (żeby nie wołać cudzego serwera) i długość odcinka (żeby na trzech
      sekundach w ogóle powstały odcinki, a nie jeden ogryzek). Reszta drogi
      jest ta sama — prawdziwy dźwięk, prawdziwa krajalnica, prawdziwy splot. */
+  if (problem) return finish(problem);
   const said = [];
   const scribe = new Meetings(store, {
     // Tor mikrofonu i tor systemu mówią co innego — inaczej splot uznałby
@@ -133,12 +159,7 @@ app.whenReady().then(async () => {
   /* Nagrywanie mogło odpaść dopiero tutaj — zgody „Nagrywanie ekranu"
      bywa, że nie ma. Bez tego wyjścia dalsze pytania leciałyby po pustce
      i test wieszałby się zamiast powiedzieć, czego brakuje. */
-  if (!written.meeting) {
-    out.skip = problem ?? "nagrywanie nie oddało spotkania";
-    process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
-    app.exit(0);
-    return;
-  }
+  if (!written.meeting) return finish(problem ?? "nagrywanie nie oddało spotkania");
 
   say("odcinki poszły do przepisania w trakcie rozmowy", said.length);
   say("każdy odcinek to domknięty WAV", said.every((item) => item.size > 44));
@@ -157,8 +178,7 @@ app.whenReady().then(async () => {
     fs.readdirSync(store.meetingDir(written.meeting.id)).length);
   say("…a spotkanie zostaje w spisie", meetings.list().some((item) => item.id === written.meeting.id));
 
-  process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
-  app.exit(0);
+  finish();
 });
 `;
 
@@ -172,6 +192,12 @@ try {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, ELECTRON_ENABLE_LOGGING: "" },
     timeout: 120_000,
+    /* SIGKILL, nie domyślny SIGTERM. Electron SIGTERM-a nie honoruje, więc
+       limit czasu bez tej linijki nie kończy NICZEGO: test wisiał w martwym
+       oczekiwaniu godzinami, choć limit dawno minął. Strażnik w oknie
+       (wyżej) jest pierwszą linią obrony; ta jest ostatnią i działa nawet
+       wtedy, gdy w oknie nie działa już nic. */
+    killSignal: "SIGKILL",
   });
 } catch (problem) {
   console.error(problem.stdout ?? "");
@@ -213,6 +239,10 @@ if (!out.skip) {
 if (out.skip) {
   console.log(`\n⚠ dalsza część pominięta: ${out.skip}`);
   console.log("  Zgody „Nagrywanie ekranu” udziela się zainstalowanej aplikacji.");
+  /* Drugi powód jest znacznie częstszy i wygląda identycznie: przy uśpionym
+     ekranie ScreenCaptureKit nie zgłasza ŻADNEGO ekranu, więc nagrywanie
+     odpada, choć zgoda jest. Widać to po komunikacie wyżej. */
+  console.log("  Przy uśpionym ekranie SCK nie widzi żadnego — obudź go i uruchom test ponownie.");
 } else {
   check("Prawdziwe spotkanie zostaje w spisie", step("dłuższe nagranie zostaje") === true);
   check("…ze stanem „done”", step("wpis ma stan „done”") === "done");

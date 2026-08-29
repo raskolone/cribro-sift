@@ -6,16 +6,21 @@
  * macOS chce ikon o wysokości 18 pt, więc generujemy 18 px i 36 px (@2x).
  * Electron sam wybierze właściwą, jeśli leżą obok siebie z sufiksem @2x.
  *
+ * RYSUJE ELECTRON, NIE PUPPETEER. Zrzut z puppeteera na tej maszynie nigdy
+ * nie wraca — `page.screenshot()` wisi w nieskończoność i skrypt trzeba
+ * ubijać ręcznie. Electron i tak jest w zależnościach, a `capturePage`
+ * z ukrytego okna robi dokładnie to samo. Uruchamia się to więc inaczej
+ * niż resztę skryptów:
+ *
+ *   npx electron scripts/make-tray-icons.js
+ *
  * Stan „gotowe" jest szablonem (czarny + alfa): macOS przemaluje go na biało
  * w ciemnym pasku i na czarno w jasnym. Stany pracy są kolorowe i celowo
  * łamią tę zasadę — mają przyciągać wzrok, a nie wtapiać się w tło.
  */
 const fs = require("fs");
 const path = require("path");
-const puppeteer = require("puppeteer-core");
-
-const CHROME =
-  "/Users/maciej/.cache/puppeteer/chrome/mac_arm-150.0.7871.24/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
+const { app, BrowserWindow } = require("electron");
 
 /* Kolory bierzemy z motywu, nie z pamięci — tokeny są jedynym miejscem,
    w którym wolno trzymać surowy kolor. */
@@ -56,7 +61,19 @@ const shapes = {
           stroke-linecap="round" stroke-linejoin="round"/>`,
 };
 
-const COLOR = { idle: "#000000", listening: PURPLE, sifting: AMBER, done: MINT };
+const AIR = token("air");
+const ON_AIR = token("air-ink");
+
+/* Nagrywanie SPOTKANIA. Osobny stan i osobny kolor — dlaczego czerwień,
+   a nie fiolet, patrz --air w design/themes/tokens.css. Kropka w środku
+   to znak nagrywania, ten sam od czasów magnetofonów; przy osiemnastu
+   pikselach fale z ikony w oknie zlałyby się w plamę. */
+const AIR_SHAPE = `
+    <circle cx="12" cy="12" r="9.4" fill="currentColor"/>
+    <circle cx="12" cy="12" r="3.4" fill="${ON_AIR}"/>`;
+shapes.meeting = AIR_SHAPE;
+
+const COLOR = { idle: "#000000", listening: PURPLE, sifting: AMBER, done: MINT, meeting: AIR };
 
 function page(name, size) {
   return `<!doctype html><meta charset="utf-8">
@@ -65,28 +82,40 @@ svg{display:block;color:${COLOR[name]}}</style>
 <svg width="${size}" height="${size}" viewBox="0 0 24 24">${shapes[name]}</svg>`;
 }
 
-(async () => {
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+app.disableHardwareAcceleration();
+app.whenReady().then(async () => {
   const out = path.join(__dirname, "..", "assets", "tray");
   fs.mkdirSync(out, { recursive: true });
 
-  const browser = await puppeteer.launch({
-    executablePath: CHROME,
-    headless: "shell",
-    args: ["--no-sandbox"],
+  /* Okno rysujące. Przezroczyste i postawione poza ekranem: `show: false`
+     nie wystarcza, bo okno schowane nie ma czego malować i capturePage
+     oddaje pustą klatkę. */
+  const win = new BrowserWindow({
+    show: true,
+    x: -3000,
+    y: 0,
+    width: 64,
+    height: 64,
+    frame: false,
+    transparent: true,
+    hasShadow: false,
+    skipTaskbar: true,
   });
 
   for (const name of Object.keys(shapes)) {
     for (const [size, suffix] of [[18, ""], [36, "@2x"]]) {
-      const tab = await browser.newPage();
-      await tab.setViewport({ width: size, height: size, deviceScaleFactor: 1 });
+      win.setBounds({ x: -3000, y: 0, width: size, height: size });
+      await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(page(name, size)));
+      await wait(120);
+      const image = await win.webContents.capturePage();
       // Szablon musi nazywać się Template, żeby macOS go przemalował.
       const file = path.join(out, `${name}${name === "idle" ? "Template" : ""}${suffix}.png`);
-      await tab.setContent(page(name, size), { waitUntil: "networkidle0" });
-      await tab.screenshot({ path: file, omitBackground: true });
-      await tab.close();
+      fs.writeFileSync(file, image.toPNG());
     }
   }
 
-  await browser.close();
-  console.log("Ikony paska menu:", fs.readdirSync(out).join(", "));
-})();
+  console.log("Ikony paska menu:", fs.readdirSync(out).sort().join(", "));
+  app.exit(0);
+});

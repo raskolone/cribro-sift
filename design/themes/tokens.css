@@ -44,6 +44,19 @@
   --rec-55:          rgba(169, 125, 255, 0.55);
   --rec-glow:        0 0 26px rgba(169, 125, 255, 0.45);
 
+  /* ---- ON AIR: nagrywanie SPOTKANIA ----
+     Fiolet wyżej znaczy „dyktuję" — kilkanaście sekund własnego głosu.
+     Spotkanie to godzina CUDZYCH słów i nie jest odcieniem tamtego stanu.
+     W studiu radiowym pali się wtedy czerwony napis ON AIR i wszyscy
+     w pokoju wiedzą, co on znaczy. Ten jeden raz czerwień nie mówi „coś
+     się zepsuło", tylko „mikrofon słyszy także ciebie". */
+  --air:             #ff5a52;
+  --air-ink:         #2a0806;   /* litery NA czerwieni */
+  --air-20:          rgba(255, 90, 82, 0.20);
+  --air-45:          rgba(255, 90, 82, 0.45);
+  --air-55:          rgba(255, 90, 82, 0.55);
+  --air-glow:        0 0 26px rgba(255, 90, 82, 0.50);
+
   /* ---- Text ---- */
   --text:            #eae8e3;   /* body */
   --text-hi:         #ffffff;   /* display headings only */

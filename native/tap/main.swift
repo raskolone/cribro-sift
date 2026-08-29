@@ -31,6 +31,21 @@
 //                      skuteczna toru po torze. Tym rozstrzygnięto etap E0
 //                      i tym sprawdza się sprzęt, gdy coś nie gra.
 //
+//  --agenda  (kalendarz) Nadchodzące spotkania z kalendarza systemowego,
+//                      jedną linią JSON. Nie ma tu nic wspólnego z dźwiękiem
+//                      i siedzi w tym samym programie z jednego powodu:
+//                      drugi program natywny to drugi podpis, drugie
+//                      uprawnienia i druga rzecz do wysłania w paczce.
+//
+//  ── DLACZEGO EVENTKIT, A NIE GOOGLE CALENDAR API ──
+//
+//  EventKit czyta WSZYSTKIE kalendarze, które ktoś dodał w macOS — Google,
+//  iCloud, Exchange — bez klucza API, bez okna logowania i bez projektu
+//  w cudzej konsoli. Google Calendar podpięty w Ustawieniach systemowych
+//  jest tu widoczny tak samo jak każdy inny. Bezpośrednie API Google
+//  wymagałoby własnego identyfikatora klienta, ekranu zgody i weryfikacji
+//  aplikacji — czyli rzeczy, których nie da się zrobić za użytkownika.
+//
 //  ── CZEGO SIĘ DOWIEDZIELIŚMY SONDĄ (E0) ──
 //
 //  · ScreenCaptureKit NIE KASUJE ECHA. Przy głośnikach głos drugiej strony
@@ -45,6 +60,7 @@
 
 import AVFoundation
 import CoreMedia
+import EventKit
 import Foundation
 import ScreenCaptureKit
 
@@ -453,6 +469,99 @@ var mode = "probe"
 var seconds = 20.0
 var outDir = FileManager.default.temporaryDirectory.appendingPathComponent("cribro-tap")
 var excluded: [String] = []
+/// Jak daleko w przód patrzymy w kalendarzu, w godzinach.
+var hours = 12.0
+
+// ── Kalendarz ───────────────────────────────────────────────────────
+
+/// Nadchodzące spotkania — jedną linią JSON na standardowe wyjście.
+///
+/// Wypisujemy TYLKO to, co potrzebne do rozstrzygnięcia „czy to spotkanie
+/// i czy już się zaczyna": identyfikator, tytuł, godziny, liczbę zaproszonych
+/// i adres rozmowy, jeśli jest. Reszty kalendarza — notatek, załączników,
+/// nazwisk — nie czytamy i nie wynosimy z tego programu.
+func agenda(hours: Double) async {
+    let store = EKEventStore()
+
+    /// macOS 14 wprowadził dostęp „tylko do odczytu"; starsze chcą pełnego.
+    let granted: Bool
+    if #available(macOS 14.0, *) {
+        granted = (try? await store.requestFullAccessToEvents()) ?? false
+    } else {
+        granted = await withCheckedContinuation { go in
+            store.requestAccess(to: .event) { ok, _ in go.resume(returning: ok) }
+        }
+    }
+    guard granted else {
+        // Brak zgody nie jest awarią: aplikacja ma wtedy po prostu nie
+        // pokazywać kalendarza. Mówimy to danymi, a nie kodem wyjścia.
+        print("{\"access\":\"denied\",\"events\":[]}")
+        return
+    }
+
+    let now = Date()
+    let until = now.addingTimeInterval(hours * 3600)
+    /// Zaczynamy godzinę wstecz, bo spotkanie, które właśnie trwa, jest
+    /// najważniejsze ze wszystkich — a zaczęło się przed „teraz".
+    let from = now.addingTimeInterval(-3600)
+    let query = store.predicateForEvents(withStart: from, end: until, calendars: nil)
+
+    let iso = ISO8601DateFormatter()
+    var rows: [String] = []
+    for event in store.events(matching: query) {
+        if event.isAllDay { continue }
+        if event.status == .canceled { continue }
+        let link = [event.url?.absoluteString, event.location, event.notes]
+            .compactMap { $0 }
+            .compactMap(meetingLink)
+            .first
+        var row: [String] = []
+        row.append("\"id\":\(quoted(event.eventIdentifier ?? UUID().uuidString))")
+        row.append("\"title\":\(quoted(event.title ?? ""))")
+        row.append("\"from\":\(quoted(iso.string(from: event.startDate)))")
+        row.append("\"to\":\(quoted(iso.string(from: event.endDate)))")
+        row.append("\"guests\":\(event.attendees?.count ?? 0)")
+        row.append("\"link\":\(quoted(link ?? ""))")
+        rows.append("{" + row.joined(separator: ",") + "}")
+    }
+    print("{\"access\":\"granted\",\"events\":[" + rows.joined(separator: ",") + "]}")
+}
+
+/// Adres rozmowy wyłuskany z pola, w którym bywa schowany.
+///
+/// Kalendarze wpisują go gdzie popadnie: Google w „location" albo w opisie,
+/// Outlook w treści. Szukamy więc w kilku miejscach i bierzemy pierwszy
+/// adres, który wygląda na pokój rozmowy, a nie na dowolny odsyłacz.
+func meetingLink(_ text: String) -> String? {
+    let rooms = ["meet.google.com", "zoom.us/j/", "teams.microsoft.com/l/meetup", "webex.com/meet"]
+    for line in text.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "<" || $0 == ">" }) {
+        let candidate = String(line).trimmingCharacters(in: CharacterSet(charactersIn: "\"'()[],"))
+        if rooms.contains(where: { candidate.contains($0) }) { return candidate }
+    }
+    return nil
+}
+
+/// Napis w cudzysłowie, z ucieczkami — bez sięgania po JSONSerialization
+/// dla czterech pól.
+func quoted(_ text: String) -> String {
+    var out = "\""
+    for character in text.unicodeScalars {
+        switch character {
+        case "\"": out += "\\\""
+        case "\\": out += "\\\\"
+        case "\n": out += "\\n"
+        case "\r": out += "\\r"
+        case "\t": out += "\\t"
+        default:
+            if character.value < 0x20 {
+                out += String(format: "\\u%04x", character.value)
+            } else {
+                out.unicodeScalars.append(character)
+            }
+        }
+    }
+    return out + "\""
+}
 
 var args = Array(CommandLine.arguments.dropFirst())
 while let flag = args.first {
@@ -462,6 +571,12 @@ while let flag = args.first {
         mode = "probe"
     case "--stream":
         mode = "stream"
+    case "--agenda":
+        mode = "agenda"
+    case "--hours":
+        guard let value = args.first.flatMap(Double.init) else { die("--hours chce liczby.") }
+        hours = value
+        args.removeFirst()
     case "--seconds":
         guard let value = args.first.flatMap(Double.init) else { die("--seconds chce liczby.") }
         seconds = value
@@ -484,7 +599,9 @@ while let flag = args.first {
 let finished = DispatchSemaphore(value: 0)
 Task {
     do {
-        if mode == "stream" {
+        if mode == "agenda" {
+            await agenda(hours: hours)
+        } else if mode == "stream" {
             try await stream(excluding: excluded)
         } else {
             try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)

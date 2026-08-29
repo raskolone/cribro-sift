@@ -23,6 +23,24 @@ const path = require("path");
 
 const { parse, record, helperPath, wavHeader } = require("../src/main/tap");
 
+/* Ekran nie może zasnąć w trakcie tego testu.
+
+   ScreenCaptureKit przy uśpionym ekranie nie zgłasza ŻADNEGO ekranu, więc
+   nagrywanie odpada — i wygląda to na zepsutą funkcję, choć zepsuty jest
+   tylko moment. `caffeinate -w` trzyma czuwanie dokładnie tak długo, jak
+   żyje ten proces, i nie budzi niczego, co już śpi. */
+try {
+  require("child_process")
+    .spawn("caffeinate", ["-d", "-i", "-w", String(process.pid)], {
+      stdio: "ignore",
+      detached: true,
+    })
+    .unref();
+} catch {
+  /* nie macOS albo brak caffeinate — test poleci jak dotąd */
+}
+
+
 let passed = 0;
 function check(label, condition) {
   assert.ok(condition, label);

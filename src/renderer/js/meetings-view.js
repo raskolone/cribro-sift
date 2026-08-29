@@ -43,6 +43,9 @@
     settings: null,
     // Notatka napisana, a jeszcze niezapisana — patrz flushNotes.
     notes: null,
+    // Co widać w kalendarzu — przychodzi tą samą wiadomością co stan
+    // nagrywania (patrz meetingState w main/main.js).
+    agenda: null,
   };
 
   let ticker = null;
@@ -123,6 +126,15 @@
         return;
       }
 
+      const write = event.target.closest("[data-meet-sum]");
+      if (write) {
+        // Notatki najpierw na dysk: podsumowanie ma je uwzględnić, a leżą
+        // jeszcze w niezapisanym polu obok.
+        await flushNotes();
+        await api.meetings.summarize(write.dataset.meetSum);
+        return;
+      }
+
       const remove = event.target.closest("[data-meet-remove]");
       if (remove) {
         const id = remove.dataset.meetRemove;
@@ -153,6 +165,12 @@
     });
 
     root.addEventListener("change", (event) => {
+      const arm = event.target.closest("[data-meet-arm]");
+      if (arm) {
+        api.meetings.arm(arm.dataset.meetArm, arm.checked);
+        return;
+      }
+
       const field = event.target.closest("[data-meet-set]");
       if (!field) return;
       const key = field.dataset.meetSet;
@@ -196,6 +214,7 @@
           ${live ? `${t("Zakończ")} · ${duration(state.seconds)}` : t("Nagraj spotkanie")}
         </button>
       </div>
+      ${agendaCard()}
       <div class="meet__rows">
         ${rows || `<p class="meet__empty">${t("Nagrane spotkania pojawią się tutaj.")}</p>`}
       </div>
@@ -203,15 +222,77 @@
     `;
   }
 
+  /* ── Kalendarz ─────────────────────────────────────────────────
+     Co ma się zacząć — i pytanie o to JEDEN RAZ, przed czasem. Zgoda
+     wyrażona teraz jest warta więcej niż pytanie zadane w chwili, w której
+     rozmowa już trwa i trzeba jej słuchać, a nie klikać. */
+
+  /** Godzina wpisu, bez daty tam, gdzie wystarczy „dziś". */
+  function clock(ms) {
+    const at = new Date(ms);
+    if (Number.isNaN(at.getTime())) return "";
+    const time = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    if (at.toDateString() === new Date().toDateString()) return time;
+    return `${at.toLocaleDateString(undefined, { weekday: "short" })} ${time}`;
+  }
+
+  function agendaCard() {
+    const plan = state.agenda;
+    if (!state.settings?.meetings?.calendar) return "";
+
+    if (plan?.access === "denied") {
+      return `<div class="meet__plan">
+          <p class="meet__legend">${t("Nadchodzące")}</p>
+          <p class="meet__empty">${t("Brak zgody na kalendarz — przyznaj ją w Ustawieniach systemowych, w sekcji Kalendarz.")}</p>
+        </div>`;
+    }
+    if (!plan?.events?.length) {
+      return `<div class="meet__plan">
+          <p class="meet__legend">${t("Nadchodzące")}</p>
+          <p class="meet__empty">${t("Nic w planie na najbliższe godziny.")}</p>
+        </div>`;
+    }
+
+    const armed = new Set(plan.armed ?? []);
+    const rows = plan.events
+      .map(
+        (event) => `
+        <label class="meet__plan-row">
+          <span class="meet__plan-when">${clock(event.from)}</span>
+          <span class="meet__plan-title">${escape(event.title || t("Spotkanie"))}</span>
+          <input type="checkbox" data-meet-arm="${escape(event.id)}" ${armed.has(event.id) ? "checked" : ""} />
+          <span class="meet__flip meet__flip--sm" aria-hidden="true"
+                title="${t("Notuj to spotkanie")}"></span>
+        </label>`,
+      )
+      .join("");
+
+    return `<div class="meet__plan">
+        <p class="meet__legend">${t("Nadchodzące")}</p>
+        ${rows}
+        <p class="meet__note meet__note--tight">${t("Włączone nagra się samo, gdy nadejdzie jego godzina.")}</p>
+      </div>`;
+  }
+
   /* ── Ustawienia spotkań ────────────────────────────────────── */
 
   function settingsCard() {
     const meet = state.settings?.meetings ?? {};
-    const option = (value, label, hint) => `
+    /** Kółko wyboru — jedno z kilku. */
+    const pick = (group, key, value, label, hint) => `
       <label class="meet__opt">
-        <input type="radio" name="meetDetect" value="${value}" data-meet-set="detect"
-               ${meet.detect === value ? "checked" : ""} />
+        <input type="radio" name="${group}" value="${value}" data-meet-set="${key}"
+               ${meet[key] === value ? "checked" : ""} />
         <span><b>${t(label)}</b><i>${t(hint)}</i></span>
+      </label>`;
+    const option = (value, label, hint) => pick("meetDetect", "detect", value, label, hint);
+    const shape = (value, label, hint) => pick("meetTemplate", "template", value, label, hint);
+    /** Przełącznik — jedno pytanie, dwie odpowiedzi. */
+    const flip = (key, label, hint, on) => `
+      <label class="meet__set">
+        <span class="meet__set-text"><b>${t(label)}</b><i>${t(hint)}</i></span>
+        <input type="checkbox" data-meet-set="${key}" ${on ? "checked" : ""} />
+        <span class="meet__flip" aria-hidden="true"></span>
       </label>`;
 
     return `
@@ -226,13 +307,37 @@
         </div>
 
         <div class="meet__group">
-          <label class="meet__set">
-            <span class="meet__set-text">
-              <b>${t("Zachowaj nagranie")}</b>
-              <i>${t("Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu.")}</i>
-            </span>
-            <input type="checkbox" data-meet-set="keepAudio" ${meet.keepAudio ? "checked" : ""} />
-            <span class="meet__flip" aria-hidden="true"></span>
+          ${flip(
+            "keepAudio",
+            "Zachowaj nagranie",
+            "Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu.",
+            !!meet.keepAudio,
+          )}
+        </div>
+
+        <div class="meet__group">
+          ${flip(
+            "calendar",
+            "Pokaż kalendarz",
+            "Nadchodzące spotkania z kalendarza macOS — także z konta Google, jeśli jest tam dodane.",
+            !!meet.calendar,
+          )}
+        </div>
+
+        <div class="meet__group">
+          <p class="meet__legend">${t("Po rozmowie")}</p>
+          ${flip("summarize", "Podsumuj samo", "Zaraz po zakończeniu, z zapisu i z notatek.", meet.summarize !== false)}
+          ${flip("rename", "Nazwij spotkanie z treści", "Zamiast kodu pokoju z okna przeglądarki.", meet.rename !== false)}
+          ${flip("stopWithMeeting", "Kończ razem ze spotkaniem", "Gdy okno rozmowy zniknie, nagranie też.", meet.stopWithMeeting !== false)}
+        </div>
+
+        <div class="meet__group">
+          <p class="meet__legend">${t("Jakie podsumowanie")}</p>
+          ${shape("generic", "Zwykłe podsumowanie", "O czym było, co ustalono, co komu zostało.")}
+          ${shape("custom", "Własne wytyczne", "Piszesz sam, czego od niego oczekujesz.")}
+          <label class="meet__field${meet.template === "custom" ? "" : " is-off"}">
+            <textarea rows="4" data-meet-set="instructions"
+                      placeholder="${t("Np. Same zadania, w punktach, po angielsku. Bez wstępu.")}">${escape(meet.instructions ?? "")}</textarea>
           </label>
         </div>
 
@@ -333,14 +438,54 @@
       </p>`;
     }
 
-    if (meeting.summary) return `<div class="meet__summary">${escape(meeting.summary)}</div>`;
+    return summary(meeting, live);
+  }
+
+  /**
+   * Zakładka podsumowania.
+   *
+   * Podsumowanie jest jedyną rzeczą w tym module, którą DA SIĘ powtórzyć
+   * bez końca — transkrypcja leży, wytyczne można zmienić i poprosić
+   * jeszcze raz. Dlatego przycisk stoi tu zawsze, a nie tylko wtedy, gdy
+   * czegoś brakuje.
+   */
+  function summary(meeting, live) {
+    if (live) {
+      return `<p class="meet__blank">${t("Podsumowanie powstanie po zakończeniu rozmowy.")}</p>`;
+    }
+    if (meeting.summarizing) {
+      return `<p class="meet__blank meet__blank--work">${t("Piszę podsumowanie…")}</p>`;
+    }
+
+    const nothing = !meeting.transcript?.length && !String(meeting.notes ?? "").trim();
+    const again = meeting.summary ? "Napisz jeszcze raz" : "Napisz podsumowanie";
+    const button = nothing
+      ? ""
+      : `<div class="meet__act">
+           <button class="btn btn--sm" data-meet-sum="${meeting.id}">${t(again)}</button>
+         </div>`;
+
+    if (meeting.summaryError) {
+      return `<p class="meet__blank meet__blank--warn">
+          ${t("Podsumowanie się nie udało")}: ${escape(meeting.summaryError)}
+        </p>${button}`;
+    }
+
+    if (meeting.summary) {
+      /* Model pisze Markdownem (pogrubione nagłówki, listy) — pokazujemy to
+         tym samym tłumaczem, którym notatka zamienia gwiazdki na pogrubienie.
+         Zapisany zostaje Markdown, bo z niego da się zrobić notatkę. */
+      const rich = window.CribroRichtext?.markdownToHtml?.(meeting.summary);
+      return `<div class="meet__summary prose">${rich ?? escape(meeting.summary)}</div>${button}`;
+    }
+
     return `<p class="meet__blank">
-      ${
-        live
-          ? t("Podsumowanie powstanie po zakończeniu rozmowy.")
-          : t("Podsumowanie powstaje z transkrypcji, według wybranego szablonu.")
-      }
-    </p>`;
+        ${
+          nothing
+            ? t("Nie ma z czego zrobić podsumowania — nie ma ani zapisu, ani notatek.")
+            : t("Podsumowanie powstaje z zapisu rozmowy i z notatek, według wybranych wytycznych.")
+        }
+      </p>${button}`;
   }
 
   /** Zapis rozmowy: kto, kiedy, co. */
@@ -389,10 +534,23 @@
 
   const $ = (selector) => root.querySelector(selector);
 
-  /** Czy ktoś właśnie pisze w notatniku spotkania. */
-  const writing = () =>
-    !!root?.contains(document.activeElement) &&
-    !!document.activeElement?.hasAttribute?.("data-meet-notes");
+  /**
+   * Gdzie w tej zakładce ktoś właśnie pisze.
+   *
+   * Przerysowanie buduje HTML od nowa, więc zabiera kursor ze środka
+   * zdania. A meldunki o zmianie przychodzą tu co odcinek zapisu, czyli
+   * co dwie minuty przez całą rozmowę — akurat wtedy, gdy pisze się
+   * notatki. Odświeżamy więc tę połowę widoku, w której nikt nie pisze.
+   *
+   * @returns {Element|null} pole z kursorem
+   */
+  function busyField() {
+    const spot = document.activeElement;
+    if (!spot || !root?.contains(spot)) return null;
+    const writable =
+      spot.isContentEditable || spot.tagName === "TEXTAREA" || spot.tagName === "INPUT";
+    return writable ? spot : null;
+  }
 
   /** Notatnik na dysk. Wywoływane z opóźnieniem, przy wyjściu i przy zmianie
       zakładki — czyli wszędzie tam, gdzie kartka może zniknąć z ekranu. */
@@ -410,11 +568,9 @@
 
   function paint() {
     if (!root) return;
-    paintList();
-    /* Spotkania NIE przerysowujemy pod palcami piszącego. Zapis rozmowy
-       rośnie odcinkami, więc meldunki o zmianie przychodzą co dwie minuty
-       — a każdy z nich zabrałby kursor ze środka zdania. */
-    if (!writing()) paintDetail();
+    const busy = busyField();
+    if (!busy?.closest(".meet__list")) paintList();
+    if (!busy?.closest(".meet__detail")) paintDetail();
     window.translateTree(root);
   }
 
@@ -462,6 +618,7 @@
       const live = await api.meetings.state();
       state.recording = live.recording;
       state.seconds = live.seconds;
+      state.agenda = live.agenda ?? null;
       follow(live, state.tab === "summary");
       await reload();
       tick(state.recording);
@@ -485,6 +642,7 @@
       const started = !!live?.recording && !state.recording;
       state.recording = !!live?.recording;
       state.seconds = live?.seconds ?? 0;
+      if (live?.agenda) state.agenda = live.agenda;
       follow(live, started);
       tick(state.recording);
       if (root?.querySelector(".meet")) reload();

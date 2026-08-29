@@ -403,6 +403,12 @@ try {
     // Electron startuje jako zwykły Node i cicho ginie z kodem 0.
     env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, ELECTRON_ENABLE_LOGGING: "" },
     timeout: 120_000,
+    /* SIGKILL, nie domyślny SIGTERM. Electron SIGTERM-a nie honoruje, więc
+       limit czasu bez tej linijki nie kończy NICZEGO: test wisiał w martwym
+       oczekiwaniu godzinami, choć limit dawno minął. Strażnik w oknie
+       (wyżej) jest pierwszą linią obrony; ta jest ostatnią i działa nawet
+       wtedy, gdy w oknie nie działa już nic. */
+    killSignal: "SIGKILL",
   });
 } catch (problem) {
   console.error(problem.stdout ?? "");

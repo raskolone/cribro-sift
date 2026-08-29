@@ -37,6 +37,8 @@ const { detectConflicts } = require("./shortcuts");
 const { grabRegion, readText, compose, stampName } = require("./shot");
 const { Meetings } = require("./meeting");
 const { Watcher: MeetingWatcher } = require("./detect");
+const { digest } = require("./digest");
+const agendaSource = require("./agenda");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
 const { translator } = require("../shared/strings");
 
@@ -45,11 +47,13 @@ const { translator } = require("../shared/strings");
    i na czarno w jasnym. Stany pracy są kolorowe, żeby rzucały się w oczy. */
 const TRAY_ICON = {
   idle: "idleTemplate.png",
-  /* Spotkanie bierze tę samą ikonę co nasłuch — i to nie jest oszczędność
-     na rysunku. Fiolet znaczy w tej aplikacji jedno: „mikrofon jest
-     otwarty”. Osobny znak dla spotkania kazałby uczyć się drugiego symbolu
-     na tę samą odpowiedź na to samo pytanie („czy to nagrywa?”). */
-  meeting: "listening.png",
+  /* Spotkanie ma własny znak i własny kolor: czerwoną kropkę nagrywania.
+     Dyktowanie (fiolet, fala) trwa kilkanaście sekund i nagrywa CIEBIE;
+     spotkanie trwa godzinę i nagrywa także wszystkich, których słychać.
+     To są dwie różne odpowiedzi na pytanie „co się teraz dzieje" i nie
+     wolno ich pokazywać jednym rysunkiem. Ten sam kolor niesie znaczek
+     na wierzchu (ON AIR) — patrz --air w css/tokens.css. */
+  meeting: "meeting.png",
   listening: "listening.png",
   sifting: "sifting.png",
   done: "done.png",
@@ -452,8 +456,26 @@ function closeShotWindow() {
  * przez dwie sekundy nie działoby się nic i wyglądałoby to na zrzut, który
  * przepadł — a odczyt trwa tyle, ile trwa cudze łącze.
  */
+/**
+ * Ile najdłużej wolno trwać jednemu zaznaczaniu, zanim uznamy je za
+ * porzucone. Odczyt z modelu to kilka sekund, zaznaczanie ekranu — tyle,
+ * ile ktoś celuje myszą. Dwie minuty to z zapasem jedno i drugie.
+ */
+const SHOT_STALE_MS = 120_000;
+
 async function grabScreenText() {
-  if (shot) return false; // jedno zaznaczanie naraz
+  /* ══ JEDNO ZAZNACZANIE NARAZ — ALE NIE NA WIEKI ══
+
+     `shot` trzyma obrazek w trakcie odczytu i strzeże przed drugim
+     zaznaczaniem w środku pierwszego. Zapomniany zostawał tu na zawsze
+     i skrót przestawał robić COKOLWIEK — cicho, bez komunikatu, do
+     następnego uruchomienia aplikacji. Wystarczył jeden wyjątek na drodze
+     zapisu albo odczyt, który nigdy nie wrócił.
+
+     Stąd data przy wpisie: po dwóch minutach to nie jest już „trwa
+     zaznaczanie", tylko ślad po czymś, co się nie udało. */
+  if (shot && Date.now() - (shot.at ?? 0) > SHOT_STALE_MS) shot = null;
+  if (shot) return false;
   const t = translator(store.getSettings().uiLanguage);
 
   if (process.platform === "darwin") {
@@ -477,7 +499,7 @@ async function grabScreenText() {
   if (!grabbed) return false; // Escape w trakcie zaznaczania
 
   const settings = store.getSettings();
-  shot = { image: grabbed.buffer, reading: true, text: "", missingKey: false, error: null };
+  shot = { image: grabbed.buffer, reading: true, text: "", missingKey: false, error: null, at: Date.now() };
 
   const reading = readText(grabbed.buffer, settings)
     .then((result) => ({ text: result.text, missingKey: !!result.missingKey, error: null }))
@@ -486,24 +508,43 @@ async function grabScreenText() {
   /* Bez pytania: wynik idzie tam, gdzie okno stało ostatnim razem.
      „Do notatki" znaczy wtedy „do ostatnio ruszanej" — patrz saveShot. */
   if (settings.shot?.ask === false) {
-    const done = await reading;
-    if (!shot) return false;
-    Object.assign(shot, done, { reading: false });
-    const form = done.text ? (settings.shot.form ?? "text") : "image";
-    const result = await saveShot({ target: settings.shot.target, form, text: done.text });
-    shot = null;
-    if (result?.error) broadcast("pipeline:error", { stage: "zrzut", message: result.error });
-    return result;
+    /* `finally` nie jest tu ostrożnością na zapas. Zapis potrafi rzucić
+       (brak katalogu, notatka skasowana w międzyczasie), a wyjątek na tej
+       drodze zostawiał `shot` ustawiony na zawsze — czyli zabijał skrót
+       do końca działania aplikacji. */
+    try {
+      const done = await reading;
+      if (!shot) return false;
+      Object.assign(shot, done, { reading: false });
+      const form = done.text ? (settings.shot.form ?? "text") : "image";
+      const result = await saveShot({ target: settings.shot.target, form, text: done.text });
+      if (result?.error) broadcast("pipeline:error", { stage: "zrzut", message: result.error });
+      return result;
+    } catch (problem) {
+      broadcast("pipeline:error", { stage: "zrzut", message: problem.message });
+      return false;
+    } finally {
+      shot = null;
+    }
   }
 
-  createShotWindow();
-  const done = await reading;
-  if (!shot) return false; // zdążył zamknąć okno
-  Object.assign(shot, done, { reading: false });
-  if (shotWindow && !shotWindow.isDestroyed()) {
-    shotWindow.webContents.send("shot:text", { ...done, reading: false });
+  try {
+    createShotWindow();
+    const done = await reading;
+    if (!shot) return false; // zdążył zamknąć okno
+    Object.assign(shot, done, { reading: false });
+    if (shotWindow && !shotWindow.isDestroyed()) {
+      shotWindow.webContents.send("shot:text", { ...done, reading: false });
+    }
+    return true;
+  } catch (problem) {
+    /* Okno się nie otworzyło albo odczyt wywrócił się w miejscu, którego
+       nie przewidzieliśmy. Obrazek zwalniamy — inaczej skrót zamilkłby
+       na dobre (patrz komentarz wyżej). */
+    shot = null;
+    broadcast("pipeline:error", { stage: "zrzut", message: problem.message });
+    return false;
   }
-  return true;
 }
 
 /** Najświeższa notatka — „dopisz do notatki" bez wskazania której. */
@@ -1212,12 +1253,17 @@ function deckNotes() {
  * plakatem, a na drugim znaczkiem pocztowym. Punktem odniesienia jest
  * ekran 1440×900, czyli obszar roboczy typowego MacBooka.
  *
- * Klamry są po to, żeby ekran pomocniczy (albo bardzo wysoki) nie zrobił
- * z kartki czegoś, czego nie da się czytać ani czegoś, co zasłania pulpit.
+ * ROŚNIE, ALE NIE MALEJE — i to jest poprawka, nie przeoczenie. Skala
+ * ciągnie za sobą WSZYSTKO, razem z krojem pisma (transform: scale
+ * w sticky.html), więc na mniejszym ekranie kartka schodziła do 0,8 i tekst
+ * z niej robił się dziesięciopikselowy. Tymczasem na małym ekranie kartka
+ * nie musi być mniejsza: przy 268 pikselach mieści się wszędzie, a jedyne,
+ * co naprawdę przeszkadza, to napis, którego nie da się przeczytać.
+ * Podłoga jest więc równa jedności — w dół nie ma po co iść.
  */
 function deckScale(workArea) {
   const k = Math.min(workArea.width / 1440, workArea.height / 900);
-  return Math.min(1.45, Math.max(0.8, Math.round(k * 20) / 20));
+  return Math.min(1.45, Math.max(1, Math.round(k * 20) / 20));
 }
 
 /** Rozmiar OKNA kartki (z aureolą) przy danej skali. */
@@ -1840,6 +1886,9 @@ function meetingMenuItem(t) {
 async function toggleMeeting(about = null) {
   try {
     if (meetings.recording) {
+      // Cokolwiek kończy to nagranie, po jego końcu nie ma już czego
+      // kończyć razem ze zniknięciem okna rozmowy.
+      startedFromSpot = false;
       const { discarded, meeting, seconds } = await meetings.stop();
       if (discarded) {
         broadcast("pipeline:error", {
@@ -1848,12 +1897,51 @@ async function toggleMeeting(about = null) {
         });
       } else if (meeting) {
         broadcast("meeting:done", meeting);
+        /* Podsumowanie leci SAMO i leci w tle. Czekanie na nie zablokowałoby
+           przycisk „Koniec" na kilkanaście sekund — a to jest ta jedna
+           chwila, w której człowiek właśnie wstaje od biurka. */
+        if (store.getSettings().meetings?.summarize !== false) {
+          void summarizeMeeting(meeting.id);
+        }
       }
       return;
     }
     await meetings.start(about);
   } catch (problem) {
     broadcast("pipeline:error", { stage: "spotkanie", message: problem.message });
+  }
+}
+
+/**
+ * Wniosek z rozmowy — i nazwa, pod którą da się ją potem znaleźć.
+ *
+ * Nazwa zmienia się TYLKO wtedy, gdy nie została nadana ręką. Kto wpisał
+ * własny tytuł, podjął decyzję; model nie ma jej po co poprawiać.
+ */
+async function summarizeMeeting(id) {
+  const settings = store.getSettings();
+  const meeting = store.getMeetings().find((item) => item.id === id);
+  if (!meeting) return null;
+
+  store.updateMeeting(id, { summarizing: true, summaryError: null });
+  broadcast("meeting:changed", meetingState());
+
+  try {
+    const { title, summary } = await digest(meeting, settings);
+    const patch = { summary, summarizing: false, summaryError: null };
+    /* Kod pokoju z okna przeglądarki („jxg-hfsa-qvb") nazwą nie jest —
+       i to jest cały powód, dla którego ten krok w ogóle istnieje. */
+    if (settings.meetings?.rename !== false && title && !meeting.titleByHand) {
+      patch.title = title;
+    }
+    store.updateMeeting(id, patch);
+    return patch;
+  } catch (problem) {
+    store.updateMeeting(id, { summarizing: false, summaryError: problem.message });
+    broadcast("pipeline:error", { stage: "podsumowanie", message: problem.message });
+    return null;
+  } finally {
+    broadcast("meeting:changed", meetingState());
   }
 }
 
@@ -1865,6 +1953,9 @@ async function toggleMeeting(about = null) {
 /** Rozmowa wykryta, o którą jeszcze nie zapytano (albo zapytano i czeka). */
 let spotted = null;
 let watcher = null;
+/* Czy trwające nagranie ruszyło od WYKRYTEJ rozmowy. Tylko takie wolno
+   zakończyć razem ze zniknięciem jej okna — patrz meetingSpotted. */
+let startedFromSpot = false;
 
 /** Wszystko, co znaczek i okno wiedzą o spotkaniach — jedną wiadomością.
 
@@ -1872,7 +1963,17 @@ let watcher = null;
     albo nagrywa, albo nie robi żadnej z tych dwóch rzeczy. Dwa kanały
     znaczyłyby dwa meldunki w różnej kolejności i migotanie na styku. */
 function meetingState() {
-  return { ...meetings.state, spotted };
+  return {
+    ...meetings.state,
+    spotted,
+    /* Kalendarz jedzie tą samą wiadomością, bo zakładka rysuje z tego
+       jeden widok: co trwa, co zaraz będzie i o co pyta znaczek. */
+    agenda: {
+      access: agenda.access,
+      events: agendaSource.upcoming(agenda.events, Date.now()),
+      armed: store.getSettings().meetings?.armed ?? [],
+    },
+  };
 }
 
 function tellMeetings() {
@@ -1910,6 +2011,22 @@ async function screenWindows() {
  */
 async function meetingSpotted(meeting) {
   if (!meeting) {
+    /* ══ KONIEC ROZMOWY ══
+
+       Okno rozmowy zniknęło. Jeżeli to MY je widzieliśmy, gdy nagranie
+       ruszało, to jest właśnie ten moment, w którym rozmowa się skończyła
+       — i nagranie ma się skończyć razem z nią. Bez tego spotkanie wykryte
+       samo nagrywałoby się do wieczora.
+
+       Warunek `startedFromSpot` jest tu istotny: nagranie włączone ręką
+       z menu, w trakcie rozmowy, której nie wykryliśmy, nie ma prawa
+       zgasnąć dlatego, że komuś zamknęła się karta w przeglądarce. */
+    if (meetings.recording && startedFromSpot) {
+      if (store.getSettings().meetings?.stopWithMeeting !== false) {
+        startedFromSpot = false;
+        await toggleMeeting();
+      }
+    }
     if (!spotted) return;
     spotted = null;
     tellMeetings();
@@ -1923,6 +2040,7 @@ async function meetingSpotted(meeting) {
     /* Bez pytania znaczy też: bez wywoływania okna na wierzch. Kto wybrał
        „sam z siebie", wybrał niewidzialność — dowodem, że nagranie ruszyło,
        jest znaczek i znak w pasku menu. */
+    startedFromSpot = true;
     await toggleMeeting({ title: meeting.title, where: meeting.where });
     return;
   }
@@ -1944,9 +2062,63 @@ async function answerMeeting(yes) {
   spotted = null;
   tellMeetings();
   if (!yes || !meeting) return false;
+  startedFromSpot = true;
   await toggleMeeting({ title: meeting.title, where: meeting.where });
   createMainWindow().webContents.send("view:go", "meetings");
   return true;
+}
+
+/* ── Kalendarz ─────────────────────────────────────────────────
+   Wykrywanie po oknach mówi, że rozmowa TRWA. Kalendarz mówi, co ma się
+   zacząć — i jako jedyny zna nazwę spotkania, zanim ono się zacznie.
+   Rozstrzygnięcia („czy ten wpis to w ogóle rozmowa") siedzą w agenda.js
+   i nie znają Electrona. */
+
+/** Co widać w kalendarzu i jaki był stan zgody. */
+let agenda = { access: "unknown", events: [] };
+let agendaWatch = null;
+/** Kiedy patrzyliśmy ostatnio — do pytania „co ruszyło od tamtej pory". */
+let agendaSeenAt = null;
+
+/** Jak często pytamy kalendarz. Minuta: spotkania zaczynają się o pełnych
+    kwadransach, a nie w losowych sekundach. */
+const AGENDA_EVERY = 60_000;
+
+async function lookAtAgenda() {
+  const settings = store.getSettings();
+  if (!settings.meetings?.calendar) return;
+
+  const fresh = await agendaSource.read();
+  agenda = fresh;
+  const now = Date.now();
+  const started = agendaSource.justStarted(fresh.events, now, { since: agendaSeenAt });
+  agendaSeenAt = now;
+  broadcast("meeting:changed", meetingState());
+
+  if (meetings.recording) return;
+
+  /* Wpis, przy którym powiedziano „notuj", zaczyna się sam. Reszta idzie
+     zwykłą drogą wykrywania — czyli pytaniem znaczka, gdy na ekranie
+     naprawdę pojawi się okno rozmowy. Kalendarz mówi tylko, że coś MIAŁO
+     się zacząć; to, czy się zaczęło, widać po oknie. */
+  const armed = new Set(settings.meetings?.armed ?? []);
+  const mine = started.find((event) => armed.has(event.id));
+  if (!mine) return;
+
+  startedFromSpot = true;
+  await toggleMeeting({ title: mine.title, where: "Kalendarz" });
+}
+
+function watchAgenda(settings = store.getSettings()) {
+  clearInterval(agendaWatch);
+  agendaWatch = null;
+  if (!settings.meetings?.calendar) {
+    agenda = { access: "unknown", events: [] };
+    agendaSeenAt = null;
+    return;
+  }
+  agendaWatch = setInterval(() => void lookAtAgenda(), AGENDA_EVERY);
+  void lookAtAgenda();
 }
 
 /**
@@ -2713,15 +2885,35 @@ function bindHotkeys() {
  *
  * @returns {boolean} czy klawisze udało się zająć
  */
+/** Czy klawisze do zrzutu są w tej chwili nasze. Dla Ustawień i dla
+    komunikatu, gdy okazuje się, że nie są. */
+let shotHotkeyHeld = null;
+
 function bindShotHotkey() {
   const accelerator = store.getSettings().shot?.hotkey;
+  shotHotkeyHeld = null;
   if (!accelerator) return false;
+
+  let held = false;
   try {
-    return globalShortcut.register(accelerator, () => grabScreenText());
+    held = globalShortcut.register(accelerator, () => grabScreenText());
   } catch {
     // Zapis, którego Electron nie rozumie („Cmd+”, sam modyfikator).
-    return false;
+    held = false;
   }
+  shotHotkeyHeld = held;
+
+  /* Nieudana rejestracja to jedyny sposób, w jaki ta funkcja może umrzeć
+     po cichu: klawisze zajął ktoś inny, a aplikacja wygląda na sprawną.
+     Mówimy o tym raz, zamiast zostawiać człowieka z pytaniem, czemu nic
+     się nie dzieje. */
+  if (!held) {
+    broadcast("pipeline:error", {
+      stage: "zrzut",
+      message: `Skrót ${accelerator} do tekstu z ekranu jest zajęty przez inną aplikację — wybierz inny w Ustawieniach.`,
+    });
+  }
+  return held;
 }
 
 /* ── Zgody systemowe ──────────────────────────────────────────── */
@@ -2730,6 +2922,8 @@ function bindShotHotkey() {
 function permissionSnapshot() {
   return {
     backend: hotkeys?.backend ?? "none",
+    // null = skrótu nie ma wcale; false = klawisze zajął ktoś inny.
+    shotHotkey: shotHotkeyHeld,
     accessibility:
       process.platform === "darwin" ? systemPreferences.isTrustedAccessibilityClient(false) : true,
     microphone:
@@ -2801,6 +2995,9 @@ function registerIpc() {
     // Wykrywanie rusza i staje razem z ustawieniem — a nie dopiero po
     // przeładowaniu aplikacji.
     if (patch.meetings?.detect !== undefined) applyDetect(settings);
+    // Kalendarz włącza się i gaśnie razem z przełącznikiem — a pierwsze
+    // włączenie jest tym momentem, w którym system pyta o zgodę.
+    if (patch.meetings?.calendar !== undefined) watchAgenda(settings);
     if (patch.cloud) {
       cloud.configure(settings.cloud);
       watchCloud();
@@ -3276,6 +3473,32 @@ function registerIpc() {
     store.updateMeeting(id, { notes: String(text ?? "") });
     return true;
   });
+  /* Podsumowanie na żądanie: z przycisku w zakładce. Ta sama droga, którą
+     idzie po zakończeniu rozmowy — bo to ta sama czynność, tylko wywołana
+     ręką. Da się ją powtórzyć w nieskończoność, transkrypcja leży. */
+  ipcMain.handle("meetings:summarize", (_e, id) => summarizeMeeting(id));
+  /* „Notuj to spotkanie" przy wpisie z kalendarza. Zgoda zapada RAZ,
+     przed spotkaniem — a nie w chwili, w której trzeba już słuchać. */
+  ipcMain.handle("meetings:arm", (_e, { id, on } = {}) => {
+    const armed = new Set(store.getSettings().meetings?.armed ?? []);
+    if (on) armed.add(id);
+    else armed.delete(id);
+    /* Trzymamy tylko to, co jeszcze przed nami: identyfikatory wpisów,
+       które dawno minęły, rosłyby w ustawieniach bez końca. */
+    const alive = new Set(agenda.events.map((event) => event.id));
+    const kept = [...armed].filter((item) => alive.has(item));
+    store.saveSettings({ meetings: { armed: kept } });
+    broadcast("meeting:changed", meetingState());
+    return kept;
+  });
+  /* Tytuł wpisany ręką. Znacznik `titleByHand` chroni go przed inteligentną
+     zmianą nazwy: kto nazwał spotkanie sam, podjął decyzję. */
+  ipcMain.handle("meetings:rename", (_e, { id, title } = {}) => {
+    const name = String(title ?? "").trim();
+    store.updateMeeting(id, { title: name || null, titleByHand: !!name });
+    broadcast("meeting:changed", meetingState());
+    return true;
+  });
 
   ipcMain.handle("history:get", () => store.getHistory());
   ipcMain.handle("history:update", (_e, { id, patch }) => store.updateEntry(id, patch));
@@ -3650,6 +3873,7 @@ if (!app.requestSingleInstanceLock()) {
     createHud();
     bindHotkeys();
     applyDetect();
+    watchAgenda();
     watchPermissions();
     createMainWindow();
     watchCloud();

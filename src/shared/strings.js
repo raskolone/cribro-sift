@@ -59,11 +59,44 @@ const EN = {
   "Skasować to spotkanie razem z nagraniem?": "Delete this meeting along with its recording?",
   "Trwa nagrywanie. Tekst pojawi się po zakończeniu.":
     "Recording. The text will appear once it ends.",
-  Notatki: "Notes",
   "Pierwsze zdania pojawią się tu za chwilę — zapis powstaje odcinkami.":
     "The first sentences will show up shortly — the record is built in stretches.",
   "Podsumowanie powstanie po zakończeniu rozmowy.":
     "The summary is written once the conversation ends.",
+  Nadchodzące: "Coming up",
+  "Pokaż kalendarz": "Show the calendar",
+  "Nadchodzące spotkania z kalendarza macOS — także z konta Google, jeśli jest tam dodane.":
+    "Upcoming meetings from the macOS calendar — including a Google account added there.",
+  "Brak zgody na kalendarz — przyznaj ją w Ustawieniach systemowych, w sekcji Kalendarz.":
+    "No calendar permission — grant it in System Settings, under Calendars.",
+  "Nic w planie na najbliższe godziny.": "Nothing scheduled for the next few hours.",
+  "Notuj to spotkanie": "Take notes at this meeting",
+  "Włączone nagra się samo, gdy nadejdzie jego godzina.":
+    "The ones switched on record themselves when their time comes.",
+  "Po rozmowie": "After the conversation",
+  "Podsumuj samo": "Summarize on its own",
+  "Zaraz po zakończeniu, z zapisu i z notatek.":
+    "Right after it ends, from the record and the notes.",
+  "Nazwij spotkanie z treści": "Name the meeting from its content",
+  "Zamiast kodu pokoju z okna przeglądarki.": "Instead of the room code from the browser window.",
+  "Kończ razem ze spotkaniem": "End with the meeting",
+  "Gdy okno rozmowy zniknie, nagranie też.": "When the call window goes, so does the recording.",
+  "Jakie podsumowanie": "What kind of summary",
+  "Zwykłe podsumowanie": "Plain summary",
+  "O czym było, co ustalono, co komu zostało.":
+    "What it was about, what was agreed, what is left to whom.",
+  "Własne wytyczne": "Your own brief",
+  "Piszesz sam, czego od niego oczekujesz.": "You write what you expect from it.",
+  "Np. Same zadania, w punktach, po angielsku. Bez wstępu.":
+    "E.g. Tasks only, as bullets, in English. No preamble.",
+  "Piszę podsumowanie…": "Writing the summary…",
+  "Podsumowanie się nie udało": "The summary did not work out",
+  "Napisz podsumowanie": "Write the summary",
+  "Napisz jeszcze raz": "Write it again",
+  "Nie ma z czego zrobić podsumowania — nie ma ani zapisu, ani notatek.":
+    "There is nothing to summarize — neither a record nor notes.",
+  "Podsumowanie powstaje z zapisu rozmowy i z notatek, według wybranych wytycznych.":
+    "The summary is built from the record and your notes, following the chosen brief.",
   "zapis rośnie w trakcie rozmowy": "the record grows as you talk",
   "Co warto zapamiętać poza tym, co słychać.":
     "What is worth remembering beyond what can be heard.",

@@ -180,6 +180,11 @@ contextBridge.exposeInMainWorld("cribro", {
     answer: (yes) => ipcRenderer.invoke("meetings:answer", yes),
     // Notatki pisane ręką w trakcie rozmowy — obok transkrypcji.
     note: (id, text) => ipcRenderer.invoke("meetings:note", { id, text }),
+    // Podsumowanie na żądanie i własna nazwa spotkania.
+    summarize: (id) => ipcRenderer.invoke("meetings:summarize", id),
+    rename: (id, title) => ipcRenderer.invoke("meetings:rename", { id, title }),
+    // Kalendarz: „notuj to spotkanie", zgoda zapadająca przed czasem.
+    arm: (id, on) => ipcRenderer.invoke("meetings:arm", { id, on }),
     onChange: on("meeting:changed"),
     onDone: on("meeting:done"),
   },
