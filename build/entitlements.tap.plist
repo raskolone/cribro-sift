@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Uprawnienia programu pomocniczego cribro-tap. Osobny plik od
+         entitlements.mac.plist, bo to jest osobny program i ma dostać
+         mniej: żadnego JIT-a, żadnych zdarzeń systemowych, żadnego
+         wyłączania sprawdzania bibliotek. Bierze dźwięk i tyle. -->
+
+    <!-- Mikrofon. Bez tego hardened runtime odmawia dostępu do wejścia
+         audio, a tor A zostaje pusty — bez żadnego błędu po drodze. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Nagrywanie ekranu NIE MA klucza uprawnienia. To zgoda TCC,
+         o którą system pyta przy pierwszym wywołaniu SCShareableContent,
+         i pamięta ją po tożsamości podpisu — dlatego program pomocniczy
+         musi być podpisany tym samym certyfikatem co aplikacja. -->
+  </dict>
+</plist>

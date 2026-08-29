@@ -1,0 +1,76 @@
+#!/bin/bash
+# Budowa cribro-tap — programu, który bierze dźwięk spotkania w dwóch torach.
+#
+# Electron nie umie na macOS wziąć dźwięku systemu (jego typy mówią wprost:
+# „loopback … currently only supported on Windows”), więc ta jedna rzecz musi
+# być natywna. Reszta modułu spotkań zostaje w JavaScripcie.
+#
+# Program powstaje UNIWERSALNY — arm64 i x86_64 sklejone w jeden plik. Nie
+# dlatego, że ktoś dziś uruchamia Cribro na Intelu, tylko dlatego, że
+# electron-builder pakuje dwa DMG-i i cichy brak architektury objawiłby się
+# dopiero u kogoś innego, jako „nagrywanie nie działa” bez żadnego błędu.
+#
+# Minimum to macOS 13: tam pojawiło się `capturesAudio`. Mikrofon w tym samym
+# strumieniu wymaga 15 i jest w kodzie pod `#available` — na starszym systemie
+# zostaje sam tor systemu, zamiast odmowy uruchomienia.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SRC="$ROOT/native/tap/main.swift"
+OUT_DIR="$ROOT/native/build"
+OUT="$OUT_DIR/cribro-tap"
+DEPLOY="13.0"
+
+NAME="${IDENTITY_NAME:-Cribro Sift Dev}"
+KEYCHAIN="$HOME/Library/Keychains/cribro-sign.keychain-db"
+KEYCHAIN_PASS="cribro"
+
+[ -f "$SRC" ] || { echo "Nie znaleziono źródła: $SRC"; exit 1; }
+mkdir -p "$OUT_DIR"
+
+build() {
+  local arch="$1" out="$2"
+  swiftc -O \
+    -target "${arch}-apple-macos${DEPLOY}" \
+    -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia \
+    -o "$out" "$SRC"
+}
+
+echo "Buduję cribro-tap (macOS ${DEPLOY}+)…"
+
+build arm64 "$OUT_DIR/cribro-tap-arm64"
+
+# Intel bywa nie do zbudowania na maszynie bez pełnego Xcode. To nie jest
+# powód, żeby przerwać budowę — powód, żeby powiedzieć o tym głośno.
+if build x86_64 "$OUT_DIR/cribro-tap-x86_64" 2>/dev/null; then
+  lipo -create "$OUT_DIR/cribro-tap-arm64" "$OUT_DIR/cribro-tap-x86_64" -output "$OUT"
+  rm -f "$OUT_DIR/cribro-tap-arm64" "$OUT_DIR/cribro-tap-x86_64"
+  echo "Architektury: $(lipo -archs "$OUT")"
+else
+  mv "$OUT_DIR/cribro-tap-arm64" "$OUT"
+  echo "UWAGA: x86_64 się nie zbudował — plik jest tylko arm64."
+  echo "       Build na Intela wyjdzie bez nagrywania spotkań."
+fi
+
+# Podpis tą samą tożsamością co aplikacja. Zgoda „Nagrywanie ekranu” pamięta,
+# CZYM program jest podpisany — dokładnie tak samo jak zgoda „Dostępność”
+# (patrz scripts/sign.sh i rozdział o cdhashu w README). Program pomocniczy
+# podpisany inaczej niż bundle to druga tożsamość i druga zgoda do klikania.
+IDENTITY=""
+if [ -f "$KEYCHAIN" ]; then
+  security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN" 2>/dev/null || true
+  IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" 2>/dev/null \
+    | grep "$NAME" | head -1 | awk '{print $2}')"
+fi
+
+if [ -n "$IDENTITY" ]; then
+  codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp=none \
+    --options runtime --entitlements "$ROOT/build/entitlements.tap.plist" "$OUT"
+  echo "Podpisany: $NAME"
+else
+  codesign --force --sign - --timestamp=none "$OUT"
+  echo "UWAGA: brak tożsamości „${NAME}” — podpis ad-hoc."
+  echo "       Zgoda „Nagrywanie ekranu” przepadnie przy przebudowie. Napraw: npm run identity"
+fi
+
+echo "Gotowe: $OUT"
