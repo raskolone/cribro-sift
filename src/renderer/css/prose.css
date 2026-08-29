@@ -311,3 +311,90 @@
 .prose[data-align="right"] img {
   margin-inline: auto;
 }
+
+/* ── Przenoszenie linii ──
+   Uchwyt jak w Notion: sześć kropek w marginesie, przy linii, nad którą
+   stoi kursor. Nie jest częścią notatki — leży w <body> i stoi na
+   współrzędnych ekranu (dlaczego, patrz js/editor.js). Dlatego opisują go
+   selektory bez `.prose`: w drzewie nie ma nad nim żadnego.
+
+   Pojawia się dopiero pod kursorem i to jest cała jego obecność. Notatka
+   ma wyglądać jak tekst, a nie jak tabela z uchwytami przy każdym wierszu. */
+.prose-grip {
+  position: fixed;
+  z-index: 40;
+  width: 16px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  /* Własny promień, nie żeton z tokenów: przy szesnastu pikselach --r-sm
+     zaokrągla uchwyt do pigułki i sześć kropek przestaje w nim siedzieć. */
+  border-radius: 5px;
+  color: var(--text-faint);
+  cursor: grab;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.prose-grip:hover,
+.prose-grip[data-dragging] {
+  color: var(--accent);
+  background: var(--accent-08);
+}
+.prose-grip[data-dragging] {
+  cursor: grabbing;
+}
+/* Sześć kropek z samych cieni: element zostaje przezroczysty, więc siódmej
+   kropki w środku nie ma. */
+.prose-grip::before {
+  content: "";
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow:
+    -3px -5px 0 currentColor, 3px -5px 0 currentColor,
+    -3px 0 0 currentColor, 3px 0 0 currentColor,
+    -3px 5px 0 currentColor, 3px 5px 0 currentColor;
+}
+
+/* Kreska celownicza — mówi, GDZIE linia wyląduje, a nie że się przesuwa.
+   Kropka na lewym końcu jest po to, żeby cienka linia miała punkt
+   zaczepienia i nie ginęła na tle tekstu. */
+.prose-drop {
+  position: fixed;
+  z-index: 39;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  box-shadow: var(--glow, 0 0 24px rgba(114, 240, 180, 0.35));
+  pointer-events: none;
+}
+.prose-drop::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Linia w drodze zostaje na miejscu i blaknie. Wyjęcie jej z tekstu
+   przestawiałoby wszystko poniżej w trakcie celowania — a celuje się
+   właśnie względem tego, co poniżej. */
+.prose [data-moving="true"] {
+  opacity: 0.4;
+}
+
+/* W trakcie przenoszenia nic się nie zaznacza i kursor jest jeden na całe
+   okno — także nad paskiem narzędzi, poza który łatwo wyjechać ręką. */
+body.is-moving-line {
+  cursor: grabbing;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prose-grip {
+    transition: none;
+  }
+}

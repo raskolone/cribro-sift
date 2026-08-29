@@ -20,8 +20,14 @@
 
 (function () {
   const { markdownToHtml, htmlToMarkdown } = window.CribroRichtext;
+  const { landing, nearest, pointless } = window.CribroBlockMove;
 
   const CHECKBOX_ZONE = 26; // szerokość pola do odhaczenia, w pikselach
+  /* Uchwyt do przenoszenia linii — rozmiar i odstęp od tekstu. Stoi
+     w marginesie, po lewej stronie notatki, i nigdy nad literami. */
+  const GRIP_W = 16;
+  const GRIP_H = 20;
+  const GRIP_GAP = 6;
   /* Szerokość strzałki przy nagłówku składanym. Tak samo jak przy liście
      zadań: rysuje ją CSS, więc kliknięcie w nią jest kliknięciem w lewy
      skraj bloku i tylko tutaj wiadomo, gdzie ten skraj przebiega. */
@@ -48,6 +54,8 @@
       this.root.addEventListener("paste", (event) => this.#paste(event));
       this.root.addEventListener("click", (event) => this.#click(event));
       this.root.addEventListener("keydown", (event) => this.#keydown(event));
+
+      this.#dragSetup();
     }
 
     /* ── Treść ── */
@@ -461,6 +469,390 @@
       selection.addRange(range);
     }
 
+    /* ── Przenoszenie linii ─────────────────────────────────────
+       Uchwyt jak w Notion: pokazuje się przy linii, nad którą stoi kursor,
+       i pozwala przełożyć ją gdzie indziej. Działa na punktach listy,
+       punktach listy zadań i na blokach stojących wprost w notatce.
+
+       DWIE DECYZJE, KTÓRE WYGLĄDAJĄ NA DROBIAZG, A NIM NIE SĄ:
+
+       1. UCHWYT NIE JEST ELEMENTEM EDYTORA. Leży w <body> i stoi na
+          współrzędnych ekranu. Wszystko, co narysujemy wewnątrz
+          contenteditable, jest treścią: da się w to wejść kursorem, da się
+          to skasować Backspace'em i wchodzi do htmlToMarkdown. Uchwyt
+          postawiony w środku notatki zostawiałby ślad w pliku na dysku.
+
+       2. PRZECIĄGANIE CHODZI NA ZDARZENIACH WSKAŹNIKA, nie na HTML5 drag
+          and drop. Wewnątrz contenteditable przeglądarka ma własne
+          przeciąganie zaznaczonego tekstu i te dwa mechanizmy walczyłyby
+          o ten sam gest — a cudze wygrywa, bo zaczyna się wcześniej.
+
+       Rozstrzygnięcia (czym staje się przeniesiona linia, ile linii jedzie
+       razem ze zwiniętym nagłówkiem, do której szczeliny) siedzą osobno,
+       w shared/blockmove.js, i są sprawdzane bez przeglądarki. */
+
+    #dragSetup() {
+      const doc = this.root.ownerDocument;
+
+      /* Sprzątanie po poprzednikach.
+         Uchwyt leży w <body>, a nie w edytorze — i to jest jedyna rzecz,
+         która go przeżywa. Notatnik przebudowuje swój szkielet
+         (root.innerHTML = SKELETON w js/notes-view.js), więc element
+         edytora ginie razem ze swoimi nasłuchami, a uchwyt zostawałby
+         w dokumencie na zawsze: jeden na każde otwarcie widoku. Po korzeniu
+         odłączonym od dokumentu poznajemy uchwyt, który nie ma już czym
+         ruszać. */
+      for (const stale of doc.querySelectorAll(".prose-grip, .prose-drop")) {
+        if (!stale.__root?.isConnected) stale.remove();
+      }
+
+      this.grip = doc.createElement("div");
+      this.grip.className = "prose-grip";
+      this.grip.hidden = true;
+      this.grip.title = "Przeciągnij, żeby przenieść (⌥↑ ⌥↓)";
+      this.grip.__root = this.root;
+      doc.body.appendChild(this.grip);
+
+      this.dropMark = doc.createElement("div");
+      this.dropMark.className = "prose-drop";
+      this.dropMark.hidden = true;
+      this.dropMark.__root = this.root;
+      doc.body.appendChild(this.dropMark);
+
+      this.drag = null;
+      this.gripLine = null;
+
+      // Uchwyty trzymane osobno, bo odpinamy je po każdym przeciągnięciu.
+      this.onDragMove = (event) => this.#dragMove(event);
+      this.onDragEnd = (event) => this.#dragEnd(event);
+      this.onDragCancel = () => this.#dragCleanup();
+      this.onDragKey = (event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.#dragCleanup();
+      };
+
+      this.root.addEventListener("pointermove", (event) => this.#gripFollow(event));
+      // Wyjście kursora NA UCHWYT nie jest wyjściem z notatki — inaczej
+      // uchwyt znikałby dokładnie w chwili, w której sięga się po niego.
+      this.root.addEventListener("pointerleave", (event) => {
+        if (event.relatedTarget === this.grip) return;
+        this.#gripHide();
+      });
+      this.grip.addEventListener("pointerleave", (event) => {
+        if (this.drag || this.root.contains(event.relatedTarget)) return;
+        this.#gripHide();
+      });
+      this.grip.addEventListener("pointerdown", (event) => this.#dragStart(event));
+
+      /* Przewinięcie i zmiana rozmiaru okna przesuwają linię spod uchwytu.
+         Uchwyt stoi na współrzędnych ekranu, więc musi zniknąć, zamiast
+         zawisnąć nad cudzym zdaniem. */
+      doc.addEventListener("scroll", () => this.#gripHide(), true);
+      doc.defaultView?.addEventListener("resize", () => this.#gripHide());
+    }
+
+    /**
+     * Linia, którą wolno przenieść: punkt listy najwyższego poziomu albo
+     * blok stojący wprost w notatce.
+     *
+     * Punkty list zagnieżdżonych zostają nietknięte celowo — przenoszenie
+     * między poziomami wcięcia to inne zadanie i inne zasady, a wpuszczone
+     * tutaj tylnymi drzwiami rozsypywałoby wcięcia bez ostrzeżenia.
+     */
+    #lineFor(node) {
+      const line = node?.closest?.("li, p, h1, h2, h3, blockquote, hr");
+      if (!line || !this.root.contains(line)) return null;
+      if (line.tagName === "LI") {
+        return line.parentElement?.parentElement === this.root ? line : null;
+      }
+      return line.parentElement === this.root ? line : null;
+    }
+
+    /** Linie po kolei, z pominięciem schowanych pod zwiniętym nagłówkiem. */
+    #lines() {
+      const out = [];
+      for (const block of this.root.children) {
+        if (block.getAttribute("data-folded") === "true") continue;
+        if (block.tagName === "UL" || block.tagName === "OL") out.push(...block.children);
+        else out.push(block);
+      }
+      return out;
+    }
+
+    /**
+     * Co jedzie razem ze złapaną linią.
+     *
+     * Zwykle ona sama. Wyjątkiem jest nagłówek ZWINIĘTY: pod nim stoi treść,
+     * której nie widać, a przeniesienie samego nagłówka zostawiłoby ją
+     * w miejscu — czyli rozsypałoby notatkę dokładnie tam, gdzie autor jej
+     * nie widzi. Co należy do nagłówka, wie już #foldRange; to samo pytanie
+     * zadaje przy chowaniu i pokazywaniu, więc drugiej odpowiedzi nie ma.
+     */
+    #group(line) {
+      const closed =
+        HEADINGS.includes(line.tagName) && line.getAttribute("data-toggle") === "closed";
+      return closed ? [line, ...this.#foldRange(line)] : [line];
+    }
+
+    /**
+     * Szczeliny między liniami — o jedną więcej niż linii, bo jest jeszcze
+     * ta na samym końcu. Indeks szczeliny znaczy „przed tą linią”.
+     */
+    #gaps() {
+      const lines = this.#lines();
+      const gaps = lines.map((line) => ({
+        y: line.getBoundingClientRect().top,
+        before: line,
+        container: line.parentElement,
+      }));
+      const last = lines[lines.length - 1];
+      if (last) {
+        gaps.push({
+          y: last.getBoundingClientRect().bottom,
+          before: null,
+          container: last.parentElement,
+        });
+      }
+      return gaps;
+    }
+
+    #gripFollow(event) {
+      if (this.drag) return;
+      const line = this.#lineFor(event.target);
+      if (!line) {
+        this.#gripHide();
+        return;
+      }
+      this.gripLine = line;
+
+      const box = line.getBoundingClientRect();
+      // Punkt listy zaczyna się dopiero za punktorem, więc uchwyt
+      // odmierzamy od krawędzi całej listy — inaczej siadałby na kropce.
+      const owner = line.tagName === "LI" ? line.parentElement : line;
+      const left = owner.getBoundingClientRect().left - GRIP_W - GRIP_GAP;
+      const view = this.root.ownerDocument.defaultView;
+      const leading = parseFloat(view.getComputedStyle(line).lineHeight) || 24;
+
+      this.grip.hidden = false;
+      this.grip.style.left = `${Math.max(2, left)}px`;
+      // Do PIERWSZEGO wiersza bloku, nie do jego środka: akapit na cztery
+      // wiersze ma uchwyt przy górze, tam gdzie się zaczyna.
+      this.grip.style.top = `${box.top + Math.min(leading, box.height) / 2 - GRIP_H / 2}px`;
+    }
+
+    #gripHide() {
+      if (this.drag) return;
+      this.grip.hidden = true;
+      this.gripLine = null;
+    }
+
+    #dragStart(event) {
+      const line = this.gripLine;
+      if (!line || event.button !== 0) return;
+      // Bez tego zaczyna się zaznaczanie tekstu i notatka miga na niebiesko.
+      event.preventDefault();
+
+      const lines = this.#lines();
+      const from = lines.indexOf(line);
+      if (from === -1) return;
+      const group = this.#group(line);
+
+      this.drag = {
+        pointerId: event.pointerId,
+        group,
+        from,
+        /* Ile SZCZELIN zajmuje to, co jedzie — a nie ile bloków jedzie.
+           Treść pod zwiniętym nagłówkiem jest schowana, więc w spisie linii
+           jej nie ma i cała część zajmuje dokładnie jedno miejsce. */
+        span: group.filter((node) => lines.includes(node)).length || 1,
+        slot: -1,
+        gaps: [],
+      };
+
+      try {
+        this.grip.setPointerCapture(event.pointerId);
+      } catch {
+        /* wskaźnik zniknął między naciśnięciem a przechwyceniem */
+      }
+      this.grip.dataset.dragging = "true";
+      this.root.ownerDocument.body.classList.add("is-moving-line");
+      for (const node of this.drag.group) node.setAttribute("data-moving", "true");
+
+      this.grip.addEventListener("pointermove", this.onDragMove);
+      this.grip.addEventListener("pointerup", this.onDragEnd);
+      this.grip.addEventListener("pointercancel", this.onDragCancel);
+      this.root.ownerDocument.addEventListener("keydown", this.onDragKey, true);
+    }
+
+    #dragMove(event) {
+      if (!this.drag) return;
+      const gaps = this.#gaps();
+      const slot = nearest(gaps.map((gap) => gap.y), event.clientY);
+      this.drag.gaps = gaps;
+      this.drag.slot = slot;
+
+      // Szczelina tuż nad złapaną linią i tuż pod nią to jest to miejsce,
+      // w którym linia już stoi. Kreska ma wtedy zniknąć — bo nic się nie
+      // stanie, a kreska obiecywałaby, że się stanie.
+      if (slot === -1 || pointless(this.drag.from, this.drag.span, slot)) {
+        this.dropMark.hidden = true;
+        return;
+      }
+
+      const gap = gaps[slot];
+      const anchor = gap.before ?? this.#lines().at(-1);
+      if (!anchor) {
+        this.dropMark.hidden = true;
+        return;
+      }
+      const box = anchor.getBoundingClientRect();
+      const bounds = this.root.getBoundingClientRect();
+      this.dropMark.hidden = false;
+      this.dropMark.style.left = `${bounds.left}px`;
+      this.dropMark.style.width = `${bounds.width}px`;
+      this.dropMark.style.top = `${(gap.before ? box.top : box.bottom) - 1}px`;
+    }
+
+    #dragEnd() {
+      const drag = this.drag;
+      if (!drag) return;
+      this.#dragCleanup();
+
+      if (drag.slot === -1 || pointless(drag.from, drag.span, drag.slot)) return;
+      const gap = drag.gaps[drag.slot];
+      if (!gap) return;
+
+      const saved = this.#saveSelection();
+      this.#place(drag.group, gap);
+      this.#restoreSelection(saved);
+      this.#changed();
+    }
+
+    #dragCleanup() {
+      const drag = this.drag;
+      this.drag = null;
+      if (!drag) return;
+
+      try {
+        this.grip.releasePointerCapture(drag.pointerId);
+      } catch {
+        /* wskaźnik już puszczony */
+      }
+      this.grip.removeEventListener("pointermove", this.onDragMove);
+      this.grip.removeEventListener("pointerup", this.onDragEnd);
+      this.grip.removeEventListener("pointercancel", this.onDragCancel);
+      this.root.ownerDocument.removeEventListener("keydown", this.onDragKey, true);
+
+      delete this.grip.dataset.dragging;
+      this.root.ownerDocument.body.classList.remove("is-moving-line");
+      for (const node of drag.group) node.removeAttribute("data-moving");
+
+      this.dropMark.hidden = true;
+      this.grip.hidden = true;
+      this.gripLine = null;
+    }
+
+    /**
+     * Przeprowadzka.
+     *
+     * REGUŁA JEST JEDNA: pojemnikiem staje się pojemnik linii, OBOK której
+     * upuszczono. Punkt położony obok innego punktu wchodzi do tej samej
+     * listy; punkt położony obok akapitu wychodzi z listy i sam staje się
+     * akapitem. Nie ma tu drugiego wymiaru ani decyzji podejmowanej
+     * z położenia w poziomie — jedna reguła, którą widać po kresce.
+     *
+     * Wyprowadzenia punktu z listy, pod którą nic nie stoi, tą drogą się
+     * nie da. I nie ma potrzeby: od wychodzenia z listy jest przycisk na
+     * pasku, który robi to jednym naciśnięciem.
+     */
+    #place(group, gap) {
+      /* Część zwinięta pod nagłówkiem jedzie w całości i wyłącznie na
+         poziom notatki: nie ma takiej listy, w której nagłówek z treścią
+         miałby sens. */
+      const intoList = group.length === 1 && gap.container !== this.root;
+      const container = intoList ? gap.container : this.root;
+      const before = intoList ? gap.before : this.#topLevel(gap.before);
+      const task = intoList && gap.container.classList.contains("task");
+
+      const moved = group.map((line) =>
+        this.#reshape(line, landing({ tag: line.tagName, done: line.getAttribute("data-done") }, {
+          list: intoList,
+          task,
+        })),
+      );
+
+      // Rodziców zapamiętujemy PRZED wyjęciem: lista, z której zabrano
+      // ostatni punkt, ma zniknąć, a po wyjęciu nie ma już jak jej znaleźć.
+      const orphans = new Set(group.map((line) => line.parentElement));
+      for (const line of group) line.remove();
+      for (const node of moved) container.insertBefore(node, before);
+      for (const parent of orphans) {
+        if (parent && parent !== this.root && parent.parentElement && !parent.children.length) {
+          parent.remove();
+        }
+      }
+    }
+
+    /** Blok najwyższego poziomu, w którym siedzi ta linia. */
+    #topLevel(node) {
+      if (!node) return null;
+      if (node.parentElement === this.root) return node;
+      return node.closest("ul, ol, blockquote");
+    }
+
+    /** Linia przebrana w to, czym ma być po wylądowaniu. */
+    #reshape(line, shape) {
+      if (line.tagName === shape.tag) {
+        if (shape.done === null) line.removeAttribute("data-done");
+        else line.setAttribute("data-done", shape.done);
+        return line;
+      }
+
+      const doc = line.ownerDocument;
+      const element = doc.createElement(shape.tag.toLowerCase());
+      element.append(...line.childNodes);
+      if (shape.done !== null) element.setAttribute("data-done", shape.done);
+      // Składany zostaje składanym, dopóki zostaje nagłówkiem.
+      const toggle = line.getAttribute("data-toggle");
+      if (toggle && /^H[1-3]$/.test(shape.tag)) element.setAttribute("data-toggle", toggle);
+      if (!element.childNodes.length) element.appendChild(doc.createElement("br"));
+      return element;
+    }
+
+    /**
+     * Ten sam ruch bez myszy: ⌥↑ i ⌥↓.
+     *
+     * Nie jest to dodatek dla porządku. Uchwyt wymaga trafienia w szesnaście
+     * pikseli w marginesie, a linię przestawia się najczęściej wtedy, gdy
+     * ręce są już na klawiaturze — w trakcie pisania listy.
+     */
+    #moveByKey(direction) {
+      const line = this.#lineFor(this.#anchor());
+      if (!line) return false;
+
+      const lines = this.#lines();
+      const from = lines.indexOf(line);
+      if (from === -1) return false;
+      const group = this.#group(line);
+      const span = group.filter((node) => lines.includes(node)).length || 1;
+
+      // W górę: szczelina przed linią poprzednią. W dół: tuż za linią,
+      // która stoi za całą przenoszoną częścią.
+      const slot = direction < 0 ? from - 1 : from + span + 1;
+      if (slot < 0 || slot > lines.length) return false;
+
+      const gap = this.#gaps()[slot];
+      if (!gap) return false;
+
+      const saved = this.#saveSelection();
+      this.#place(group, gap);
+      this.#restoreSelection(saved);
+      this.#changed();
+      return true;
+    }
+
     /* Odhaczanie: pole jest rysowane przez CSS, więc kliknięcie w nie
        jest kliknięciem w lewy skraj punktu listy. */
     #click(event) {
@@ -491,6 +883,16 @@
     }
 
     #keydown(event) {
+      /* Przenoszenie linii idzie na ⌥ ze strzałką — przed sprawdzeniem ⌘,
+         bo nie ma z nim nic wspólnego. macOS przypisuje temu skrótowi skok
+         o akapit; przejmujemy go tylko wtedy, gdy naprawdę było co ruszyć. */
+      if (event.altKey && !event.metaKey && !event.ctrlKey) {
+        if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+          if (this.#moveByKey(event.key === "ArrowUp" ? -1 : 1)) event.preventDefault();
+          return;
+        }
+      }
+
       if (!(event.metaKey || event.ctrlKey)) return;
       // Skróty systemowe okna obsługuje menu aplikacji; tutaj tylko te,
       // które dotyczą zaznaczenia w edytorze.
