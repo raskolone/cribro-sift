@@ -95,6 +95,14 @@ const DEFAULTS = {
     mode: "compact",
     x: null,
     y: null,
+    /* Wielkość pisma na kartkach: s | m | l | xl.
+
+       Należy do CZŁOWIEKA, a nie do przekątnej ekranu — i to jest poprawka
+       po błędzie, który dało się zobaczyć. Kartka skalowała się z rozmiarem
+       pulpitu razem z krojem pisma, więc na mniejszym monitorze zostawało
+       dziesięć pikseli, których nie dało się czytać. Kartka skaluje się
+       nadal; pismo w niej — już nie. */
+    textSize: "m",
     /* Rozmiar szyby przy znaczku — zmieniany uchwytem w jej rogu.
        Klamry i przycięcie do ekranu są w widgetPanel w main/main.js. */
     panel: { width: 256, height: 320 },

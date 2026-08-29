@@ -938,15 +938,18 @@
         background: var(--line-strong);
         border-radius: 4px;
       }
+      /* Wielkość pisma podstawia js/widget.js z ustawień (widget.textSize).
+         Zapasowa liczba jest tu po to, żeby kartka była czytelna także
+         wtedy, gdy ustawienia jeszcze nie doszły. */
       #stickyText.prose {
-        font-size: 12px;
+        font-size: var(--sticky-fs, 13.5px);
         line-height: 1.7;
         min-height: 100%;
         user-select: text;
         -webkit-user-select: text;
       }
       #stickyText.prose[data-empty="true"]::before {
-        font-size: 11.5px;
+        font-size: calc(var(--sticky-fs, 13.5px) - 1.5px);
         padding: 0 var(--s-4) 10%;
       }
 

@@ -174,6 +174,30 @@
       .head[data-drag="true"] {
         cursor: grabbing;
       }
+
+      /* ══ KARTKA ZWINIĘTA DO NAGŁÓWKA ══
+
+         Notatka schodzi wtedy do samej belki z tytułem — jak roleta. To nie
+         to samo, co zdjęcie jej z wierzchu: zwinięta zostaje na pulpicie,
+         w swoim miejscu i w swojej kolejności, i wraca jednym kliknięciem.
+         Po to się ją zwija: żeby plan dnia leżał obok pracy, a nie na niej.
+
+         Wysokość okna zmienia proces główny (deck:roll); tutaj znika to,
+         co ma zniknąć, i obraca się strzałka. */
+      #card[data-rolled="true"] .body,
+      #card[data-rolled="true"] .foot,
+      #card[data-rolled="true"] #grip {
+        display: none;
+      }
+      #card[data-rolled="true"] .head {
+        border-bottom: none;
+      }
+      #card[data-rolled="true"] #roll svg {
+        transform: rotate(180deg);
+      }
+      #roll svg {
+        transition: transform var(--t);
+      }
       .head__title {
         flex: 1;
         min-width: 0;
@@ -324,8 +348,12 @@
       /* Ten sam arkusz co w Notatniku (css/prose.css), tylko o stopień
          ciaśniej — kartka jest mniejsza od okna, a nie ma być innym
          dokumentem. */
+      /* Wielkość pisma podstawia js/sticky.js z ustawień (widget.textSize) —
+         NIE bierze się ze skali kartki. Skala ciągnie za sobą całą geometrię
+         (transform: scale wyżej), więc pismo malało razem z ekranem; na
+         mniejszym monitorze zostawało dziesięć pikseli. */
       #text.prose {
-        font-size: 13px;
+        font-size: var(--sticky-fs, 13.5px);
         line-height: 1.72;
         min-height: 100%;
         user-select: text;
@@ -335,7 +363,7 @@
         --grip-gutter: 18px;
       }
       #text.prose[data-empty="true"]::before {
-        font-size: 11.5px;
+        font-size: calc(var(--sticky-fs, 13.5px) - 1.5px);
         padding: 0 var(--s-4) 8%;
       }
 
@@ -418,6 +446,11 @@
           <path d="M14 4h6v6M20 4l-8.5 8.5" />
           <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
         </symbol>
+        <!-- Zwinięcie do nagłówka. Strzałka w górę znaczy „schowaj pod
+             belkę"; ta sama, obrócona, znaczy „rozwiń z powrotem". -->
+        <symbol id="s-roll" viewBox="0 0 24 24">
+          <path d="M6 14l6-6 6 6" />
+        </symbol>
         <symbol id="s-grip" viewBox="0 0 24 24">
           <path d="M20 8L8 20M20 14l-6 6M20 20h-.01" />
         </symbol>
@@ -435,6 +468,9 @@
             </button>
             <button class="ico" id="dictate" title="Dyktuj do tej notatki">
               <svg><use href="#s-mic" /></svg>
+            </button>
+            <button class="ico" id="roll" title="Zwiń do nagłówka">
+              <svg><use href="#s-roll" /></svg>
             </button>
             <button class="ico" id="expand" title="Otwórz w Notatniku">
               <svg><use href="#s-open" /></svg>

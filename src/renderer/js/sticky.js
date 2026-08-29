@@ -312,6 +312,16 @@
       if (note) await api.notes.dictate(note.id);
       return;
     }
+    /* Zwinięcie do nagłówka. Stan trzyma proces główny razem z resztą
+       geometrii kartki — bo to on zmienia wysokość okna, a kartka ma
+       wracać zwinięta także po ponownym wyłożeniu talii. */
+    if (event.target.closest("#roll")) {
+      const rolled = card.dataset.rolled !== "true";
+      card.dataset.rolled = rolled ? "true" : "false";
+      $("#roll").title = window.t(rolled ? "Rozwiń kartkę" : "Zwiń do nagłówka");
+      if (note) await api.deck.roll(note.id, rolled);
+      return;
+    }
     if (event.target.closest("#expand")) {
       await flushSave();
       if (note) await api.notes.openWindow(note.id);
@@ -361,8 +371,22 @@
     $("#dictate").dataset.state = state;
   });
 
+
+  /* Wielkość pisma na kartce — z ustawień, nie ze skali okna.
+
+     Skala kartki ciągnie za sobą wszystko (transform: scale), więc na
+     mniejszym ekranie malał razem z nią także krój pisma i zostawało
+     dziesięć pikseli. Kartka nadal skaluje się z pulpitem; pismo w niej
+     jest odtąd sprawą człowieka, a nie przekątnej monitora. */
+  const TEXT_SIZE = { s: "12px", m: "13.5px", l: "15.5px", xl: "18px" };
+  const applyTextSize = (settings) => {
+    const chosen = TEXT_SIZE[settings?.widget?.textSize] ?? TEXT_SIZE.m;
+    document.documentElement.style.setProperty("--sticky-fs", chosen);
+  };
+
   api.settings.onChange?.((settings) => {
     setLanguage(settings.uiLanguage ?? "pl");
+    applyTextSize(settings);
     if (note) setWords();
     translateTree();
   });
@@ -383,10 +407,17 @@
 
   (async function boot() {
     applyScale(params.get("scale") ?? 1);
+    // Kartka wyłożona zwiniętą wraca zwinięta — inaczej „zwiń" znaczyłoby
+    // „schowaj do następnego razu", a to jest zupełnie inna obietnica.
+    if (params.get("rolled") === "1") {
+      card.dataset.rolled = "true";
+      $("#roll").title = "Rozwiń kartkę";
+    }
     buildPalette();
     setTimeout(unfoldAnyway, 400);
     const settings = await api.settings.get();
     setLanguage(settings.uiLanguage ?? "pl");
+    applyTextSize(settings);
     await load();
     translateTree();
   })();

@@ -798,56 +798,37 @@
      Kotwica ekranowa nie wie nic o oknie i dlatego nie ma po czym skoczyć:
      nowe miejsce to stare plus tyle, ile przejechała ręka. Ten sam wzór,
      na którym stoi rozciąganie szyby uchwytem (patrz `sizing` wyżej). */
-  badge.addEventListener("pointerdown", (event) => {
+  badge.addEventListener("pointerdown", async (event) => {
     if (event.button !== 0) return;
     /* Znaczek rusza — a razem z nim całe okno. Wszystko, co stoi na
        współrzędnych okna, a nie należy do znaczka, musi wtedy zejść:
        uchwyt kartki pojechałby z oknem jako sześć kropek obok znaczka. */
     editor.parkGrip?.();
-    grab = {
-      // skąd znaczek startuje na ekranie
-      ax: geom.sx,
-      ay: geom.sy,
-      // i skąd startuje ręka
-      sx: event.screenX,
-      sy: event.screenY,
-    };
+    grab = { sx: event.screenX, sy: event.screenY };
     moved = false;
     badge.setPointerCapture(event.pointerId);
+    await api.widget.dragStart();
   });
 
+  /* Ruch służy tu WYŁĄCZNIE do tego, żeby wiedzieć, że przeciąganie się
+     zaczęło — okno przesuwa proces główny, klatka po klatce, z prawdziwego
+     położenia kursora. Renderer nie liczy tu już żadnych współrzędnych
+     i to jest cała poprawka: policzone tutaj były z definicji spóźnione
+     o jedno przesunięcie okna. */
   badge.addEventListener("pointermove", (event) => {
-    if (!grab) return;
-    // Ruch mierzymy na ekranie, nie w oknie: okno jedzie za kursorem, więc
-    // współrzędne w oknie stoją w miejscu, choćby widget przejechał ekran.
-    if (!moved && Math.hypot(event.screenX - grab.sx, event.screenY - grab.sy) < DRAG_MIN) return;
-    if (!moved) {
-      badge.dataset.drag = stage.dataset.drag = "true";
-      // Taca znika na czas przeciągania. W nowym miejscu może wychodzić
-      // w inną stronę niż w starym, a przeliczanie tego co klatkę byłoby
-      // migotaniem czterech kółek wokół ręki.
-      hovering = false;
-      if (view === "tray") {
-        setView("badge");
-        void api.widget.layout("badge");
-      }
-    }
+    if (!grab || moved) return;
+    if (Math.hypot(event.screenX - grab.sx, event.screenY - grab.sy) < DRAG_MIN) return;
     moved = true;
-    const anchor = {
-      x: Math.round(grab.ax + (event.screenX - grab.sx)),
-      y: Math.round(grab.ay + (event.screenY - grab.sy)),
-    };
-    /* Kotwica ekranowa jedzie razem z ręką. Bez tego wpisu zostałaby ta
-       sprzed przeciągnięcia — a to z niej liczy się miejsce znaczka, gdyby
-       okno akurat zmieniło rozmiar (patrz „resize" wyżej). */
-    geom.sx = anchor.x;
-    geom.sy = anchor.y;
-    api.widget.move({ anchor, dir: geom.dir });
+    badge.dataset.drag = stage.dataset.drag = "true";
+    // Taca znika na czas przeciągania. W nowym miejscu może wychodzić
+    // w inną stronę niż w starym, a przeliczanie tego co klatkę byłoby
+    // migotaniem czterech kółek wokół ręki.
+    hovering = false;
+    if (view === "tray") setView("badge");
   });
 
   badge.addEventListener("pointerup", async (event) => {
     if (!grab) return;
-    const held = grab;
     grab = null;
     delete badge.dataset.drag;
     delete stage.dataset.drag;
@@ -856,31 +837,30 @@
     } catch {
       /* przechwycenia już nie ma — nic do zwalniania */
     }
-    if (!moved) return;
+
+    /* O tym, czy to było przeciągnięcie, rozstrzyga proces główny — on
+       widział cały ruch kursora, a nie tylko te zdarzenia, które doszły
+       do okna. Wraca stąd też gotowa geometria: przy krawędzi ekranu
+       kotwica bywa przycięta i znaczek siedzi w oknie gdzie indziej. */
+    const done = await api.widget.dragEnd();
+    if (!done?.moved) return;
 
     // Puszczenie po przeciągnięciu nie może rozwinąć listy — kliknięcie
     // przychodzi zaraz po tym zdarzeniu.
     swallowClick = true;
-    api.widget.drop({
-      anchor: {
-        x: Math.round(held.ax + (event.screenX - held.sx)),
-        y: Math.round(held.ay + (event.screenY - held.sy)),
-      },
-      dir: geom.dir,
-    });
-    // Przy krawędzi ekranu proces główny mógł przesunąć znaczek w oknie —
-    // pytamy o świeżą geometrię, zamiast zgadywać. Przeciągnięty widget
-    // wraca do samego znaczka: taca rozłożona w nowym miejscu wychodziłaby
-    // w stronę policzoną dla starego.
     hovering = false;
     if (view === "tray") setView("badge");
-    applyGeometry(await api.widget.layout(view === "list" || view === "sticky" ? "panel" : "badge"));
+    applyGeometry(done.spot);
   });
 
-  badge.addEventListener("pointercancel", () => {
+  badge.addEventListener("pointercancel", async () => {
+    if (!grab) return;
     grab = null;
     delete badge.dataset.drag;
     delete stage.dataset.drag;
+    // Bez tego pętla w procesie głównym zostałaby włączona na zawsze
+    // i znaczek chodziłby za kursorem po całym ekranie.
+    applyGeometry((await api.widget.dragEnd())?.spot);
   });
 
   /* ── Kliknięcia ─────────────────────────────────────────────── */
@@ -1046,8 +1026,22 @@
      w main/main.js. */
   api.meetings?.onChange?.((live) => applyMeeting(live));
 
+
+  /* Wielkość pisma na kartce — z ustawień, nie ze skali okna.
+
+     Skala kartki ciągnie za sobą wszystko (transform: scale), więc na
+     mniejszym ekranie malał razem z nią także krój pisma i zostawało
+     dziesięć pikseli. Kartka nadal skaluje się z pulpitem; pismo w niej
+     jest odtąd sprawą człowieka, a nie przekątnej monitora. */
+  const TEXT_SIZE = { s: "12px", m: "13.5px", l: "15.5px", xl: "18px" };
+  const applyTextSize = (settings) => {
+    const chosen = TEXT_SIZE[settings?.widget?.textSize] ?? TEXT_SIZE.m;
+    document.documentElement.style.setProperty("--sticky-fs", chosen);
+  };
+
   api.settings.onChange?.(async (settings) => {
     setLanguage(settings.uiLanguage ?? "pl");
+    applyTextSize(settings);
     await applyMode(settings.widget?.mode);
     applyLanguage(settings);
     applyMesh(settings);
@@ -1060,6 +1054,7 @@
   (async function boot() {
     const settings = await api.settings.get();
     setLanguage(settings.uiLanguage ?? "pl");
+    applyTextSize(settings);
     mode = settings.widget?.mode === "desk" ? "desk" : "compact";
     stage.dataset.mode = mode;
     buildPalette();

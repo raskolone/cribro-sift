@@ -1145,6 +1145,26 @@ function renderWidgetCard() {
 
       <div class="field">
         <div class="field__label">
+          <strong>Wielkość pisma na kartkach</strong>
+          <span>
+            Dotyczy notatek na wierzchu — i tej w szybie przy znaczku, i tych
+            leżących na pulpicie. Kartka jest mała, więc pismo na niej jest
+            mniejsze niż w Notatniku; jak bardzo, decydujesz tutaj, a nie
+            wielkość ekranu.
+          </span>
+        </div>
+        <div class="field__control">
+          <select data-setting="widget.textSize">
+            <option value="s" ${widget.textSize === "s" ? "selected" : ""}>Drobne</option>
+            <option value="m" ${(widget.textSize ?? "m") === "m" ? "selected" : ""}>Zwykłe</option>
+            <option value="l" ${widget.textSize === "l" ? "selected" : ""}>Duże</option>
+            <option value="xl" ${widget.textSize === "xl" ? "selected" : ""}>Bardzo duże</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field__label">
           <strong>Które notatki</strong>
           <span>
             Otwórz notatkę w Notatniku albo w zakładce Notatki i włącz przy niej

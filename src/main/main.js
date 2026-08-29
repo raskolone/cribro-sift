@@ -690,6 +690,14 @@ const WIDGET_PANEL_DEFAULT = { width: 256, height: 320 };
 const WIDGET_PANEL_MIN = { width: 208, height: 196 };
 const WIDGET_PANEL_MAX = { width: 560, height: 760 };
 const WIDGET_GAP = 14; // odstęp znaczek ↔ panel
+/* Ile ręka musi przejechać, zanim uznamy to za przeciąganie, a nie za
+   kliknięcie. Poniżej tego progu znaczek stoi — inaczej każde kliknięcie
+   przesuwałoby go o piksel. */
+const WIDGET_DRAG_MIN = 4;
+/* Jak szybko gaśnie odstęp między kursorem a środkiem znaczka po chwyceniu.
+   0,7 na klatkę znaczy: po pięciu klatkach (~80 ms) zostaje z trzydziestu
+   pikseli mniej niż pięć, a po ośmiu — nic. */
+const WIDGET_GRAB_FADE = 0.7;
 
 /* Pole samego znaczka: kółko z aureolą. Od czasu, gdy znaczek i taca dzielą
    jedno okno (patrz placeWidget), nie jest to już rozmiar zwiniętego okna —
@@ -1211,6 +1219,11 @@ const STICKY_MIN = { width: 210, height: 150 };
 const STICKY_MAX = { width: 760, height: 960 };
 /** Aureola — miejsce w oknie na cień i na wyskok animacji poza kartkę. */
 const STICKY_HALO = 16;
+/* Wysokość samej belki z tytułem, przy skali 1 — tyle zostaje z kartki
+   zwiniętej do nagłówka. Liczba jest z arkusza sticky.html (.head:
+   9 + 8 pikseli odstępu plus rząd ikon) i musi za nim
+   nadążać: kartka wyższa od belki pokazywałaby pasek pustego papieru. */
+const STICKY_HEAD = 43;
 const STICKY_GAP = 18;
 /* Opóźnienie między kolejnymi kartkami. Na tyle małe, żeby cała talia
    zdążyła się rozłożyć zanim wzrok wróci do pulpitu, i na tyle duże, żeby
@@ -1409,11 +1422,25 @@ function deckPlace(id, fallback, workArea) {
     ),
   };
 
+  /* Zwinięta kartka układa się zwinięta: wysokość bierze się wtedy ze
+     stanu, a nie z zapamiętanego rozmiaru. */
+  if (saved.rolled) {
+    size.height = Math.round(STICKY_HEAD * deckScale(workArea)) + STICKY_HALO * 2;
+  }
+
   return placeOn(workArea, spot, size);
 }
 
 function rememberCard(id, win) {
   if (!win || win.isDestroyed()) return;
+  /* Kartka zwinięta ma wysokość samej belki i nie jest to jej rozmiar,
+     tylko jej stan. Zapisany jako rozmiar zastąpiłby ten prawdziwy —
+     i kartka rozwinęłaby się do wysokości nagłówka. */
+  if (store.getSettings().widget?.cards?.[id]?.rolled) {
+    const { x, y } = win.getBounds();
+    store.saveSettings({ widget: { cards: { [id]: { x, y, ...cardSpot(win.getBounds()) } } } });
+    return;
+  }
   const bounds = win.getBounds();
   const { x, y, width, height } = bounds;
   store.saveSettings({
@@ -1588,7 +1615,13 @@ function createStickyWindow(note, bounds) {
 
   win.deckScale = deckScaleAt(bounds);
   win.loadFile(path.join(__dirname, "..", "renderer", "sticky.html"), {
-    query: { note: note.id, scale: String(win.deckScale) },
+    query: {
+      note: note.id,
+      scale: String(win.deckScale),
+      // Kartka zwinięta ma wrócić zwinięta — inaczej „zwiń" znaczyłoby
+      // „schowaj do następnego wyłożenia talii".
+      rolled: store.getSettings().widget?.cards?.[note.id]?.rolled ? "1" : "0",
+    },
   });
 
   // Przesunięta i przeskalowana kartka ma tam zostać — także po ponownym
@@ -3336,20 +3369,102 @@ function registerIpc() {
      KOTWICĘ, czyli miejsce dla środka znaczka, a nie róg okna: przy rozwiniętym
      widgecie róg zależy od kierunku panelu i renderer musiałby powtarzać
      rachunek, który i tak jest tutaj. */
-  ipcMain.on("widget:move", (_e, { anchor, dir }) => {
-    placeWidget(anchor, widgetView, dir);
+  /* ══ PRZECIĄGANIE ZNACZKA LICZY PROCES GŁÓWNY ══
+
+     I to jest trzecie podejście do tej samej animacji — dwa poprzednie
+     szarpały, bo obliczały położenie tam, gdzie prawdy o nim nie ma.
+
+     Renderer wie o kursorze tylko tyle, ile powie mu zdarzenie myszy,
+     a `event.screenX` powstaje w Chromium jako `clientX + window.screenX`.
+     W trakcie przeciągania okno JEDZIE ZA KURSOREM, więc `window.screenX`
+     zmienia się co klatkę — i renderer dostaje zdarzenie policzone ze
+     STAREGO położenia okna. Im szybciej ręka, tym większy rozjazd: znaczek
+     zostaje w tyle za kursorem, potem go dogania, potem przeskakuje.
+     Do tego proces główny przycina kotwicę do krawędzi ekranu, a renderer
+     o tym przycięciu nie wie i liczy dalej swoje.
+
+     Tutaj takiej niepewności nie ma. `screen.getCursorScreenPoint()` pyta
+     system, gdzie NAPRAWDĘ jest kursor, i odpowiedź nie zależy od tego,
+     gdzie stoi okno. Renderer mówi więc tylko „zaczynam" i „kończę";
+     resztę — łącznie z odstępem między kursorem a środkiem znaczka —
+     trzyma i liczy proces główny, co klatkę, z jednego źródła. */
+  let widgetDrag = null;
+  let widgetDragTimer = null;
+
+  const dragWidget = () => {
+    if (!widgetDrag || !widget || widget.isDestroyed()) return;
+    const cursor = screen.getCursorScreenPoint();
+    if (!widgetDrag.moved) {
+      const away = Math.hypot(cursor.x - widgetDrag.from.x, cursor.y - widgetDrag.from.y);
+      if (away < WIDGET_DRAG_MIN) return;
+      widgetDrag.moved = true;
+    }
+
+    /* ══ ZNACZEK PRZYCHODZI POD PALEC ══
+
+       Chwyt bierze się gdzie popadnie — za brzeg, za róg aureoli — i przez
+       całe przeciąganie znaczek zostawałby wtedy do trzydziestu pikseli
+       OBOK kursora. Rachunkowo jest to poprawne („trzymam go tam, gdzie
+       złapałem"), ale wygląda jak coś, co się urwało i leci obok ręki.
+
+       Odstęp chwytu gaśnie więc w kilka klatek: znaczek dojeżdża pod
+       kursor przez jedną dziesiątą sekundy i od tej chwili siedzi dokładnie
+       pod nim. Skok na starcie byłby szarpnięciem; zanik jest ruchem. */
+    widgetDrag.dx = Math.abs(widgetDrag.dx) < 1 ? 0 : widgetDrag.dx * WIDGET_GRAB_FADE;
+    widgetDrag.dy = Math.abs(widgetDrag.dy) < 1 ? 0 : widgetDrag.dy * WIDGET_GRAB_FADE;
+    /* Odstęp chwytu zostaje nietknięty przez całe przeciągnięcie: znaczek
+       trzyma się ręki w tym miejscu, w którym go złapano, a nie skacze
+       środkiem pod kursor.
+
+       Świeża geometria idzie do okna KAŻDĄ klatkę. Okno bywa w trakcie
+       przeciągania przycięte do krawędzi ekranu albo przestawione na drugą
+       stronę (szyba wychodzi w tę stronę, w którą jest miejsce) — a wtedy
+       znaczek siedzi w oknie gdzie indziej niż przed chwilą. Renderer,
+       który by o tym nie wiedział, rysowałby go w starym miejscu: to jest
+       ten przeskok, który widać było ręką, a nie w automacie. */
+    tellWidget(placeWidget({ x: cursor.x - widgetDrag.dx, y: cursor.y - widgetDrag.dy }, widgetView));
+  };
+
+  ipcMain.handle("widget:grab", () => {
+    if (!widget || widget.isDestroyed()) return false;
+    const cursor = screen.getCursorScreenPoint();
+    const anchor = widgetAnchor();
+    widgetDrag = {
+      dx: cursor.x - anchor.x,
+      dy: cursor.y - anchor.y,
+      from: cursor,
+      display: screen.getDisplayNearestPoint(anchor).id,
+      moved: false,
+    };
+    clearInterval(widgetDragTimer);
+    // Co klatkę ekranu. Częściej nie ma czego pokazać, rzadziej widać skok.
+    widgetDragTimer = setInterval(dragWidget, 16);
+    return true;
   });
 
-  ipcMain.on("widget:drop", (_e, { anchor, dir }) => {
-    const before = screen.getDisplayNearestPoint(widgetAnchor()).id;
-    const spot = placeWidget(anchor, widgetView, dir);
-    if (spot) store.saveSettings({ widget: widgetAnchor() });
-    /* Znaczek przeniesiony na drugi monitor zabiera talię ze sobą. Kartki
-       leżą przy tym pulpicie, przy którym się siedzi — a przeciągnięcie
-       znaczka jest jedynym momentem, w którym człowiek mówi wprost, przy
-       którym to jest. Bez tego notatki zostawały na porzuconym ekranie
-       i trzeba je było przenosić po jednej. */
-    if (deckOpen && screen.getDisplayNearestPoint(widgetAnchor()).id !== before) reflowDeck();
+  ipcMain.handle("widget:release", () => {
+    clearInterval(widgetDragTimer);
+    widgetDragTimer = null;
+    const held = widgetDrag;
+    widgetDrag = null;
+    if (!held) return { moved: false, spot: null };
+
+    // Ostatnie spojrzenie na kursor: między ostatnią klatką a puszczeniem
+    // ręka zdążyła jeszcze kawałek przejechać.
+    if (held.moved) {
+      const cursor = screen.getCursorScreenPoint();
+      placeWidget({ x: cursor.x - held.dx, y: cursor.y - held.dy }, widgetView);
+      store.saveSettings({ widget: widgetAnchor() });
+      /* Znaczek przeniesiony na drugi monitor zabiera talię ze sobą. Kartki
+         leżą przy tym pulpicie, przy którym się siedzi — a przeciągnięcie
+         znaczka jest jedynym momentem, w którym człowiek mówi wprost, przy
+         którym to jest. Bez tego notatki zostawały na porzuconym ekranie
+         i trzeba je było przenosić po jednej. */
+      if (deckOpen && screen.getDisplayNearestPoint(widgetAnchor()).id !== held.display) {
+        reflowDeck();
+      }
+    }
+    return { moved: held.moved, spot: placeWidget(widgetAnchor(), widgetView) };
   });
 
   /* Fokus na żądanie. Widget bierze go wyłącznie wtedy, gdy ktoś w niego
@@ -3435,6 +3550,38 @@ function registerIpc() {
 
      Lewy górny róg zostaje na miejscu — kartka rośnie w prawo i w dół, a nie
      ucieka spod ręki, która ją właśnie ciągnie. */
+  /* ══ KARTKA ZWINIĘTA DO NAGŁÓWKA ══
+
+     Roleta, nie zamknięcie. Zwinięta kartka zostaje na pulpicie, w swoim
+     miejscu i w swojej kolejności — po to się ją zwija: żeby plan dnia
+     leżał OBOK pracy, a nie na niej. Zdjęcie z wierzchu to osobny gest
+     (deck:dismiss) i znaczy co innego.
+
+     Wysokość liczy proces główny, bo tylko on może zmienić okno. Pełną
+     zapamiętujemy PRZED zwinięciem — bez tego rozwinięcie musiałoby zgadnąć
+     rozmiar, a kartka rozciągnięta ręką wracałaby domyślna. */
+  ipcMain.handle("deck:roll", (event, { id, rolled } = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return false;
+    const bounds = win.getBounds();
+    const cards = store.getSettings().widget?.cards ?? {};
+    const scale = win.deckScale ?? deckScaleAt(bounds);
+
+    if (rolled) {
+      const height = Math.round(STICKY_HEAD * scale) + STICKY_HALO * 2;
+      win.setBounds({ ...bounds, height });
+      store.saveSettings({
+        widget: { cards: { [id]: { rolled: true, fullHeight: bounds.height } } },
+      });
+      return true;
+    }
+
+    const full = cards[id]?.fullHeight ?? deckCardSize(scale).height;
+    win.setBounds({ ...bounds, height: clamp(full, STICKY_MIN.height, STICKY_MAX.height) });
+    store.saveSettings({ widget: { cards: { [id]: { rolled: false } } } });
+    return true;
+  });
+
   ipcMain.on("deck:resize", (event, { id, width, height, commit } = {}) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;

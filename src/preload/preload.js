@@ -124,8 +124,12 @@ contextBridge.exposeInMainWorld("cribro", {
     // Rozciąganie szyby uchwytem. `commit` znaczy „uchwyt puszczony" —
     // dopiero wtedy rozmiar idzie na dysk.
     resize: (payload) => ipcRenderer.invoke("widget:resize", payload),
-    move: (payload) => ipcRenderer.send("widget:move", payload),
-    drop: (payload) => ipcRenderer.send("widget:drop", payload),
+    /* Przeciąganie znaczka: renderer mówi tylko „zaczynam" i „kończę".
+       Gdzie jest kursor, wie proces główny — i tylko on wie to na pewno,
+       bo pyta o to system, a nie zdarzenie myszy policzone względem okna,
+       które właśnie jedzie. Patrz widget:grab w main/main.js. */
+    dragStart: () => ipcRenderer.invoke("widget:grab"),
+    dragEnd: () => ipcRenderer.invoke("widget:release"),
     reset: () => ipcRenderer.invoke("widget:reset"),
     // Znaczek nie ma prawa zabierać fokusu sam z siebie; prosi o niego
     // dopiero wtedy, gdy człowiek w niego kliknął i chce pisać.
@@ -150,6 +154,9 @@ contextBridge.exposeInMainWorld("cribro", {
     onChange: on("deck:changed"),
     // Zamknięcie kartki zdejmuje notatkę z wierzchu — patrz deck:dismiss.
     dismiss: (id) => ipcRenderer.invoke("deck:dismiss", id),
+    /* Zwinięcie do nagłówka — roleta, nie zamknięcie. Kartka zostaje na
+       pulpicie i wraca jednym kliknięciem, także po ponownym wyłożeniu. */
+    roll: (id, rolled) => ipcRenderer.invoke("deck:roll", { id, rolled }),
     grabFocus: () => ipcRenderer.send("deck:focus"),
     // Przeciąganie kartki: renderer liczy nowy róg okna, proces główny go
     // stawia. Patrz deck:move w main/main.js — dlaczego nie app-region.

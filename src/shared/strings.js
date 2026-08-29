@@ -63,6 +63,8 @@ const EN = {
     "The first sentences will show up shortly — the record is built in stretches.",
   "Podsumowanie powstanie po zakończeniu rozmowy.":
     "The summary is written once the conversation ends.",
+  "Zwiń do nagłówka": "Roll up to the header",
+  "Rozwiń kartkę": "Unroll the card",
   Nadchodzące: "Coming up",
   "Pokaż kalendarz": "Show the calendar",
   "Nadchodzące spotkania z kalendarza macOS — także z konta Google, jeśli jest tam dodane.":

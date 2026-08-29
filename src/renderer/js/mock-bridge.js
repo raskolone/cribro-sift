@@ -541,8 +541,11 @@ if (!window.cribro) {
         panelX: 22,
         panelY: 22,
       }),
-      move: () => {},
-      drop: () => {},
+      /* Przeciąganie znaczka w makiecie nie ma czego przesuwać — okna
+         w przeglądarce nie ma. Odpowiadamy „nic się nie ruszyło", żeby
+         kliknięcie w znaczek zadziałało tak jak zwykle. */
+      dragStart: async () => true,
+      dragEnd: async () => ({ moved: false, spot: null }),
       reset: async () => true,
       grabFocus: () => {},
       release: () => {},
@@ -578,6 +581,9 @@ if (!window.cribro) {
         move: () => {},
         drop: () => {},
         resize: () => {},
+        // W przeglądarce nie ma okna do zwinięcia — sama kartka i tak
+        // schowa treść, bo to robi jej własny arkusz.
+        roll: async () => true,
         onFold: on("sticky:fold"),
         onScale: on("sticky:scale"),
         folded: () => {},
