@@ -352,6 +352,20 @@
   touch-action: none;
   transition: color var(--t-fast), background var(--t-fast);
 }
+/* `hidden` musi naprawdę chować — i to nie jest oczywiste.
+
+   Atrybut `hidden` daje `display: none` z arkusza PRZEGLĄDARKI, a każda
+   reguła autorska z własnością `display` bije arkusz przeglądarki, choćby
+   była najsłabsza. Reguła wyżej ustawia `display: grid` (bo sześć kropek
+   siedzi w siatce), więc `grip.hidden = true` przestawiało atrybut i nic
+   poza tym: uchwyt zostawał namalowany tam, gdzie stał ostatnio.
+
+   Widać to było jako sześć kropek wiszących na karcie ustawień spotkań —
+   bo tyle zostaje po najechaniu na notatkę i przejściu na inną zakładkę.
+   Testy tego nie łapały, bo pytały o `grip.hidden`, czyli o to samo, co
+   ustawiały. O tym, czy coś widać, mówi dopiero display. */
+.prose-grip[hidden] { display: none; }
+
 .prose-grip:hover,
 .prose-grip[data-dragging] {
   color: var(--accent);

@@ -2147,17 +2147,22 @@ input.tag-input:focus {
 .meet__head { display: flex; }
 .meet__record { width: 100%; justify-content: center; }
 
-/* Nagrywanie ma jeden kolor w całej aplikacji i to jest fiolet. Przycisk
-   „Zakończ" musi mówić to samo, co znaczek w pasku menu i pierścień HUD-a —
+/* Trwające spotkanie ma w tej aplikacji jeden kolor i jest nim czerwień
+   znaku ON AIR (patrz --air w css/tokens.css). Przycisk „Zakończ", napis
+   przy spotkaniu w spisie i znaczek na wierzchu muszą mówić to samo —
    inaczej odpowiedź na pytanie „czy to nagrywa?" zależałaby od tego, gdzie
-   się akurat patrzy. */
-.btn--rec {
-  background: var(--rec);
-  color: var(--rec-ink);
+   się akurat patrzy.
+
+   ZOSTAJE JEDEN WYJĄTEK, o którym trzeba wiedzieć: znak w pasku menu jest
+   nadal fioletowy, bo to gotowy plik PNG generowany osobno
+   (scripts/make-tray-icons.js) i nie ma go tu jak przemalować. */
+.btn--air {
+  background: var(--air);
+  color: var(--air-ink);
   border-color: transparent;
-  box-shadow: var(--rec-glow);
+  box-shadow: var(--air-glow);
 }
-.btn--rec:hover { background: var(--rec-soft); }
+.btn--air:hover { background: color-mix(in srgb, var(--air) 82%, white); }
 
 .meet__rows {
   display: flex;
@@ -2196,12 +2201,12 @@ input.tag-input:focus {
   color: var(--text-mute);
   font-variant-numeric: tabular-nums;
 }
-.meet__live { color: var(--rec-soft); font-style: normal; }
-.meet__failed { color: var(--warn); font-style: normal; margin-left: 6px; }
+.meet__live { color: var(--air); font-style: normal; }
+.meet__failed { color: var(--warn); font-style: normal; }
 .meet__empty,
 .meet__blank {
   color: var(--text-mute);
-  font-size: var(--fs-small);
+  font-size: var(--fs-xs);
   padding: var(--s-4);
   margin: 0;
 }
@@ -2210,12 +2215,17 @@ input.tag-input:focus {
 /* ── Ustawienia spotkań ──
    Stoją POD spisem, a nie w Ustawieniach ogólnych, i to jest decyzja:
    przestawia się je patrząc na spotkania, a nie szukając ich wśród
-   skrótów i kluczy API. */
+   skrótów i kluczy API.
+
+   Kółka wyboru i przełącznik rysujemy SAMI. Systemowe przychodzą
+   w kolorach z paska sterowania macOS, czyli z innego świata niż to okno,
+   i widać je jako białe plamy w ciemnej karcie; `accent-color` maluje
+   tylko środek zaznaczonego i tego nie ratuje. */
 
 .meet__settings {
   display: flex;
   flex-direction: column;
-  gap: var(--s-3);
+  gap: var(--s-4);
   padding: var(--s-4);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -2229,57 +2239,192 @@ input.tag-input:focus {
   font-size: var(--fs-h4);
   color: var(--text-hi);
 }
+
+/* Trzy grupy, każda o czymś innym: kiedy nagrywać, co zostaje po nagraniu,
+   gdzie ląduje wynik. Kreska między nimi zastępuje trzy nagłówki. */
+.meet__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+.meet__group:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
 .meet__legend {
-  margin: var(--s-2) 0 0;
+  margin: 0;
   font: 400 var(--fs-label) / 1 var(--font-mono);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--track-label);
   text-transform: uppercase;
   color: var(--text-mute);
 }
-.meet__opt,
-.meet__switch {
+
+.meet__opt {
   display: grid;
-  grid-template-columns: 16px 1fr;
+  grid-template-columns: 15px minmax(0, 1fr);
   gap: var(--s-3);
   align-items: start;
   cursor: pointer;
 }
-.meet__opt span,
-.meet__switch span { display: flex; flex-direction: column; gap: 2px; }
-.meet__opt b,
-.meet__switch b { font-weight: 500; font-size: var(--fs-small); color: var(--text); }
-.meet__opt i,
-.meet__switch i { font-style: normal; font-size: var(--fs-label); color: var(--text-mute); line-height: 1.5; }
-.meet__opt input,
-.meet__switch input { margin-top: 3px; accent-color: var(--accent); }
+.meet__opt > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.meet__opt b { font-weight: 500; font-size: var(--fs-xs); color: var(--text); }
+.meet__opt i {
+  font-style: normal;
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+.meet__opt input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--ink);
+  cursor: pointer;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast), background var(--t-fast);
+}
+/* Kropka w środku to cień do wewnątrz, nie osobny element: kółko zostaje
+   jednym znacznikiem, a treść karty nie rośnie o puste spany. */
+.meet__opt input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 3px var(--ink);
+}
+.meet__opt input:focus-visible { outline: 2px solid var(--accent-55); outline-offset: 2px; }
 
-.meet__field {
+/* Przełącznik przy „Zachowaj nagranie" — ten sam, co w Ustawieniach
+   (.switch), bo włączone i wyłączone ma wyglądać w całej aplikacji tak
+   samo. Rysuje go span OBOK schowanego pola: ::after na samym <input>
+   Chromium nie rysuje, bo input jest elementem zastąpionym. */
+.meet__set {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--s-3);
-  font-size: var(--fs-small);
-  color: var(--text-2);
+  cursor: pointer;
+}
+.meet__set-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.meet__set b { font-weight: 500; font-size: var(--fs-xs); color: var(--text); }
+.meet__set i {
+  font-style: normal;
+  font-size: var(--fs-label);
+  line-height: 1.5;
+  color: var(--text-mute);
+}
+.meet__set input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.meet__flip {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 23px;
+  border-radius: var(--r-pill);
+  background: var(--ink);
+  border: 1px solid var(--line-strong);
+  transition: background var(--t), border-color var(--t);
+}
+.meet__flip::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: left var(--t), background var(--t);
+}
+.meet__set input:checked + .meet__flip {
+  background: var(--accent-15);
+  border-color: var(--accent-30);
+}
+.meet__set input:checked + .meet__flip::after {
+  left: 19px;
+  background: var(--accent);
+}
+.meet__set input:focus-visible + .meet__flip {
+  outline: 2px solid var(--accent-55);
+  outline-offset: 2px;
+}
+
+/* Pole z liczbą i pole z nazwą szuflady.
+
+   Podpis stoi NAD polem, nie obok — i to nie jest gust. Spis ma trzysta
+   pikseli, a globalna reguła `input { min-width: 220px }` (wyżej w tym
+   pliku, od czasów pola na e-mail) nie pozwala polu zwęzić się do swojej
+   kolumny: przy podpisie z boku wystawało poza kartę i było to widać jako
+   prostokąt sterczący zza jej krawędzi. Stąd też min-width: 0 niżej. */
+.meet__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.meet__field-name { font-size: var(--fs-xs); color: var(--text-2); }
+.meet__field-in {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.meet__field-in em {
+  font-style: normal;
+  font-size: var(--fs-label);
+  color: var(--text-mute);
 }
 .meet__field input {
-  width: 9ch;
-  padding: 5px 8px;
+  min-width: 0;
+  width: 100%;
+  padding: 6px 9px;
   border: 1px solid var(--line-strong);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--ink);
   color: var(--text);
-  font: 400 var(--fs-small) / 1.3 var(--font-mono);
-  text-align: right;
+  font: 400 var(--fs-xs) / 1.35 var(--font-mono);
 }
-.meet__field input[type="text"] { width: 14ch; text-align: left; font-family: var(--font-body); }
-.meet__field input:focus-visible { outline: 2px solid var(--accent-55); outline-offset: 1px; }
+/* Strzałki „w górę/w dół" chowamy: przy tak wąskim polu Chromium rysuje je
+   NA cyfrach, a nie obok, i liczba jest przycięta w pionie. Wpisuje się tu
+   sekundy, nie stroi zegarka. */
+.meet__field input[type="number"] {
+  width: 7ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.meet__field input[type="number"]::-webkit-inner-spin-button,
+.meet__field input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+.meet__field input[type="text"] { font-family: var(--font-body); }
+.meet__field input:focus {
+  outline: none;
+  border-color: var(--accent-55);
+  box-shadow: var(--glow);
+}
 
 /* Zdanie o tym, że nagrywanie dotyczy cudzych słów. Nie jest to ozdoba
    ani drobny druk — to jedyne miejsce w aplikacji, w którym coś dzieje się
    kosztem ludzi, którzy niczego tu nie klikali. */
 .meet__note {
-  margin: var(--s-2) 0 0;
-  padding-top: var(--s-3);
+  margin: 0;
+  padding-top: var(--s-4);
   border-top: 1px solid var(--line);
   font-size: var(--fs-label);
   line-height: 1.6;
@@ -2364,9 +2509,55 @@ input.tag-input:focus {
   line-height: 1.7;
 }
 .meet__who { font-size: var(--fs-label); color: var(--accent); font-weight: 500; }
+/* „Rozmówcy" innym kolorem niż „Ty" — po jednym spojrzeniu ma być widać,
+   czyja to była wypowiedź, bez czytania podpisu przy każdej. */
+.meet__line[data-speaker="Rozmówcy"] .meet__who,
+.meet__line[data-speaker="Others"] .meet__who { color: var(--info); }
 .meet__at {
   font: 400 var(--fs-label) / 1.7 var(--font-mono);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 .meet__said { color: var(--text); }
+
+/* Ogon rosnącego zapisu. Zapis urwany w połowie zdania wygląda jak zapis,
+   który się zepsuł — dopóki nie stoi pod nim, że to jeszcze nie koniec. */
+.meet__more {
+  margin: var(--s-2) 0 0;
+  padding-left: calc(8ch + 5ch + var(--s-3) * 2);
+  font: 400 var(--fs-label) / 1.6 var(--font-mono);
+  color: var(--air);
+}
+.meet__more::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--air);
+  animation: meet-blink 1.6s var(--ease) infinite;
+}
+.meet__air { color: var(--air); font-style: normal; }
+@keyframes meet-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+/* ── Notatnik przy spotkaniu ──
+   Pusta kartka na to, czego w nagraniu nie ma. Wygląda jak kartka, a nie
+   jak pole formularza: pisze się w niej zdania, a nie wpisuje wartości. */
+.meet__pad {
+  min-height: 100%;
+  outline: none;
+  font-size: var(--fs-body);
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre-wrap;
+  caret-color: var(--accent);
+}
+.meet__pad[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  pointer-events: none;
+}

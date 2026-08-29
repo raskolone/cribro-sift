@@ -18,16 +18,32 @@ const dist = path.join(root, "dist");
 
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), "utf8");
 
-/** Wstawia treść plików w miejsce znaczników <link> i <script src>. */
+/**
+ * Wstawia treść plików w miejsce znaczników odsyłających do nich.
+ *
+ * ZAMYKAJĄCE ZNACZNIKI W TREŚCI trzeba rozbić — i nie jest to ostrożność
+ * na zapas. Parser HTML nie czyta wklejonego kodu jako kodu: szuka
+ * najbliższego domknięcia i kończy blok TAM, choćby stało w komentarzu
+ * albo w napisie. Jeden taki znacznik w komentarzu constellation.js
+ * urywał skrypt w połowie, a jego dalszy ciąg lądował na stronie jako
+ * zwykły tekst — pół ekranu kodu pod interfejsem. Ten sam los spotykał
+ * arkusz stylów z nazwą znacznika w komentarzu.
+ *
+ * Rozbicie ukośnikiem jest niewidoczne dla przeglądarki (`<\/script>`
+ * w treści skryptu to dalej `</script>`), a przed parserem HTML znika.
+ */
 function inline(html, baseDir) {
+  const safe = (text, tag) =>
+    text.replace(new RegExp(`</(${tag})`, "gi"), "<\\/$1");
+
   return html
     .replace(/<link[^>]+href="((?!https?:)[^"]+\.css)"[^>]*>/g, (match, href) => {
       const css = fs.readFileSync(path.join(baseDir, href), "utf8");
-      return `<style>\n${css}\n</style>`;
+      return `<style>\n${safe(css, "style")}\n</style>`;
     })
     .replace(/<script src="((?!https?:)[^"]+)"><\/script>/g, (match, src) => {
       const js = fs.readFileSync(path.join(baseDir, src), "utf8");
-      return `<script>\n${js}\n</script>`;
+      return `<script>\n${safe(js, "script")}\n</script>`;
     });
 }
 

@@ -101,10 +101,18 @@ window.__onLine = (needle) => {
   return { x: Math.round(box.left + 20), y: Math.round(box.top + 6) };
 };
 
-/** Środek uchwytu — o ile w ogóle jest widoczny — i pasek, w którym stoi. */
+/**
+ * Środek uchwytu — o ile w ogóle go WIDAĆ — i pasek, w którym stoi.
+ *
+ * Pytamy o display, nie o grip.hidden — pytanie o atrybut brzmiałoby
+ * „czy kod ustawił hidden", czyli o to samo, co kod ustawia — i tak
+ * przeszedł niezauważony uchwyt, który miał hidden=true i mimo to był
+ * malowany, bo reguła display:grid bije display:none z arkusza
+ * przeglądarki. Sześć kropek wisiało wtedy nad zupełnie inną zakładką.
+ */
 window.__grip = () => {
   const grip = document.querySelector(".prose-grip");
-  if (!grip || grip.hidden) return null;
+  if (!grip || getComputedStyle(grip).display === "none") return null;
   const box = grip.getBoundingClientRect();
   const host = document.getElementById("text");
   const note = host.getBoundingClientRect();
@@ -176,9 +184,13 @@ const cases = [
     expect: "drugi\n\nWstęp.\n\n- pierwszy",
   },
   {
-    name: "Akapit wciągnięty w listę zadań staje się zadaniem nieodhaczonym",
+    // Klawiaturą, nie myszą: akapit uchwytu nie dostaje (niżej osobny
+    // przypadek), ale ⌥↓ rusza nim dalej — i po wylądowaniu w liście
+    // zadań musi dostać stan odhaczenia, bo bez niego byłby punktem,
+    // którego nie da się odhaczyć.
+    name: "Akapit wciągnięty ⌥↓ w listę zadań staje się zadaniem nieodhaczonym",
     markdown: "zadzwonić do Ani\n\n- [ ] kupić mleko\n- [x] wysłać raport",
-    move: { grab: "zadzwonić do Ani", over: "wysłać raport" },
+    move: { grab: "zadzwonić do Ani", key: "Down" },
     expect: "- [ ] kupić mleko\n- [ ] zadzwonić do Ani\n- [x] wysłać raport",
   },
   {
@@ -195,10 +207,13 @@ const cases = [
     quiet: true,
   },
   {
+    /* Treść pod zwiniętym nagłówkiem jest schowana, więc w spisie linii jej
+       nie ma — i właśnie dlatego łatwo ją zostawić w miejscu. Zostawiona
+       rozsypuje notatkę tam, gdzie autor jej nie widzi. */
     name: "Zwinięty nagłówek jedzie razem ze swoją schowaną treścią",
-    markdown: "## ▸ Ustalenia\n\nAnia robi raport.\n\n## Inne\n\nDrobiazgi.",
-    move: { grab: "Ustalenia", over: "Drobiazgi.", below: true },
-    expect: "## Inne\n\nDrobiazgi.\n\n## ▸ Ustalenia\n\nAnia robi raport.",
+    markdown: "## ▸ Ustalenia\n\nAnia robi raport.\n\n## Inne",
+    move: { grab: "Ustalenia", key: "Down" },
+    expect: "## Inne\n\n## ▸ Ustalenia\n\nAnia robi raport.",
   },
   {
     name: "Krótkie przeciągnięcie w dolną połowę sąsiada też przenosi",
@@ -219,9 +234,42 @@ const cases = [
     expect: "- pierwszy\n- drugi",
     quiet: true,
   },
+
+  /* ── Komu wolno dać uchwyt ────────────────────────────────────
+     Notatka to w większości akapity. Uchwyt przy każdym z nich znaczy
+     sześć kropek chodzących za kursorem przez cały czas pisania — ruch
+     w kącie oka przy czynności, która wymaga skupienia. Przestawia się
+     zaś głównie punkty list, bo to one są listą rzeczy do zrobienia. */
+  {
+    name: "Akapit uchwytu nie dostaje",
+    markdown: "Zwykły akapit, którego nikt nie przestawia.\n\n- punkt listy",
+    hover: "Zwykły akapit, którego nikt nie przestawia.",
+    grip: false,
+  },
+  {
+    name: "Nagłówek też nie — od przestawiania rozdziałów są ⌥↑ i ⌥↓",
+    markdown: "## Ustalenia\n\n- punkt listy",
+    hover: "Ustalenia",
+    grip: false,
+  },
+  {
+    name: "Punkt listy uchwyt dostaje",
+    markdown: "Wstęp.\n\n- punkt listy",
+    hover: "punkt listy",
+    grip: true,
+  },
+  {
+    name: "Zadanie do odhaczenia też — to ta sama lista, innym punktorem",
+    markdown: "Wstęp.\n\n- [ ] kupić mleko",
+    hover: "kupić mleko",
+    grip: true,
+  },
 ];
 
-fs.writeFileSync(path.join(work, "cases.json"), JSON.stringify(cases.map(({ markdown, move }) => ({ markdown, move }))));
+fs.writeFileSync(
+  path.join(work, "cases.json"),
+  JSON.stringify(cases.map(({ markdown, move, hover }) => ({ markdown, move, hover }))),
+);
 
 /* ── Proces główny: gest ────────────────────────────────────────
    Ruch myszy idzie krokami, nie skokiem. Przeciągnięcie złożone z jednego
@@ -253,12 +301,32 @@ app.whenReady().then(async () => {
     await wait(60);
     const note = { grip: null, marked: false };
 
+    /* Sonda: czy przy tej linii w ogóle pojawia się uchwyt. Mysz najpierw
+       idzie w róg okna — inaczej liczyłoby się to, co zostało po
+       poprzednim przypadku. */
+    if (item.hover) {
+      mouse("mouseMove", 4, 4);
+      await wait(70);
+      const spot = await js("window.__onLine(" + JSON.stringify(item.hover) + ")");
+      if (!spot) { out.push({ error: "nie ma takiej linii: " + item.hover }); continue; }
+      mouse("mouseMove", spot.x, spot.y);
+      await wait(120);
+      out.push({ gripVisible: !!(await js("window.__grip()")) });
+      continue;
+    }
+
     if (item.move.key) {
-      await js("window.__caret(" + JSON.stringify(item.move.grab) + ")");
-      await wait(40);
-      send({ type: "keyDown", keyCode: item.move.key, modifiers: ["alt"] });
-      send({ type: "keyUp", keyCode: item.move.key, modifiers: ["alt"] });
-      await wait(80);
+      /* Kursor stawiamy przed KAŻDYM naciśnięciem. Przeprowadzka wyjmuje
+         linię z drzewa i wkłada z powrotem gdzie indziej; zaznaczenie tego
+         nie przeżywa niezawodnie, a drugie ⌥↓ bez kursora nie miałoby
+         czym ruszyć. Ręka robi zresztą to samo — patrzy, gdzie stoi. */
+      for (let press = 0; press < (item.move.times ?? 1); press += 1) {
+        await js("window.__caret(" + JSON.stringify(item.move.grab) + ")");
+        await wait(40);
+        send({ type: "keyDown", keyCode: item.move.key, modifiers: ["alt"] });
+        send({ type: "keyUp", keyCode: item.move.key, modifiers: ["alt"] });
+        await wait(90);
+      }
     } else {
       // 1. mysz wjeżdża na linię — uchwyt ma się pokazać
       const on = await js("window.__onLine(" + JSON.stringify(item.move.grab) + ")");
@@ -306,6 +374,16 @@ app.whenReady().then(async () => {
     out.push({ ...result, ...note });
   }
 
+  /* Na koniec: mysz schodzi z notatki i pytamy, czy uchwyt NAPRAWDĘ
+     zniknął z ekranu. Nie o atrybut — o to, czy cokolwiek jest malowane. */
+  mouse("mouseMove", 4, 4);
+  await wait(200);
+  out.push({
+    parked: await js("(() => { const g = document.querySelector('.prose-grip');" +
+      " const cs = getComputedStyle(g); const b = g.getBoundingClientRect();" +
+      " return { attr: g.hidden, display: cs.display, area: Math.round(b.width * b.height) }; })()"),
+  });
+
   process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
   app.exit(0);
 });
@@ -345,6 +423,19 @@ for (const [index, item] of cases.entries()) {
   assert.ok(got, `${item.name} — brak wyniku`);
   assert.ok(!got.error, `${item.name} — ${got.error}`);
 
+  if (item.hover) {
+    assert.strictEqual(
+      got.gripVisible,
+      item.grip,
+      item.grip
+        ? `${item.name} — uchwyt się nie pokazał`
+        : `${item.name} — uchwyt pokazał się tam, gdzie nie ma czego chwytać`,
+    );
+    console.log("✓", item.name);
+    passed += 1;
+    continue;
+  }
+
   assert.strictEqual(got.markdown, item.expect, item.name);
   if (item.quiet) {
     assert.strictEqual(got.inputs, 0, `${item.name} — notatka zapisała się bez powodu`);
@@ -379,6 +470,24 @@ assert.ok(
 console.log(
   `✓ Uchwyt mieści się w pasku notatki (${left - noteLeft}…${right - noteLeft} z ${gutter} px)`,
 );
+passed += 1;
+
+/* Uchwyt schowany ma zniknąć Z EKRANU, a nie tylko z atrybutu.
+
+   Atrybut `hidden` chowa przez arkusz przeglądarki, a ten przegrywa
+   z każdą regułą autorską ustawiającą display — także z tą, która daje
+   uchwytowi siatkę na sześć kropek. Uchwyt zostawał więc namalowany
+   w miejscu ostatniej linii i wisiał tam nad inną zakładką. */
+const { parked } = results[results.length - 1];
+assert.ok(parked, "test nie sprawdził, czy schowany uchwyt znika");
+assert.strictEqual(parked.attr, true, "uchwyt nie schował się po zejściu myszy z notatki");
+assert.strictEqual(
+  parked.display,
+  "none",
+  `schowany uchwyt jest nadal malowany (display: ${parked.display}) — hidden przegrał z regułą autorską`,
+);
+assert.strictEqual(parked.area, 0, "schowany uchwyt nadal zajmuje miejsce na ekranie");
+console.log("✓ Schowany uchwyt naprawdę znika z ekranu, nie tylko z atrybutu");
 passed += 1;
 
 fs.rmSync(work, { recursive: true, force: true });

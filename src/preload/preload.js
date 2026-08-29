@@ -175,6 +175,11 @@ contextBridge.exposeInMainWorld("cribro", {
     state: () => ipcRenderer.invoke("meetings:state"),
     list: () => ipcRenderer.invoke("meetings:list"),
     remove: (id) => ipcRenderer.invoke("meetings:delete", id),
+    /* Odpowiedź na pytanie znaczka „notować to spotkanie?". Pyta go
+       widget, gdy proces główny rozpozna rozmowę na ekranie. */
+    answer: (yes) => ipcRenderer.invoke("meetings:answer", yes),
+    // Notatki pisane ręką w trakcie rozmowy — obok transkrypcji.
+    note: (id, text) => ipcRenderer.invoke("meetings:note", { id, text }),
     onChange: on("meeting:changed"),
     onDone: on("meeting:done"),
   },

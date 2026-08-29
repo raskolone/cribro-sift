@@ -470,8 +470,19 @@
 
     /* ── Przenoszenie linii ─────────────────────────────────────
        Uchwyt jak w Notion: pokazuje się przy linii, nad którą stoi kursor,
-       i pozwala przełożyć ją gdzie indziej. Działa na punktach listy,
-       punktach listy zadań i na blokach stojących wprost w notatce.
+       i pozwala przełożyć ją gdzie indziej.
+
+       CHWYTA SIĘ WYŁĄCZNIE PUNKTY LIST — wypunktowanych, numerowanych
+       i zadań. Akapit, nagłówek i cytat uchwytu nie dostają, choć kod
+       potrafiłby je przenieść. Powód jest taki: notatka to w większości
+       akapity, a uchwyt przy każdym z nich to sześć kropek chodzących za
+       kursorem przez cały czas pisania — ruch w kącie oka przy czynności,
+       która wymaga skupienia. Przestawia się zaś głównie punkty, bo to
+       one są listą rzeczy do zrobienia, a nie tekstem do przeczytania.
+
+       Klawiatura zostaje przy wszystkim: ⌥↑ i ⌥↓ ruszają każdą linią,
+       także akapitem. To inny gest — nie widać go, dopóki się go nie
+       wywoła, więc niczego nie zaśmieca.
 
        DWIE DECYZJE, KTÓRE WYGLĄDAJĄ NA DROBIAZG, A NIM NIE SĄ:
 
@@ -555,6 +566,33 @@
          zawisnąć nad cudzym zdaniem. */
       doc.addEventListener("scroll", () => this.#gripHide(), true);
       doc.defaultView?.addEventListener("resize", () => this.#gripHide());
+
+      /* Uchwyt leży w <body>, więc nie ma jak zniknąć razem z tym, przy
+         czym stał. Przejście na inną zakładkę podmienia cały szkielet
+         widoku (root.innerHTML = SKELETON), czyli element notatki znika
+         POD kursorem — żadne pointerleave wtedy nie pada i uchwyt zostaje
+         wisieć nad tym, co się w tym miejscu pojawi. Widać to było jako
+         sześć kropek na karcie ustawień spotkań.
+
+         Stąd nasłuch na całym dokumencie: wskaźnik gdziekolwiek indziej
+         chowa uchwyt, a notatka odłączona od dokumentu każe mu posprzątać
+         po sobie — razem z tym nasłuchem, żeby nie został po każdym
+         otwarciu widoku po jednym. */
+      this.onOutside = (event) => {
+        if (!this.root.isConnected) return void this.#retire();
+        if (this.drag) return;
+        if (event.target === this.grip || this.root.contains(event.target)) return;
+        this.#gripHide();
+      };
+      doc.addEventListener("pointermove", this.onOutside, true);
+    }
+
+    /** Koniec życia uchwytu: notatki, przy której stał, już nie ma. */
+    #retire() {
+      const doc = this.grip.ownerDocument;
+      doc.removeEventListener("pointermove", this.onOutside, true);
+      this.grip.remove();
+      this.dropMark.remove();
     }
 
     /**
@@ -572,6 +610,17 @@
         return line.parentElement?.parentElement === this.root ? line : null;
       }
       return line.parentElement === this.root ? line : null;
+    }
+
+    /**
+     * Czy tę linię wolno złapać MYSZĄ.
+     *
+     * Węziej niż #lineFor i to jest cała różnica między dwoma gestami:
+     * uchwyt dostają wyłącznie punkty list, klawiatura rusza wszystkim.
+     * Dlaczego — patrz komentarz nad #dragSetup.
+     */
+    #draggable(line) {
+      return line?.tagName === "LI";
     }
 
     /** Linie po kolei, z pominięciem schowanych pod zwiniętym nagłówkiem. */
@@ -641,7 +690,7 @@
      */
     #lineAt(event) {
       const direct = this.#lineFor(event.target);
-      if (direct) return direct;
+      if (direct) return this.#draggable(direct) ? direct : null;
 
       const bounds = this.root.getBoundingClientRect();
       if (event.clientX < bounds.left || event.clientX > bounds.right) return null;
@@ -662,7 +711,13 @@
         }
       }
       // Dalej niż pół wiersza od czegokolwiek — to już nie jest „przy linii".
-      return nearestGap <= GRIP_H ? best : null;
+      if (nearestGap > GRIP_H) return null;
+      /* Najbliższej szukamy wśród WSZYSTKICH linii, a dopiero na końcu
+         pytamy, czy wolno ją złapać. Odwrotna kolejność — przeglądanie od
+         razu samych punktów — kazałaby uchwytowi przeskakiwać ponad
+         akapitem do listy stojącej piętro niżej: kursor przy zdaniu,
+         kropki przy czymś zupełnie innym. */
+      return this.#draggable(best) ? best : null;
     }
 
     #gripFollow(event) {

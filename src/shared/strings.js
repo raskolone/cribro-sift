@@ -59,6 +59,14 @@ const EN = {
   "Skasować to spotkanie razem z nagraniem?": "Delete this meeting along with its recording?",
   "Trwa nagrywanie. Tekst pojawi się po zakończeniu.":
     "Recording. The text will appear once it ends.",
+  Notatki: "Notes",
+  "Pierwsze zdania pojawią się tu za chwilę — zapis powstaje odcinkami.":
+    "The first sentences will show up shortly — the record is built in stretches.",
+  "Podsumowanie powstanie po zakończeniu rozmowy.":
+    "The summary is written once the conversation ends.",
+  "zapis rośnie w trakcie rozmowy": "the record grows as you talk",
+  "Co warto zapamiętać poza tym, co słychać.":
+    "What is worth remembering beyond what can be heard.",
   "Nagranie zostało przerwane": "The recording was interrupted",
   "To, co zdążyło wejść na dysk, zostało — bywa całą rozmową bez ostatniej minuty.":
     "Whatever made it to disk was kept — sometimes that is the whole conversation bar the last minute.",
@@ -71,17 +79,25 @@ const EN = {
   "Nigdy sam": "Never on its own",
   "Nagrywanie tylko z menu albo stąd.": "Recording only from the menu or from here.",
   Pytaj: "Ask",
-  "Powiadomienie, gdy wygląda na spotkanie. Jedno kliknięcie.":
-    "A notification when it looks like a meeting. One click.",
+  "Znaczek pyta, gdy wygląda na spotkanie. Jedno kliknięcie.":
+    "The badge asks when it looks like a meeting. One click.",
   "Sam z siebie": "On its own",
   "Wykryte spotkanie nagrywa się bez pytania.": "A detected meeting records without asking.",
   "Zachowaj nagranie": "Keep the recording",
   "Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu.":
     "By default the recording is deleted after transcription — same as with dictation.",
-  "Krótsze niż (sekundy) to pomyłka": "Shorter than (seconds) is a mistake",
+  "Krótsze nagranie to pomyłka": "A shorter recording is a mistake",
+  sekund: "seconds",
   "Szuflada na podsumowania": "Drawer for summaries",
-  "Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek w pasku menu świeci na fioletowo przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.":
-    "Recording involves people who never clicked anything in this app. The menu bar mark glows violet the whole time, and macOS shows its own indicator next to it.",
+  "Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek świeci przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.":
+    "Recording involves people who never clicked anything in this app. The badge glows the whole time, and macOS shows its own indicator next to it.",
+
+  /* ── Pytanie znaczka o spotkanie ── */
+  "Zapisać przebieg?": "Record this?",
+  Notuj: "Take notes",
+  "Nie teraz": "Not now",
+  "Nagrywam spotkanie — kliknij, żeby zobaczyć notatki":
+    "Recording a meeting — click to see the notes",
 
   /* ── Pasek górny i stany ── */
   Dyktuj: "Dictate",

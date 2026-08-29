@@ -473,11 +473,23 @@ class Store {
       endedAt: null,
       seconds: 0,
       title: null,
+      // Skąd rozmowa — „Google Meet", „Zoom". Z wykrywania, gdy było czym
+      // wykryć; z niczego, gdy nagranie ruszyło z menu.
+      where: null,
       // recording | done | failed
       state: "recording",
       error: null,
       tracks: null,
       noteId: null,
+      /* Zapis rozmowy: [{speaker, lane, at, text}]. Powstaje odcinkami
+         w trakcie nagrywania (patrz main/segments.js), więc pole istnieje
+         od pierwszej chwili, a nie dopiero na końcu. */
+      transcript: [],
+      summary: null,
+      /* Notatki pisane RĘKĄ w trakcie rozmowy. Osobno od transkrypcji
+         i od podsumowania, bo to jedyna z tych trzech rzeczy, której nie
+         da się odtworzyć z nagrania. */
+      notes: "",
       ...patch,
     };
     this.meetings.unshift(meeting);

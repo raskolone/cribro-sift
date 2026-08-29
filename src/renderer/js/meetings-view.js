@@ -37,13 +37,19 @@
   const state = {
     meetings: [],
     selected: null,
-    tab: "summary", // summary | transcript
+    tab: "summary", // summary | transcript | notes
     recording: false,
     seconds: 0,
     settings: null,
+    // Notatka napisana, a jeszcze niezapisana — patrz flushNotes.
+    notes: null,
   };
 
   let ticker = null;
+  let noteTimer = null;
+  /* Chwila zwłoki przed zapisem notatnika. Ta sama, co przy kartce
+     w widgecie: pisze się zdaniami, nie literami. */
+  const SAVE_DELAY = 600;
 
   /* ── Drobiazgi ─────────────────────────────────────────────── */
 
@@ -109,6 +115,9 @@
 
       const tab = event.target.closest("[data-meet-tab]");
       if (tab) {
+        // Notatnik ginie razem z przerysowaniem, więc zapisujemy go
+        // ZANIM zniknie z ekranu.
+        await flushNotes();
         state.tab = tab.dataset.meetTab;
         paint();
         return;
@@ -124,6 +133,23 @@
         if (state.selected === id) state.selected = null;
         await reload();
       }
+    });
+
+    /* Notatnik przy spotkaniu zapisuje się sam, z chwilą zwłoki — tak samo
+       jak kartka w widgecie. Nie ma tu przycisku „Zapisz" i nie ma go
+       nigdzie w tej aplikacji. */
+    root.addEventListener("input", (event) => {
+      const sheet = event.target.closest?.("[data-meet-notes]");
+      if (!sheet) return;
+      state.notes = { id: sheet.dataset.meetNotes, text: sheet.innerText };
+      // Podpowiedź gaśnie z pierwszą literą. Pytamy o treść, a nie
+      // o :empty — po skasowaniu wszystkiego zostaje w środku <br>.
+      sheet.dataset.empty = sheet.innerText.trim() ? "false" : "true";
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => void flushNotes(), SAVE_DELAY);
+    });
+    root.addEventListener("focusout", (event) => {
+      if (event.target.closest?.("[data-meet-notes]")) void flushNotes();
     });
 
     root.addEventListener("change", (event) => {
@@ -149,20 +175,24 @@
         const chosen = meeting.id === state.selected;
         const failed = meeting.state === "failed";
         const running = meeting.state === "recording";
+        /* Czas pokazujemy tylko wtedy, gdy jest co pokazać. Nagranie
+           przerwane na starcie ma zero sekund, a „0:00 przerwane" wygląda
+           jak awaria zegara, nie jak przerwana rozmowa. */
+        const meta = [];
+        if (running) meta.push(`<em class="meet__live">${t("nagrywa się")}</em>`);
+        else if (meeting.seconds >= 1) meta.push(duration(meeting.seconds));
+        if (failed) meta.push(`<em class="meet__failed">${t("przerwane")}</em>`);
         return `
           <button class="meet__row${chosen ? " is-chosen" : ""}" data-meet-id="${meeting.id}">
             <span class="meet__row-title">${escape(title(meeting))}</span>
-            <span class="meet__row-meta">
-              ${running ? `<em class="meet__live">${t("nagrywa się")}</em>` : duration(meeting.seconds)}
-              ${failed ? `<em class="meet__failed">${t("przerwane")}</em>` : ""}
-            </span>
+            <span class="meet__row-meta">${meta.join(" · ")}</span>
           </button>`;
       })
       .join("");
 
     $("#meetList").innerHTML = `
       <div class="meet__head">
-        <button class="btn ${live ? "btn--rec" : "btn--primary"} meet__record" data-meet-record>
+        <button class="btn ${live ? "btn--air" : "btn--primary"} meet__record" data-meet-record>
           ${live ? `${t("Zakończ")} · ${duration(state.seconds)}` : t("Nagraj spotkanie")}
         </button>
       </div>
@@ -188,29 +218,42 @@
       <div class="meet__settings">
         <h3>${t("Jak działają spotkania")}</h3>
 
-        <p class="meet__legend">${t("Kiedy zacząć nagrywać")}</p>
-        ${option("off", "Nigdy sam", "Nagrywanie tylko z menu albo stąd.")}
-        ${option("ask", "Pytaj", "Powiadomienie, gdy wygląda na spotkanie. Jedno kliknięcie.")}
-        ${option("auto", "Sam z siebie", "Wykryte spotkanie nagrywa się bez pytania.")}
+        <div class="meet__group">
+          <p class="meet__legend">${t("Kiedy zacząć nagrywać")}</p>
+          ${option("off", "Nigdy sam", "Nagrywanie tylko z menu albo stąd.")}
+          ${option("ask", "Pytaj", "Znaczek pyta, gdy wygląda na spotkanie. Jedno kliknięcie.")}
+          ${option("auto", "Sam z siebie", "Wykryte spotkanie nagrywa się bez pytania.")}
+        </div>
 
-        <label class="meet__switch">
-          <input type="checkbox" data-meet-set="keepAudio" ${meet.keepAudio ? "checked" : ""} />
-          <span><b>${t("Zachowaj nagranie")}</b><i>${t("Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu.")}</i></span>
-        </label>
+        <div class="meet__group">
+          <label class="meet__set">
+            <span class="meet__set-text">
+              <b>${t("Zachowaj nagranie")}</b>
+              <i>${t("Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu.")}</i>
+            </span>
+            <input type="checkbox" data-meet-set="keepAudio" ${meet.keepAudio ? "checked" : ""} />
+            <span class="meet__flip" aria-hidden="true"></span>
+          </label>
+        </div>
 
-        <label class="meet__field">
-          <span>${t("Krótsze niż (sekundy) to pomyłka")}</span>
-          <input type="number" min="0" max="600" step="10" value="${meet.minSeconds ?? 90}"
-                 data-meet-set="minSeconds" />
-        </label>
+        <div class="meet__group">
+          <label class="meet__field">
+            <span class="meet__field-name">${t("Krótsze nagranie to pomyłka")}</span>
+            <span class="meet__field-in">
+              <input type="number" min="0" max="600" step="10" value="${meet.minSeconds ?? 90}"
+                     data-meet-set="minSeconds" />
+              <em>${t("sekund")}</em>
+            </span>
+          </label>
 
-        <label class="meet__field">
-          <span>${t("Szuflada na podsumowania")}</span>
-          <input type="text" value="${escape(meet.folder ?? "")}" data-meet-set="folder" />
-        </label>
+          <label class="meet__field">
+            <span class="meet__field-name">${t("Szuflada na podsumowania")}</span>
+            <input type="text" value="${escape(meet.folder ?? "")}" data-meet-set="folder" />
+          </label>
+        </div>
 
         <p class="meet__note">
-          ${t("Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek w pasku menu świeci na fioletowo przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.")}
+          ${t("Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek świeci przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.")}
         </p>
       </div>`;
   }
@@ -232,15 +275,23 @@
         ${t(label)}
       </button>`;
 
+    const live = meeting.state === "recording";
+    // Metryka: kiedy, skąd i jak długo. „Skąd" pojawia się tylko wtedy, gdy
+    // spotkanie zostało rozpoznane — nagranie z menu nie wie, gdzie było.
+    const meta = [when(meeting.at)];
+    if (meeting.where) meta.push(escape(meeting.where));
+    meta.push(live ? `<em class="meet__air">${t("nagrywa się")}</em>` : duration(meeting.seconds));
+
     $("#meetDetail").innerHTML = `
       <header class="meet__bar">
         <div class="meet__meta">
           <h2>${escape(title(meeting))}</h2>
-          <p>${when(meeting.at)} · ${duration(meeting.seconds)}</p>
+          <p>${meta.join(" · ")}</p>
         </div>
         <div class="meet__tabs">
           ${tab("summary", "Podsumowanie")}
           ${tab("transcript", "Transkrypcja")}
+          ${tab("notes", "Notatki")}
         </div>
         <button class="btn btn--ghost btn--sm" data-meet-remove="${meeting.id}">${t("Usuń")}</button>
       </header>
@@ -252,13 +303,18 @@
    * Treść zakładki.
    *
    * Puste zakładki mówią, CZEGO JESZCZE NIE MA — nie udają, że czegoś nie
-   * znaleziono. Nagranie istnieje i leży na dysku; brakuje kroku, który
-   * zamienia je w tekst, i to jest zdanie, które ma tu paść.
+   * znaleziono. „Jeszcze tego nie ma" i „nie udało się" to dwie różne
+   * wiadomości i nie wolno ich mylić.
+   *
+   * W TRAKCIE ROZMOWY zakładka nie jest kartką z napisem „poczekaj":
+   * transkrypcja rośnie na oczach (odcinkami, patrz main/segments.js),
+   * a notatnik obok jest pusty i czeka. Po to się tu wchodzi w trakcie.
    */
   function body(meeting) {
-    if (meeting.state === "recording") {
-      return `<p class="meet__blank">${t("Trwa nagrywanie. Tekst pojawi się po zakończeniu.")}</p>`;
-    }
+    const live = meeting.state === "recording";
+
+    if (state.tab === "notes") return notepad(meeting);
+
     if (meeting.state === "failed") {
       return `<p class="meet__blank meet__blank--warn">
         ${t("Nagranie zostało przerwane")}${meeting.error ? `: ${escape(meeting.error)}` : "."}
@@ -267,21 +323,29 @@
     }
 
     if (state.tab === "transcript") {
-      if (meeting.transcript?.length) return transcript(meeting);
+      if (meeting.transcript?.length) return transcript(meeting, live);
       return `<p class="meet__blank">
-        ${t("Nagranie leży na dysku, ale nie zostało jeszcze przepisane.")}
+        ${
+          live
+            ? t("Pierwsze zdania pojawią się tu za chwilę — zapis powstaje odcinkami.")
+            : t("Nagranie leży na dysku, ale nie zostało jeszcze przepisane.")
+        }
       </p>`;
     }
 
     if (meeting.summary) return `<div class="meet__summary">${escape(meeting.summary)}</div>`;
     return `<p class="meet__blank">
-      ${t("Podsumowanie powstaje z transkrypcji, według wybranego szablonu.")}
+      ${
+        live
+          ? t("Podsumowanie powstanie po zakończeniu rozmowy.")
+          : t("Podsumowanie powstaje z transkrypcji, według wybranego szablonu.")
+      }
     </p>`;
   }
 
-  /** Zapis rozmowy: kto, kiedy, co. Wypełni się w następnym etapie. */
-  function transcript(meeting) {
-    return `<div class="meet__transcript">${meeting.transcript
+  /** Zapis rozmowy: kto, kiedy, co. */
+  function transcript(meeting, live) {
+    const lines = meeting.transcript
       .map(
         (line) => `
         <p class="meet__line" data-speaker="${escape(line.speaker ?? "")}">
@@ -290,17 +354,67 @@
           <span class="meet__said">${escape(line.text ?? "")}</span>
         </p>`,
       )
-      .join("")}</div>`;
+      .join("");
+    /* Ogon mówi, że to jeszcze nie koniec. Bez niego zapis urwany
+       w połowie zdania wygląda jak zapis, który się zepsuł. */
+    const tail = live
+      ? `<p class="meet__more">${t("zapis rośnie w trakcie rozmowy")}</p>`
+      : "";
+    return `<div class="meet__transcript">${lines}${tail}</div>`;
+  }
+
+  /**
+   * Notatnik przy spotkaniu — pusta kartka na to, czego w nagraniu nie ma.
+   *
+   * Osobno od transkrypcji i od podsumowania, bo to jedyna z tych trzech
+   * rzeczy, której nie da się odtworzyć z dźwięku: „zrobić do czwartku",
+   * „spytać Anię", nazwisko, które padło bez kontekstu. Transkrypcję da się
+   * zrobić jeszcze raz z pliku, podsumowanie jeszcze raz z transkrypcji —
+   * a tego nie da się już z niczego.
+   */
+  function notepad(meeting) {
+    return `
+      <div
+        class="meet__pad"
+        contenteditable="plaintext-only"
+        spellcheck="true"
+        data-i18n="skip"
+        data-meet-notes="${meeting.id}"
+        data-empty="${meeting.notes ? "false" : "true"}"
+        data-placeholder="${t("Co warto zapamiętać poza tym, co słychać.")}"
+      >${escape(meeting.notes ?? "")}</div>`;
   }
 
   /* ── Przebieg ──────────────────────────────────────────────── */
 
   const $ = (selector) => root.querySelector(selector);
 
+  /** Czy ktoś właśnie pisze w notatniku spotkania. */
+  const writing = () =>
+    !!root?.contains(document.activeElement) &&
+    !!document.activeElement?.hasAttribute?.("data-meet-notes");
+
+  /** Notatnik na dysk. Wywoływane z opóźnieniem, przy wyjściu i przy zmianie
+      zakładki — czyli wszędzie tam, gdzie kartka może zniknąć z ekranu. */
+  async function flushNotes() {
+    clearTimeout(noteTimer);
+    const pending = state.notes;
+    if (!pending) return;
+    state.notes = null;
+    await api.meetings.note(pending.id, pending.text);
+    // Trzymamy też u siebie: najbliższe odświeżenie spisu przyszłoby
+    // z procesu głównego i cofnęłoby to, co dopiero co napisane.
+    const meeting = state.meetings.find((item) => item.id === pending.id);
+    if (meeting) meeting.notes = pending.text;
+  }
+
   function paint() {
     if (!root) return;
     paintList();
-    paintDetail();
+    /* Spotkania NIE przerysowujemy pod palcami piszącego. Zapis rozmowy
+       rośnie odcinkami, więc meldunki o zmianie przychodzą co dwie minuty
+       — a każdy z nich zabrałby kursor ze środka zdania. */
+    if (!writing()) paintDetail();
     window.translateTree(root);
   }
 
@@ -326,6 +440,20 @@
     }, 1000);
   }
 
+  /**
+   * Trwające spotkanie wychodzi na wierzch.
+   *
+   * Wejście w zakładkę w trakcie rozmowy ma pokazać TĘ rozmowę, a nie spis,
+   * w którym trzeba jej szukać — a przy samym rozpoczęciu otwiera się od
+   * razu na transkrypcji, bo to jedyna rzecz, która w trakcie rośnie.
+   * Podsumowania jeszcze nie ma i długo nie będzie.
+   */
+  function follow(live, opened) {
+    if (!live?.recording || !live.id) return;
+    state.selected = live.id;
+    if (opened) state.tab = "transcript";
+  }
+
   const MeetingsView = {
     async show(host, settings) {
       root = host;
@@ -334,12 +462,16 @@
       const live = await api.meetings.state();
       state.recording = live.recording;
       state.seconds = live.seconds;
+      follow(live, state.tab === "summary");
       await reload();
       tick(state.recording);
     },
 
     hide() {
       tick(false);
+      // Zakładka znika razem z notatnikiem — to, co w nim napisano,
+      // ma zostać na dysku, a nie w pamięci widoku.
+      void flushNotes();
     },
 
     settings(next) {
@@ -347,10 +479,13 @@
       if (root?.querySelector(".meet")) paint();
     },
 
-    /** Meldunek z procesu głównego: zaczęło się albo skończyło. */
+    /** Meldunek z procesu głównego: zaczęło się, skończyło albo przybyło
+        odcinka zapisu. */
     changed(live) {
+      const started = !!live?.recording && !state.recording;
       state.recording = !!live?.recording;
       state.seconds = live?.seconds ?? 0;
+      follow(live, started);
       tick(state.recording);
       if (root?.querySelector(".meet")) reload();
     },

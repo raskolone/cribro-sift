@@ -161,6 +161,17 @@ if (!window.cribro) {
     tutorial: { seen: true },
     spellcheck: { enabled: true, followDictation: true, languages: [] },
     cloud: { enabled: false, url: "", anonKey: "", autoSync: true },
+    /* Te same domyślne, co w main/store.js. Bez nich karta ustawień
+       spotkań w makiecie rysuje się z niczym zaznaczonym — i wygląda jak
+       zepsuta, choć zepsuty jest tylko podgląd. */
+    meetings: {
+      enabled: false,
+      detect: "ask",
+      keepAudio: false,
+      minSeconds: 90,
+      folder: "Spotkania",
+      exclude: ["Spotify", "Music"],
+    },
   };
 
   const permissions = { accessibility: false, microphone: "granted" };
@@ -374,16 +385,58 @@ if (!window.cribro) {
         },
       ];
       let live = false;
+      let id = null;
+      /* Rozmowa „wykryta na ekranie". W makiecie nie ma czego wykrywać,
+         więc stoi tu wpisana — bez niej nie da się obejrzeć ani pytania
+         znaczka, ani tego, co jest po powiedzeniu „Notuj". */
+      let spotted = null;
+      const tell = () => emit("meeting:changed", { recording: live, id, seconds: 0, spotted });
       return {
         toggle: async () => {
           live = !live;
-          emit("meeting:changed", { recording: live, seconds: 0 });
+          if (live) {
+            id = `m-live-${Date.now().toString(36)}`;
+            rows.unshift({
+              id,
+              at: new Date().toISOString(),
+              endedAt: null,
+              seconds: 0,
+              title: spotted?.title ?? null,
+              where: spotted?.where ?? null,
+              state: "recording",
+              transcript: [],
+              notes: "",
+            });
+          } else {
+            const row = rows.find((item) => item.id === id);
+            if (row) Object.assign(row, { state: "done", seconds: 143 });
+            id = null;
+          }
+          spotted = null;
+          tell();
           return true;
         },
-        state: async () => ({ recording: live, id: null, seconds: 0 }),
+        state: async () => ({ recording: live, id, seconds: 0, spotted }),
+        answer: async (yes) => {
+          if (yes) return window.cribro.meetings.toggle();
+          spotted = null;
+          tell();
+          return false;
+        },
+        note: async (which, text) => {
+          const row = rows.find((item) => item.id === which);
+          if (row) row.notes = text;
+          return true;
+        },
+        /* Wyłącznie dla makiety: udaje wykrycie rozmowy, żeby dało się
+           obejrzeć pytanie znaczka bez otwierania Zooma. */
+        pretend: (meeting) => {
+          spotted = meeting ?? { kind: "meet", where: "Google Meet", title: "Przegląd tygodnia" };
+          tell();
+        },
         list: async () => rows,
-        remove: async (id) => {
-          const at = rows.findIndex((row) => row.id === id);
+        remove: async (which) => {
+          const at = rows.findIndex((row) => row.id === which);
           if (at !== -1) rows.splice(at, 1);
           return true;
         },

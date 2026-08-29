@@ -104,6 +104,59 @@ app.whenReady().then(async () => {
   say("każda zmiana stanu została ogłoszona", changes);
   say("po zakończeniu znowu nic nie nagrywa", meetings.recording);
 
+  /* ── Przepisywanie w biegu ──
+     Osobne nagrywanie, bo trzeba mu podmienić dwie rzeczy: przepisywanie
+     (żeby nie wołać cudzego serwera) i długość odcinka (żeby na trzech
+     sekundach w ogóle powstały odcinki, a nie jeden ogryzek). Reszta drogi
+     jest ta sama — prawdziwy dźwięk, prawdziwa krajalnica, prawdziwy splot. */
+  const said = [];
+  const scribe = new Meetings(store, {
+    // Tor mikrofonu i tor systemu mówią co innego — inaczej splot uznałby
+    // jedno za echo drugiego i miałby rację.
+    transcribe: async (wav, _settings, about) => {
+      said.push({ size: wav.length, lane: about?.lane });
+      return {
+        text: about?.lane === "mic" ? "Tu mowie ja, po swojemu." : "A tu druga strona rozmowy.",
+      };
+    },
+    slice: { span: 1, overlap: 0.2, floor: -120 },
+  });
+
+  await scribe.start();
+  await wait(3200);
+  /* Pytamy o zapis PRZED zakończeniem. O to w tym etapie chodzi: po
+     „Koniec" ma być gotowe, a nie dopiero zaczęte. */
+  const live = store.getMeetings().find((item) => item.state === "recording");
+  say("zapis rośnie w trakcie rozmowy", live?.transcript?.length ?? 0);
+  const written = await scribe.stop();
+
+  /* Nagrywanie mogło odpaść dopiero tutaj — zgody „Nagrywanie ekranu"
+     bywa, że nie ma. Bez tego wyjścia dalsze pytania leciałyby po pustce
+     i test wieszałby się zamiast powiedzieć, czego brakuje. */
+  if (!written.meeting) {
+    out.skip = problem ?? "nagrywanie nie oddało spotkania";
+    process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
+    app.exit(0);
+    return;
+  }
+
+  say("odcinki poszły do przepisania w trakcie rozmowy", said.length);
+  say("każdy odcinek to domknięty WAV", said.every((item) => item.size > 44));
+  say("odcinki przyszły z obu torów", [...new Set(said.map((item) => item.lane))].sort().join("+"));
+  const lines = written.meeting.transcript ?? [];
+  say("zapis rozmowy wylądował we wpisie", lines.length);
+  say("zapis wie, kto mówił", [...new Set(lines.map((line) => line.speaker))].sort().join("+"));
+  say("zapis ma treść", lines.every((line) => !!line.text));
+  say("znaczniki czasu rosną", lines.every((line, at) => at === 0 || line.at >= lines[at - 1].at));
+
+  /* Ustawienie mówi „nagranie ginie po transkrypcji" i ma to robić naprawdę.
+     Wyżej (bez klucza API) nic się nie przepisało i pliki ZOSTAŁY — bo nie
+     ma czym ich zastąpić. Tutaj przepisanie się udało, więc mają zniknąć. */
+  say("po przepisaniu nagranie znika z dysku", !written.meeting.tracks);
+  say("…i naprawdę nie ma go w katalogu",
+    fs.readdirSync(store.meetingDir(written.meeting.id)).length);
+  say("…a spotkanie zostaje w spisie", meetings.list().some((item) => item.id === written.meeting.id));
+
   process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
   app.exit(0);
 });
@@ -170,6 +223,37 @@ if (out.skip) {
   check("Spis pokazuje to spotkanie", step("spis pokazuje jedno spotkanie") === 1);
   check("Po zakończeniu znowu nic nie nagrywa", step("po zakończeniu znowu nic nie nagrywa") === false);
   check("Każda zmiana stanu została ogłoszona oknu", step("każda zmiana stanu została ogłoszona") >= 4);
+
+  /* Transkrypcja w biegu. Sprawdzamy DROGĘ, nie jakość przepisania:
+     czy próbki doszły do krajalnicy, czy odcinki pojechały do przepisania
+     jeszcze w trakcie rozmowy i czy z dwóch torów powstał jeden zapis
+     z podziałem na mówiących. */
+  check(
+    "Odcinki jadą do przepisania w trakcie rozmowy, a nie po niej",
+    step("odcinki poszły do przepisania w trakcie rozmowy") >= 2,
+  );
+  check("Każdy odcinek jest domkniętym WAV-em", step("każdy odcinek to domknięty WAV") === true);
+  check("Kroimy oba tory, nie jeden", step("odcinki przyszły z obu torów") === "mic+system");
+  check(
+    "Zapis rośnie JUŻ W TRAKCIE rozmowy, a nie dopiero po niej",
+    step("zapis rośnie w trakcie rozmowy") >= 1,
+  );
+  check("Zapis rozmowy ląduje we wpisie", step("zapis rozmowy wylądował we wpisie") >= 1);
+  check("Zapis rozdziela mówiących na dwa tory", step("zapis wie, kto mówił") === "Rozmówcy+Ty");
+  check("Każda wypowiedź ma treść", step("zapis ma treść") === true);
+  check("Znaczniki czasu idą do przodu", step("znaczniki czasu rosną") === true);
+  check(
+    "Po udanym przepisaniu nagranie znika z dysku — tak, jak mówi ustawienie",
+    step("po przepisaniu nagranie znika z dysku") === true,
+  );
+  check("…i katalog spotkania naprawdę jest pusty", step("…i naprawdę nie ma go w katalogu") === 0);
+  check("…a samo spotkanie zostaje w spisie", step("…a spotkanie zostaje w spisie") === true);
+  /* Druga strona tej samej reguły: wyżej, gdy przepisanie się nie udało,
+     pliki musiały zostać — bo dźwięku nie da się nagrać drugi raz. */
+  check(
+    "Nagranie bez transkryptu NIE jest kasowane — nie ma czym go zastąpić",
+    step("oba tory zapisane") === true,
+  );
 }
 
 fs.rmSync(work, { recursive: true, force: true });

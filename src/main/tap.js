@@ -154,10 +154,11 @@ function peak(pcm) {
  * @param {string} options.dir       katalog na dwa pliki WAV
  * @param {string[]} [options.exclude]  aplikacje, których dźwięk pomijamy
  * @param {(level: number) => void} [options.onLevel]  głośność, do pokazania
+ * @param {(lane: string, pcm: Buffer) => void} [options.onPcm]  próbki w biegu
  * @param {(message: string) => void} [options.onError]
  * @returns {{stop: () => Promise<object>, files: {mic: string, system: string}}}
  */
-function record({ dir, exclude = [], onLevel, onError } = {}) {
+function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
   const helper = helperPath();
   if (!helper) {
     throw new Error(
@@ -186,6 +187,11 @@ function record({ dir, exclude = [], onLevel, onError } = {}) {
     rest = left;
     for (const frame of frames) {
       lanes[frame.lane]?.write(frame.pcm);
+      /* Te same próbki idą DALEJ, a nie tylko na dysk: z nich powstają
+         odcinki do transkrypcji w biegu (main/segments.js). Kopii nie
+         robimy — odbiorca dostaje wycinek wspólnego bufora i ma go zużyć
+         od razu, tak jak robi to krajalnica. */
+      if (onPcm) onPcm(frame.lane, frame.pcm);
       // Pokazujemy głośność MIKROFONU. Tor systemu też ma poziom, ale to
       // nie o nim człowiek chce wiedzieć, patrząc na znaczek: chce wiedzieć,
       // czy słychać JEGO.

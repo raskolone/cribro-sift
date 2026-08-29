@@ -87,6 +87,10 @@
   let saveTimer = null;
   let busy = false;
   let runtime = "idle";
+  /* Spotkanie: czy nagranie trwa i czy na ekranie stoi rozmowa, o którą
+     jeszcze nie zapytano. Oba stany przychodzą jedną wiadomością z procesu
+     głównego, bo znaczek rysuje z nich jeden stan. */
+  let meeting = { recording: false, spotted: null };
 
   /* ── Układ ──────────────────────────────────────────────────── */
 
@@ -623,6 +627,33 @@
     delete grip.dataset.drag;
   });
 
+  /* ── Spotkanie ──────────────────────────────────────────────────
+     Znaczek ma o spotkaniu dwie rzeczy do powiedzenia i obie są dla kogoś,
+     kto akurat patrzy gdzie indziej: „na ekranie stoi rozmowa, notować?"
+     i „nagrywam". Druga jest znakiem ze studia radiowego, bo mówi o cudzych
+     słowach, a nie o twoich — patrz --air w css/tokens.css. */
+
+  function applyMeeting(next) {
+    meeting = {
+      recording: !!next?.recording,
+      // Pytanie ma sens tylko wtedy, gdy nic jeszcze nie nagrywamy.
+      spotted: next?.recording ? null : (next?.spotted ?? null),
+    };
+
+    stage.dataset.meet = meeting.recording ? "live" : meeting.spotted ? "ask" : "";
+    badge.title = meeting.recording
+      ? window.t("Nagrywam spotkanie — kliknij, żeby zobaczyć notatki")
+      : "Cribro Sift";
+
+    const ask = $("#ask");
+    ask.hidden = !meeting.spotted;
+    if (meeting.spotted) {
+      // Nazwa rozmowy, a gdy jej nie ma — nazwa miejsca, w którym stoi.
+      $("#askWhere").textContent =
+        meeting.spotted.title || meeting.spotted.where || window.t("Spotkanie");
+    }
+  }
+
   /* ── Kursor i przepuszczanie kliknięć ───────────────────────── */
 
   let passing = true;
@@ -647,6 +678,16 @@
     if (view === "tray") for (const slot of slots) boxes.push(slot.getBoundingClientRect());
     if (view === "list" || view === "sticky") boxes.push(panel.getBoundingClientRect());
     return boxes.some((r) => inBox(r, x, y));
+  }
+
+  /* Dymek z pytaniem osobno od reszty i to nie jest drobiazg: kliknięcia
+     musi łapać (są w nim dwa przyciski), ale tacy rozkładać NIE ma. Ręka
+     idzie tam po „Notuj", a nie po dyktowanie — a pięć kółek wyjeżdżających
+     spod znaczka w chwili, gdy się celuje w przycisk, jest dokładnie tym
+     rodzajem ruchu, przez który się w niego nie trafia. */
+  function overAsk(x, y) {
+    const ask = $("#ask");
+    return !ask.hidden && inBox(ask.getBoundingClientRect(), x, y);
   }
 
   /* ══ PODNIESIENIE ZNACZKA LICZYMY SAMI, NIE Z :hover ══
@@ -694,7 +735,8 @@
      ruchu i szyba zwija się zamiast zmienić rozmiar. */
   document.addEventListener("mousemove", (event) => {
     if (grab || sizing) return;
-    const over = overUs(event.clientX, event.clientY);
+    const onAsk = overAsk(event.clientX, event.clientY);
+    const over = onAsk || overUs(event.clientX, event.clientY);
     setPassthrough(!over);
     setNear(nearBadge(event.clientX, event.clientY));
 
@@ -702,7 +744,7 @@
     // wierzchu, a kółka pod nimi byłyby drugim menu do tego samego.
     if (view === "list" || view === "sticky") return;
 
-    if (over) {
+    if (over && !onAsk) {
       clearTimeout(leaveTimer);
       hovering = true;
       settleHover();
@@ -844,9 +886,26 @@
        rozłożyłaby się z powrotem w tej samej chwili. Zostaje mu więc to,
        po co widget powstał: notatki na wierzchu. Lista przy znaczku albo
        kartki na pulpicie — zależnie od widoku, ale gest jest jeden. */
+    /* Pytanie o notatki ze spotkania. Przed znaczkiem, bo dymek leży
+       tuż obok niego i kliknięcie w przycisk nie ma prawa być przy okazji
+       kliknięciem w znaczek. */
+    if (event.target.closest("#askYes")) return void api.meetings.answer(true);
+    if (event.target.closest("#askNo")) return void api.meetings.answer(false);
+
     if (event.target.closest("#badge") || event.target.closest("#slotNotes")) {
       if (deck) return void hideDeck();
       if (view === "list" || view === "sticky") return void toBadge();
+
+      /* ══ W TRAKCIE NAGRYWANIA ZNACZEK PROWADZI DO SPOTKANIA ══
+
+         Tylko sam znaczek i tylko wtedy, gdy nic nie jest rozwinięte.
+         Umowa „znaczek chowa wszystko" zostaje nietknięta, a notatki na
+         wierzchu nie znikają z zasięgu: wychodzi się do nich tak samo jak
+         zawsze, ikonką w tacy — która rozkłada się samym najechaniem. */
+      if (meeting.recording && event.target.closest("#badge")) {
+        return void api.widget.run("meetings");
+      }
+
       return mode === "desk" ? toggleDeck() : toList();
     }
 
@@ -887,6 +946,9 @@
     if (event.key !== "Escape") return;
     event.preventDefault();
     if (runtime === "listening") return void api.system.cancelCapture?.();
+    // Pytanie o spotkanie zdejmuje się jak każde inne — i jest wierzchnią
+    // warstwą, bo przyszło samo, bez pytania.
+    if (meeting.spotted) return void api.meetings.answer(false);
     if (!$("#palette").hidden) return showPalette(false);
     if (mode === "desk" && deck) return void hideDeck();
     if (view === "sticky") return void toList();
@@ -968,6 +1030,10 @@
     stage.style.setProperty("--level", value.toFixed(3));
   });
 
+  /* Spotkanie: pytanie i nagrywanie jedną wiadomością — patrz meetingState
+     w main/main.js. */
+  api.meetings?.onChange?.((live) => applyMeeting(live));
+
   api.settings.onChange?.(async (settings) => {
     setLanguage(settings.uiLanguage ?? "pl");
     await applyMode(settings.widget?.mode);
@@ -994,6 +1060,9 @@
     // pyta o stan, zamiast zakładać, że wszystko jest schowane.
     deck = mode === "desk" && (await api.deck.state()).open;
     renderDeck();
+    // Spotkanie mogło się zacząć, zanim widget wstał — pytamy o stan,
+    // zamiast zakładać, że nic się nie dzieje.
+    applyMeeting(await api.meetings?.state?.());
     translateTree();
   })();
 })();

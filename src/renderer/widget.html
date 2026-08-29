@@ -211,6 +211,186 @@
         border-color: color-mix(in srgb, var(--warn) 34%, transparent);
       }
 
+      /* ══ SPOTKANIE ══
+
+         Dwa stany, oba postawione na #stage, a nie na znaczku: pytanie
+         stoi OBOK znaczka i musi widzieć ten sam atrybut.
+
+           data-meet="ask"   na ekranie stoi rozmowa — znaczek pyta
+           data-meet="live"  nagranie spotkania trwa
+
+         DYKTOWANIE MA PIERWSZEŃSTWO i stąd `:not([data-state="listening"])`
+         przy każdej regule niżej. Te dwie rzeczy chodzą równolegle — osobne
+         mikrofony, patrz main/meeting.js — więc znaczek bywa w obu stanach
+         naraz. Wygrywa krótszy: dyktowanie trwa kilkanaście sekund i właśnie
+         się je wywołało, a spotkanie i tak trwa dalej pod spodem. */
+      #badge .mark--meet,
+      #badge .mark--air {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+
+      #stage[data-meet="ask"] #badge:not([data-state="listening"]) {
+        border-color: var(--accent-55);
+        animation: badge-knock 2.4s var(--ease) infinite;
+      }
+      #stage[data-meet="ask"] #badge:not([data-state="listening"]) .mark--sieve {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      #stage[data-meet="ask"] #badge:not([data-state="listening"]) .mark--meet {
+        opacity: 1;
+        transform: scale(1);
+      }
+      /* Puknięcie, nie oddech. Pytanie ma się przypomnieć raz na jakiś czas
+         i przestać; pulsowanie bez końca jest zarezerwowane dla stanu,
+         w którym coś naprawdę leci — tam nie wolno go przegapić. */
+      @keyframes badge-knock {
+        0%, 74%, 100% { box-shadow: var(--shadow-lg), var(--glass-sheen); }
+        82% { box-shadow: 0 0 0 10px var(--accent-12), var(--glass-sheen); }
+        90% { box-shadow: 0 0 0 3px var(--accent-08), var(--glass-sheen); }
+      }
+
+      /* Znak ze studia. Czerwień, nie fiolet — dlaczego, patrz --air
+         w css/tokens.css. */
+      #stage[data-meet="live"] #badge:not([data-state="listening"]) {
+        color: var(--air-ink);
+        border-color: var(--air);
+        background-color: var(--air);
+        background-image: radial-gradient(
+          120% 120% at 50% 0%,
+          rgba(255, 255, 255, 0.24),
+          transparent 70%
+        );
+        animation: air-pulse 2.2s var(--ease) infinite;
+      }
+      #stage[data-meet="live"] #badge:not([data-state="listening"]) .mark--sieve {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      #stage[data-meet="live"] #badge:not([data-state="listening"]) .mark--air {
+        opacity: 1;
+        transform: scale(1);
+      }
+      #badge .mark--air {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        font: 500 12px/1 var(--font-mono);
+        letter-spacing: 0.1em;
+        text-indent: 0.1em; /* odstęp międzyliterowy dokleja się z prawej */
+      }
+      #badge .mark--air i { font-style: normal; }
+      /* Licznik notatek na wierzchu gaśnie na czas nagrywania: mówi o zupełnie
+         innej rzeczy, a miętowy żeton na czerwonym znaku wygląda jak druga
+         wiadomość — w chwili, w której liczy się tylko jedna. */
+      #stage[data-meet="live"] #badge:not([data-state="listening"]) #count {
+        transform: scale(0);
+      }
+      @keyframes air-pulse {
+        0%, 100% { box-shadow: var(--shadow-lg), 0 0 0 0 var(--air-55); }
+        50% { box-shadow: var(--shadow-lg), 0 0 0 13px var(--air-04); }
+      }
+
+      /* ── Pytanie o notatki ze spotkania ───────────────────────
+         Wychodzi z boku znaczka, w tę samą stronę co ikonka notatek —
+         czyli tam, gdzie jest miejsce (--tray-side liczy proces główny).
+         Okno ma na nie zapas: patrz roomAsk w main/main.js, ta sama
+         liczba co --ask-w niżej. */
+      #ask {
+        --ask-w: 200px;
+        position: absolute;
+        width: var(--ask-w);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+        border-radius: 14px;
+        border: 1px solid var(--accent-30);
+        background-color: var(--glass);
+        background-image: var(--glass-fill);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        box-shadow: var(--shadow-lg), var(--glass-sheen);
+        animation: ask-in 0.26s var(--ease) both;
+      }
+      /* Bez tego dymek NIE ZNIKA: `hidden` chowa przez arkusz przeglądarki,
+         a reguła wyżej z własnym `display` bije go bezwarunkowo. */
+      #ask[hidden] { display: none; }
+      #stage[data-tray-side="right"] #ask {
+        left: calc(var(--ax, 38px) + var(--badge) / 2 + 12px);
+        transform-origin: left center;
+      }
+      #stage[data-tray-side="left"] #ask {
+        right: calc(100% - var(--ax, 38px) + var(--badge) / 2 + 12px);
+        transform-origin: right center;
+      }
+      /* W PIONIE dymek rośnie w tę samą stronę co taca, a nie od środka
+         znaczka. Nad znaczkiem okno ma tylko aureolę (patrz placeWidget
+         w main/main.js: po stronie, w którą taca nie wychodzi, zostaje
+         `half`), więc dymek wyśrodkowany na znaczku ma dokładnie tyle
+         miejsca, ile akurat ma — i pierwsza dłuższa nazwa spotkania
+         przycina mu górną krawędź. Kierunek tacy jest z definicji tym,
+         w którym miejsce JEST. */
+      #stage[data-tray-dir="down"] #ask {
+        top: calc(var(--ay, 38px) - var(--badge) / 2);
+      }
+      #stage[data-tray-dir="up"] #ask {
+        bottom: calc(100% - var(--ay, 38px) - var(--badge) / 2);
+      }
+      @keyframes ask-in {
+        from { opacity: 0; transform: scale(0.94); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .ask__what {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .ask__what b {
+        font-size: 12.5px;
+        font-weight: 500;
+        color: var(--text);
+      }
+      .ask__what span {
+        font-size: 11.5px;
+        line-height: 1.35;
+        color: var(--text-mute);
+      }
+      .ask__row {
+        display: flex;
+        gap: 6px;
+      }
+      #ask button {
+        flex: 1;
+        padding: 7px 8px;
+        border-radius: 9px;
+        border: 1px solid transparent;
+        font: 500 11.5px var(--font-body);
+        cursor: pointer;
+        transition: background var(--t), border-color var(--t), color var(--t);
+      }
+      /* Odmowa równie łatwa jak zgoda: pytanie dotyczy nagrywania ludzi,
+         którzy o nic nie prosili, więc „Nie teraz" nie jest tu drobnym
+         drukiem pod przyciskiem. */
+      .ask__yes {
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      .ask__yes:hover { background: var(--accent-soft); }
+      .ask__no {
+        background: transparent;
+        border-color: var(--line-strong);
+        color: var(--text-2);
+      }
+      .ask__no:hover {
+        border-color: var(--accent-30);
+        color: var(--text);
+      }
+
       /* ── Taca ─────────────────────────────────────────────────
          Cztery czynności robione w biegu i przejście do notatek. Podział
          pracy jest ten sam w każdym kółku i pilnujemy go wszędzie:
@@ -945,6 +1125,14 @@
           <rect x="3.5" y="5" width="17" height="14" rx="2.6" />
           <path d="M3.5 9h17" />
         </symbol>
+        <!-- Spotkanie: dwie fale naprzeciw siebie. Ten sam znak, którym
+             zakładka Spotkania podpisana jest w oknie aplikacji (i-meeting)
+             — bo znaczy dokładnie to samo. Dyktowanie ma mikrofon, rozmowa
+             ma dwie strony. -->
+        <symbol id="w-meet" viewBox="0 0 24 24">
+          <path d="M4 9v6M7.5 6.5v11M11 10v4" stroke-linecap="round" />
+          <path d="M13 10v4M16.5 6.5v11M20 9v6" stroke-linecap="round" opacity=".55" />
+        </symbol>
         <symbol id="w-bolt" viewBox="0 0 24 24">
           <path d="M12.5 4.5H5v15h10v-7.5" />
           <path d="M19.5 3.2 15 9.6h3.6L17 14.8l4.6-6.4H18l1.5-5.2Z" fill="currentColor" stroke="none" />
@@ -1049,10 +1237,28 @@
         </button>
       </div>
 
+      <!-- ══ PYTANIE O NOTATKI ZE SPOTKANIA ══
+           Wychodzi z boku znaczka, w tę samą stronę co ikonka notatek,
+           gdy proces główny rozpozna na ekranie okno rozmowy (patrz
+           main/detect.js). Dwa przyciski, bo to jedyne miejsce w widgecie,
+           w którym odmowa musi być równie łatwa jak zgoda: pytanie dotyczy
+           nagrywania ludzi, którzy o nic nie prosili. -->
+      <div id="ask" hidden>
+        <p class="ask__what"><b id="askWhere">Spotkanie</b><span>Zapisać przebieg?</span></p>
+        <div class="ask__row">
+          <button id="askYes" class="ask__yes">Notuj</button>
+          <button id="askNo" class="ask__no">Nie teraz</button>
+        </div>
+      </div>
+
       <button id="badge" title="Cribro Sift">
         <span class="wave"></span>
         <svg class="mark mark--sieve"><use href="#w-sieve" /></svg>
         <svg class="mark mark--mic"><use href="#w-mic" /></svg>
+        <svg class="mark mark--meet"><use href="#w-meet" /></svg>
+        <!-- Znak ze studia radiowego. Litery, nie ikona: „ON AIR" czyta
+             każdy i nikt nie musi zgadywać, co znaczy kolejny rysunek. -->
+        <span class="mark mark--air" aria-hidden="true"><i>ON</i><i>AIR</i></span>
         <span id="count" data-on="false">0</span>
       </button>
     </div>

@@ -17,6 +17,7 @@ const {
   systemPreferences,
   globalShortcut,
   nativeTheme,
+  desktopCapturer,
 } = require("electron");
 
 const { Store } = require("./store");
@@ -35,6 +36,7 @@ const { sendNote: sendToNotion, check: checkNotion } = require("./notion");
 const { detectConflicts } = require("./shortcuts");
 const { grabRegion, readText, compose, stampName } = require("./shot");
 const { Meetings } = require("./meeting");
+const { Watcher: MeetingWatcher } = require("./detect");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
 const { translator } = require("../shared/strings");
 
@@ -688,6 +690,11 @@ const WIDGET_TRAY = {
   tip: 8, // odstęp ikona ↔ dymek
   room: 168, // najszerszy dymek kolumny („Gęstość sita — Zgrubne")
   roomNotes: 96, // dymek przy notatkach — jedno słowo, więc węższy
+  /* Pytanie o notatki ze spotkania wychodzi w tę samą stronę co ikonka
+     notatek i jest z nich wszystkich najszersze — bo jako jedyne ma dwa
+     przyciski. Ta sama liczba stoi w widget.html jako --ask-w; okno musi
+     być szersze od dymka, inaczej przycięłoby mu „Nie teraz". */
+  roomAsk: 200,
   margin: 10, // zapas na powiększenie pod kursorem i na cień
 };
 
@@ -707,6 +714,9 @@ const traySide =
   Math.max(
     WIDGET_BADGE / 2 + WIDGET_TRAY.gap + WIDGET_TRAY.item + WIDGET_TRAY.tip + WIDGET_TRAY.roomNotes,
     WIDGET_TRAY.item / 2 + WIDGET_TRAY.tip + WIDGET_TRAY.room,
+    // Pytanie o notatki ze spotkania — stoi przy samym znaczku i jest
+    // szersze od każdego dymka.
+    WIDGET_BADGE / 2 + WIDGET_TRAY.gap + WIDGET_TRAY.roomAsk,
   ) + WIDGET_TRAY.margin;
 
 const clamp = (value, low, high) => Math.min(Math.max(value, low), high);
@@ -1827,7 +1837,7 @@ function meetingMenuItem(t) {
  * powiedzieć. Meldunek jest osobno od samej czynności, bo `meeting.js`
  * nie ma prawa wiedzieć nic o oknach.
  */
-async function toggleMeeting() {
+async function toggleMeeting(about = null) {
   try {
     if (meetings.recording) {
       const { discarded, meeting, seconds } = await meetings.stop();
@@ -1841,10 +1851,131 @@ async function toggleMeeting() {
       }
       return;
     }
-    await meetings.start();
+    await meetings.start(about);
   } catch (problem) {
     broadcast("pipeline:error", { stage: "spotkanie", message: problem.message });
   }
+}
+
+/* ── Wykrywanie spotkania ──────────────────────────────────────
+   Rozstrzyganie, CZY na ekranie stoi rozmowa, siedzi w main/detect.js
+   i nie zna Electrona. Tutaj jest reszta: skąd wziąć spis okien, co
+   z odpowiedzią zrobić i komu o niej powiedzieć. */
+
+/** Rozmowa wykryta, o którą jeszcze nie zapytano (albo zapytano i czeka). */
+let spotted = null;
+let watcher = null;
+
+/** Wszystko, co znaczek i okno wiedzą o spotkaniach — jedną wiadomością.
+
+    Razem, a nie osobno, bo znaczek rysuje z tego JEDEN stan: albo pyta,
+    albo nagrywa, albo nie robi żadnej z tych dwóch rzeczy. Dwa kanały
+    znaczyłyby dwa meldunki w różnej kolejności i migotanie na styku. */
+function meetingState() {
+  return { ...meetings.state, spotted };
+}
+
+function tellMeetings() {
+  broadcast("meeting:changed", meetingState());
+  applyMeetingTray();
+}
+
+/**
+ * Spis okien stojących na ekranie — same tytuły.
+ *
+ * Miniatury zamawiamy zerowe, a ikon nie zamawiamy wcale: nie robimy
+ * zrzutu ekranu, tylko czytamy napisy z belek. Bez tego każde spojrzenie
+ * (co osiem sekund) rysowałoby obrazek każdego okna w systemie.
+ *
+ * Wymaga zgody „Nagrywanie ekranu" — tej samej, którą i tak trzeba dać
+ * na nagrywanie dźwięku systemu. Bez niej spis wraca pusty i wykrywanie
+ * po prostu nic nie znajduje.
+ */
+async function screenWindows() {
+  const sources = await desktopCapturer.getSources({
+    types: ["window"],
+    thumbnailSize: { width: 0, height: 0 },
+    fetchWindowIcons: false,
+  });
+  return sources.map((source) => source.name);
+}
+
+/**
+ * Rozmowa pojawiła się albo zniknęła.
+ *
+ * Pytanie znika razem z rozmową i to jest zamierzone: znaczek dopominający
+ * się o notatki z rozmowy, która skończyła się kwadrans temu, pytałby
+ * o przeszłość. NAGRANIE natomiast zostaje — patrz komentarz w detect.js
+ * o tym, dlaczego nie kończymy go automatycznie.
+ */
+async function meetingSpotted(meeting) {
+  if (!meeting) {
+    if (!spotted) return;
+    spotted = null;
+    tellMeetings();
+    return;
+  }
+  // Nagrywamy już — nie ma o co pytać.
+  if (meetings.recording) return;
+
+  const how = store.getSettings().meetings?.detect ?? "ask";
+  if (how === "auto") {
+    /* Bez pytania znaczy też: bez wywoływania okna na wierzch. Kto wybrał
+       „sam z siebie", wybrał niewidzialność — dowodem, że nagranie ruszyło,
+       jest znaczek i znak w pasku menu. */
+    await toggleMeeting({ title: meeting.title, where: meeting.where });
+    return;
+  }
+  if (how !== "ask") return;
+  spotted = meeting;
+  tellMeetings();
+}
+
+/**
+ * Odpowiedź na pytanie znaczka.
+ *
+ * „Tak" wywołuje okno na zakładkę Spotkania — bo od tej chwili jest tam co
+ * oglądać, a człowiek właśnie powiedział, że chce te notatki mieć. „Nie"
+ * chowa pytanie do końca tej rozmowy: to samo pytanie zadane drugi raz
+ * w trakcie tego samego spotkania byłoby dopominaniem się.
+ */
+async function answerMeeting(yes) {
+  const meeting = spotted;
+  spotted = null;
+  tellMeetings();
+  if (!yes || !meeting) return false;
+  await toggleMeeting({ title: meeting.title, where: meeting.where });
+  createMainWindow().webContents.send("view:go", "meetings");
+  return true;
+}
+
+/**
+ * Pilnowanie ekranu włącza się i wyłącza razem z ustawieniem.
+ *
+ * ZGODY NIE WYPRASZAMY. Spis okien wymaga „Nagrywania ekranu", a samo
+ * pytanie o niego wywołuje systemowe okienko — i wywołałoby je przy
+ * pierwszym uruchomieniu aplikacji, zanim ktokolwiek poprosił o cokolwiek
+ * związanego ze spotkaniami. Dopóki zgody nie ma, wykrywanie po prostu
+ * śpi; obudzi się, gdy zgoda pojawi się przy pierwszym nagraniu spotkania
+ * (patrz watchPermissions).
+ */
+function applyDetect(settings = store.getSettings()) {
+  const how = settings.meetings?.detect ?? "ask";
+  if (how === "off" || !canSeeScreen()) {
+    watcher?.stop();
+    return;
+  }
+  if (!watcher) {
+    watcher = new MeetingWatcher({
+      list: screenWindows,
+      onChange: (meeting) => void meetingSpotted(meeting),
+      /* Awaria to prawie zawsze odmowa zgody „Nagrywanie ekranu". Nie ma
+         co o niej krzyczeć przy każdym spojrzeniu — nagrywanie spotkania
+         i tak powie o niej wprost, gdy ktoś je włączy. */
+      onError: () => {},
+    });
+  }
+  watcher.start();
 }
 
 function buildAppMenu() {
@@ -2620,11 +2751,27 @@ let lastAccessibility = null;
  * twierdzi, że zgody nie ma, i dalej ma głuchy skrót — bo przepięcie
  * silnika działo się tylko przy fokusie okna głównego.
  */
+/** Czy wolno nam czytać spis okien — czyli czy jest zgoda „Nagrywanie ekranu". */
+const canSeeScreen = () =>
+  process.platform !== "darwin" || systemPreferences.getMediaAccessStatus("screen") === "granted";
+
+let lastScreenAccess = null;
+
 function watchPermissions() {
   clearInterval(permissionWatch);
   lastAccessibility = permissionSnapshot().accessibility;
+  lastScreenAccess = canSeeScreen();
 
   permissionWatch = setInterval(() => {
+    /* Zgoda „Nagrywanie ekranu" przychodzi zwykle przy pierwszym nagraniu
+       spotkania — i dopiero od tej chwili wykrywanie ma czym patrzeć.
+       Bez tego trzeba by po nią zrestartować aplikację. */
+    const screenAccess = canSeeScreen();
+    if (screenAccess !== lastScreenAccess) {
+      lastScreenAccess = screenAccess;
+      applyDetect();
+    }
+
     const accessibility = permissionSnapshot().accessibility;
     if (accessibility === lastAccessibility) return;
     lastAccessibility = accessibility;
@@ -2651,6 +2798,9 @@ function registerIpc() {
     if (patch.widget?.mode !== undefined) closeDeck();
     if (patch.showInDock !== undefined) applyDockIcon(patch.showInDock);
     if (patch.spellcheck || patch.language) applySpellcheck(settings);
+    // Wykrywanie rusza i staje razem z ustawieniem — a nie dopiero po
+    // przeładowaniu aplikacji.
+    if (patch.meetings?.detect !== undefined) applyDetect(settings);
     if (patch.cloud) {
       cloud.configure(settings.cloud);
       watchCloud();
@@ -2937,6 +3087,14 @@ function registerIpc() {
       createMainWindow();
       return true;
     }
+    /* Znaczek w trakcie nagrywania prowadzi wprost do Meeting Notes —
+       bo to jedyne miejsce, w którym trwające spotkanie ma jakąkolwiek
+       treść. Poza nagrywaniem ten sam znaczek robi to, co zawsze:
+       otwiera notatki na wierzchu. */
+    if (action === "meetings") {
+      createMainWindow().webContents.send("view:go", "meetings");
+      return true;
+    }
     return false;
   });
 
@@ -3101,11 +3259,21 @@ function registerIpc() {
   /* Spotkania. Na tym etapie tyle, ile naprawdę jest: przełącznik, stan
      i spis. Transkrypcja i podsumowanie dojdą własnymi kanałami. */
   ipcMain.handle("meetings:toggle", () => toggleMeeting());
-  ipcMain.handle("meetings:state", () => meetings.state);
+  ipcMain.handle("meetings:state", () => meetingState());
+  // Odpowiedź na pytanie znaczka: „Tak" zaczyna notatki, „Nie" chowa
+  // pytanie do końca tej rozmowy.
+  ipcMain.handle("meetings:answer", (_e, yes) => answerMeeting(!!yes));
   ipcMain.handle("meetings:list", () => meetings.list());
   ipcMain.handle("meetings:delete", (_e, id) => {
     store.deleteMeeting(id);
-    broadcast("meeting:changed", meetings.state);
+    broadcast("meeting:changed", meetingState());
+    return true;
+  });
+  /* Notatki pisane ręką w trakcie rozmowy. Nie rozsyłamy ich z powrotem
+     do okien: pisze je jedno okno i podmiana tekstu pod palcami piszącego
+     byłaby jedyną rzeczą, jaką taki meldunek mógłby zrobić. */
+  ipcMain.handle("meetings:note", (_e, { id, text } = {}) => {
+    store.updateMeeting(id, { notes: String(text ?? "") });
     return true;
   });
 
@@ -3456,8 +3624,7 @@ if (!app.requestSingleInstanceLock()) {
        Dyktowanie notatki w trakcie rozmowy ma działać. */
     meetings = new Meetings(store, {
       onChange: () => {
-        broadcast("meeting:changed", meetings.state);
-        applyMeetingTray();
+        tellMeetings();
         refreshMenus();
       },
       onLevel: (level) => {
@@ -3465,6 +3632,9 @@ if (!app.requestSingleInstanceLock()) {
         // dyktowaniu — znaczek nie musi wiedzieć, skąd mówią.
         if (state === "idle") widget?.webContents.send("widget:level", level);
       },
+      /* Przybył odcinek zapisu. Okna mają się o tym dowiedzieć, ale pasek
+         menu i menu aplikacji nie mają się o co przebudowywać. */
+      onTranscript: () => broadcast("meeting:changed", meetingState()),
       onError: (message) => broadcast("pipeline:error", { stage: "spotkanie", message }),
     });
 
@@ -3479,6 +3649,7 @@ if (!app.requestSingleInstanceLock()) {
     buildAppMenu();
     createHud();
     bindHotkeys();
+    applyDetect();
     watchPermissions();
     createMainWindow();
     watchCloud();
