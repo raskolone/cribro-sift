@@ -91,6 +91,15 @@ const EN = {
   "Piszesz sam, czego od niego oczekujesz.": "You write what you expect from it.",
   "Np. Same zadania, w punktach, po angielsku. Bez wstępu.":
     "E.g. Tasks only, as bullets, in English. No preamble.",
+  Rozmowa: "Conversation",
+  "Przesiewam rozmowę…": "Sifting the conversation…",
+  "Przesiej rozmowę": "Sift the conversation",
+  "Przesiej jeszcze raz": "Sift it again",
+  "Przesiewanie się nie udało": "Sifting did not work out",
+  "Rozmowę przesiejemy po jej zakończeniu.": "The conversation gets sifted once it ends.",
+  "Ten sam zapis bez szumu: bez „yyy”, bez „słychać mnie?”, bez trzech minut o pogodzie — a wciąż jako rozmowa.":
+    "The same record without the noise: no “um”, no “can you hear me?”, no three minutes about the weather — and still a conversation.",
+  "Najpierw musi powstać zapis rozmowy.": "The record has to exist first.",
   "Przepisuję nagranie…": "Transcribing the recording…",
   "Przepisz nagranie": "Transcribe the recording",
   "Przepisz jeszcze raz": "Transcribe it again",
@@ -99,6 +108,9 @@ const EN = {
     "The recording was deleted and no text came out of it — there is nothing left to show.",
   "Piszę podsumowanie…": "Writing the summary…",
   "Podsumowanie się nie udało": "The summary did not work out",
+  "Zapisz jako notatkę": "Save as a note",
+  Kopiuj: "Copy",
+  Skopiowane: "Copied",
   "Napisz podsumowanie": "Write the summary",
   "Napisz jeszcze raz": "Write it again",
   "Nie ma z czego zrobić podsumowania — nie ma ani zapisu, ani notatek.":

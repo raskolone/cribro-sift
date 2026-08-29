@@ -38,7 +38,7 @@ const { grabRegion, readText, compose, stampName } = require("./shot");
 const { Meetings } = require("./meeting");
 const { Watcher: MeetingWatcher } = require("./detect");
 const { speakerFor } = require("./merge");
-const { digest } = require("./digest");
+const { digest, polish, asNote } = require("./digest");
 const agendaSource = require("./agenda");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
 const { translator } = require("../shared/strings");
@@ -3666,6 +3666,54 @@ function registerIpc() {
   /* Przepisanie nagrania jeszcze raz, z plików. Jedyny krok w tym module,
      który da się powtórzyć — i jedyny ratunek dla rozmowy nagranej bez
      klucza API albo bez sieci. */
+  /* ══ SPOTKANIE WYCHODZI Z APLIKACJI PRZEZ NOTATNIK ══
+
+     I to jest jedyna droga wyjścia, celowo. Notatka umie już PDF, Notion,
+     Apple Notes, chmurę i schowek; drugi zestaw tych samych przycisków
+     przy spotkaniu byłby drugim miejscem do poprawiania przy każdej
+     zmianie. Zadania z podsumowania stają się przy okazji listą do
+     odhaczenia — bo taka jest ich natura, a w podsumowaniu były akapitem. */
+  ipcMain.handle("meetings:toNote", (_e, { id, transcript } = {}) => {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting) return null;
+    const text = asNote(meeting, { transcript: transcript !== false });
+    const folder = store.getSettings().meetings?.folder || null;
+    const note = store.createNote({ text, kind: "meeting", folder });
+    store.updateMeeting(id, { noteId: note.id });
+    broadcast("note:new", note);
+    broadcast("meeting:changed", meetingState());
+    return note;
+  });
+
+  /* Rozmowa przesiana przez sito — trzecia postać tej samej rozmowy.
+     Zapis mówi, co padło; podsumowanie, co z tego wynika; to jest
+     pomiędzy: rozmowa bez szumu, która wciąż jest rozmową. */
+  ipcMain.handle("meetings:polish", async (_e, id) => {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting) return false;
+    store.updateMeeting(id, { sifting: true, talkError: null });
+    broadcast("meeting:changed", meetingState());
+    try {
+      const talk = await polish(meeting, store.getSettings());
+      store.updateMeeting(id, { talk, sifting: false, talkError: null });
+      return true;
+    } catch (problem) {
+      store.updateMeeting(id, { sifting: false, talkError: problem.message });
+      broadcast("pipeline:error", { stage: "sito", message: problem.message });
+      return false;
+    } finally {
+      broadcast("meeting:changed", meetingState());
+    }
+  });
+
+  /* Samo podsumowanie do schowka — najkrótsza droga do czatu i do maila. */
+  ipcMain.handle("meetings:copy", (_e, id) => {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting) return false;
+    clipboard.writeText(asNote(meeting, { transcript: false }));
+    return true;
+  });
+
   ipcMain.handle("meetings:retranscribe", async (_e, id) => {
     try {
       const transcript = await meetings.retranscribe(id);

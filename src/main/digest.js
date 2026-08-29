@@ -293,4 +293,215 @@ async function send({ provider, model, apiKey, system, user }) {
   throw new Error(`Nieznany dostawca podsumowań: ${provider}`);
 }
 
-module.exports = { digest, buildPrompt, readAnswer, transcriptText, material, TEMPLATES, MAX_CHARS };
+/* ── Rozmowa przesiana ──────────────────────────────────────────
+
+   Trzecia postać tej samej rozmowy — i ta, której nie ma nigdzie indziej.
+
+   Zapis odpowiada na pytanie „co dokładnie padło" i jest nie do czytania:
+   godzina mowy to czterdzieści tysięcy znaków razem z „halo, słychać
+   mnie?", trzema minutami o pogodzie i każdym „yyy". Podsumowanie
+   odpowiada na „co z tego wynika" i gubi wszystko poza wnioskiem — a bywa,
+   że liczy się, KTO ustąpił i dlaczego.
+
+   Między nimi jest miejsce, którego nikt nie zajmuje: rozmowa, z której
+   zdjęto szum, a która wciąż jest rozmową. Cribro robi dokładnie to jedno
+   przy dyktowaniu (patrz main/sieve.js) i tu robi to samo — bo to jest ta
+   sama czynność, tylko materiał ma dwie strony zamiast jednej. */
+
+const TALK_CONTRACT = `Jesteś sitem redakcyjnym. Dostajesz automatyczny zapis rozmowy dwóch stron i zwracasz go OCZYSZCZONY — nadal jako rozmowę, nie jako streszczenie.
+
+CO USUWASZ:
+- szum mowy: „yyy", „eee", „no", „wiesz", „tak jakby", zająknięcia, powtórzone słowa, fałszywe starty
+- techniczne początki i końce: „halo", „słychać mnie?", „chyba się zawiesiłeś", „muszę lecieć na następne"
+- wymianę zdań, która nie niesie treści: powitania, pogodę, small talk
+- powtórzenia tej samej myśli tą samą osobą
+
+CO ZOSTAWIASZ:
+- każdą myśl, która padła, razem z tym, kto ją powiedział
+- kolejność wypowiedzi i ich naprzemienność — to ma się dalej czytać jak rozmowa
+- zdania, w których ktoś zmienia zdanie, ustępuje albo się nie zgadza: to jest treść, a nie szum
+- liczby, terminy, nazwy i imiona dokładnie tak, jak padły
+
+CZEGO NIE ROBISZ:
+1. Nie streszczasz. Wypowiedź zostaje wypowiedzią, tylko bez potknięć.
+2. Nie dopisujesz niczego, czego nie było — ani ustaleń, ani zdań łączących.
+3. Nie zmieniasz przypisania do mówiących. Zapis bywa w tym niedokładny, ale zgadywanie pogorszy sprawę.
+4. Nie tłumaczysz. Piszesz w języku, w którym mówiono.
+
+FORMAT — dokładnie taki, wiersz po wierszu, bez niczego poza nim:
+[mm:ss] Mówiący: oczyszczona wypowiedź`;
+
+/** Wiersz rozmowy: „[12:34] Ania: treść". */
+const DIALOGUE = /^\s*\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*([^:]{1,40}?)\s*:\s*(.+?)\s*$/;
+
+/**
+ * Odpowiedź modelu z powrotem na wiersze rozmowy.
+ *
+ * Wiersze, które nie trzymają formatu, POMIJAMY zamiast ratować. Model,
+ * który zaczął pisać prozą, nie oddał rozmowy — a doklejenie jego prozy
+ * do zapisu jako czyjejś wypowiedzi byłoby włożeniem komuś w usta słów,
+ * których nie powiedział.
+ */
+function readDialogue(raw) {
+  const out = [];
+  for (const line of String(raw ?? "").split("\n")) {
+    const hit = DIALOGUE.exec(line);
+    if (!hit) continue;
+    const [, a, b, c, who, said] = hit;
+    const at = c ? Number(a) * 3600 + Number(b) * 60 + Number(c) : Number(a) * 60 + Number(b);
+    out.push({ speaker: who.replace(/\*\*/g, "").trim(), at, text: said.trim() });
+  }
+  return out;
+}
+
+/**
+ * Rozmowa bez szumu.
+ *
+ * @returns {Promise<Array<{speaker, at, text}>>}
+ */
+async function polish(meeting, settings, { ask } = {}) {
+  const lines = meeting?.transcript ?? [];
+  if (!lines.length) throw new Error("Nie ma czego przesiewać — zapis rozmowy jest pusty.");
+
+  const provider = settings?.sieve?.provider ?? "gemini";
+  const model = settings?.sieve?.model;
+  const apiKey = keyFor(provider, settings);
+  if (!apiKey && provider !== "mock") {
+    throw new Error(`Brak klucza API dla dostawcy „${provider}" — sito potrzebuje modelu.`);
+  }
+
+  const people = (meeting?.people ?? []).filter(Boolean);
+  const system = people.length
+    ? `${TALK_CONTRACT}\n\nW rozmowie brali udział: ${people.join(", ")}. Imiona zapisuj dokładnie tak.`
+    : TALK_CONTRACT;
+
+  const raw = await (ask ?? send)({
+    provider,
+    model,
+    apiKey,
+    system,
+    user: transcriptText(lines),
+  });
+  const talk = readDialogue(raw);
+  if (!talk.length) throw new Error("Sito nie oddało rozmowy w oczekiwanej postaci.");
+  return talk;
+}
+
+/**
+ * Zadania wyłuskane z podsumowania.
+ *
+ * Model pisze je listą pod nagłówkiem — i jako lista są do przeczytania,
+ * ale nie do odhaczenia. Notatka umie jedno i drugie, więc przy przenoszeniu
+ * spotkania do Notatnika punkty z tej jednej sekcji stają się zadaniami.
+ *
+ * Szukamy po nagłówku, nie po treści: „kto: co, termin" w środku akapitu
+ * o czym innym nie jest zadaniem, choćby wyglądało.
+ */
+function tasksFrom(summary) {
+  const lines = String(summary ?? "").split("\n");
+  const head = /^\s*(?:\*\*|##+\s*)?(zadania|do zrobienia|tasks|action items)\b/i;
+  const other = /^\s*(?:\*\*|##+\s*)\S/;
+  const bullet = /^\s*[-*•]\s+(.+?)\s*$/;
+
+  const out = [];
+  let inside = false;
+  for (const line of lines) {
+    if (head.test(line)) {
+      inside = true;
+      continue;
+    }
+    if (inside && other.test(line) && !bullet.test(line)) break;
+    if (!inside) continue;
+    const hit = bullet.exec(line);
+    if (hit) out.push(hit[1].replace(/\*\*/g, "").trim());
+  }
+  return out.filter(Boolean);
+}
+
+const stampDate = (iso) => {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "" : at.toLocaleString("pl-PL", { dateStyle: "long", timeStyle: "short" });
+};
+
+/**
+ * Spotkanie jako notatka — czyli jako coś, co da się WYSŁAĆ.
+ *
+ * To jest cała droga wyjścia z tego modułu i dlatego prowadzi przez
+ * Notatnik, a nie przez własny eksport: notatka umie już PDF, Notion,
+ * Apple Notes, chmurę i schowek. Drugi zestaw tych samych przycisków przy
+ * spotkaniu byłby drugim miejscem do poprawiania przy każdej zmianie.
+ *
+ * Zadania idą jako lista do odhaczenia, bo taka jest ich natura. Zapis
+ * rozmowy — na końcu i pod nagłówkiem, bo czyta się go rzadko i wtedy,
+ * gdy podsumowanie czegoś nie mówi.
+ */
+function asNote(meeting, { transcript = true } = {}) {
+  const out = [];
+  const title = meeting?.title || "Spotkanie";
+  out.push(`# ${title}`, "");
+
+  const meta = [stampDate(meeting?.at), meeting?.where].filter(Boolean);
+  if (meta.length) out.push(meta.join(" · "), "");
+  const people = (meeting?.people ?? []).filter(Boolean);
+  if (people.length) out.push(`**Kto był:** ${people.join(", ")}`, "");
+
+  const tasks = tasksFrom(meeting?.summary);
+  if (meeting?.summary) {
+    /* Sekcję zadań wycinamy z podsumowania i wstawiamy niżej jako listę
+       do odhaczenia — inaczej te same punkty stałyby w notatce dwa razy. */
+    const body = tasks.length ? stripTasks(meeting.summary) : meeting.summary;
+    out.push(body.trim(), "");
+  }
+  if (tasks.length) {
+    out.push("## Zadania", "");
+    for (const task of tasks) out.push(`- [ ] ${task}`);
+    out.push("");
+  }
+
+  const notes = String(meeting?.notes ?? "").trim();
+  if (notes) out.push("## Notatki z rozmowy", "", notes, "");
+
+  if (transcript && meeting?.transcript?.length) {
+    out.push("## Zapis rozmowy", "");
+    for (const line of meeting.transcript) {
+      out.push(`**${line.speaker ?? "?"}** · ${stamp(line.at)}`, "", String(line.text ?? "").trim(), "");
+    }
+  }
+
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Podsumowanie bez sekcji zadań — te idą osobno, jako lista do odhaczenia. */
+function stripTasks(summary) {
+  const lines = String(summary ?? "").split("\n");
+  const head = /^\s*(?:\*\*|##+\s*)?(zadania|do zrobienia|tasks|action items)\b/i;
+  const other = /^\s*(?:\*\*|##+\s*)\S/;
+  const out = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (head.test(line)) {
+      skipping = true;
+      continue;
+    }
+    /* Punkt listy poznaje się po ODSTĘPIE za znakiem. Bez tego warunku
+       „**Otwarte**" liczyłoby się jako punkt (zaczyna się gwiazdką)
+       i cała sekcja po zadaniach znikałaby z podsumowania. */
+    if (skipping && other.test(line) && !/^\s*(?:[-•]|\*)\s/.test(line)) skipping = false;
+    if (!skipping) out.push(line);
+  }
+  return out.join("\n");
+}
+
+module.exports = {
+  digest,
+  polish,
+  readDialogue,
+  buildPrompt,
+  readAnswer,
+  transcriptText,
+  material,
+  tasksFrom,
+  asNote,
+  TEMPLATES,
+  MAX_CHARS,
+};

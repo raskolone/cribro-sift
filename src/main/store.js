@@ -521,6 +521,9 @@ class Store {
          w trakcie nagrywania (patrz main/segments.js), więc pole istnieje
          od pierwszej chwili, a nie dopiero na końcu. */
       transcript: [],
+      /* Rozmowa przesiana: ten sam zapis bez szumu, wciąż jako rozmowa.
+         Trzecia postać obok zapisu i podsumowania — patrz main/digest.js. */
+      talk: [],
       summary: null,
       /* Notatki pisane RĘKĄ w trakcie rozmowy. Osobno od transkrypcji
          i od podsumowania, bo to jedyna z tych trzech rzeczy, której nie

@@ -37,7 +37,7 @@
   const state = {
     meetings: [],
     selected: null,
-    tab: "summary", // summary | transcript | notes
+    tab: "summary", // summary | talk | transcript | notes
     recording: false,
     seconds: 0,
     settings: null,
@@ -123,6 +123,31 @@
         await flushNotes();
         state.tab = tab.dataset.meetTab;
         paint();
+        return;
+      }
+
+      const sift = event.target.closest("[data-meet-sift]");
+      if (sift) {
+        await api.meetings.polish(sift.dataset.meetSift);
+        return;
+      }
+
+      const toNote = event.target.closest("[data-meet-note]");
+      if (toNote) {
+        await flushNotes();
+        const note = await api.meetings.toNote(toNote.dataset.meetNote, true);
+        // Notatka jest po to, żeby z nią coś zrobić — otwieramy ją od razu
+        // w Notatniku, zamiast mówić „zapisano" i zostawiać szukanie.
+        if (note?.id) await api.notes.openWindow(note.id);
+        return;
+      }
+
+      const copy = event.target.closest("[data-meet-copy]");
+      if (copy) {
+        await flushNotes();
+        await api.meetings.copy(copy.dataset.meetCopy);
+        copy.textContent = t("Skopiowane");
+        setTimeout(() => paint(), 1400);
         return;
       }
 
@@ -401,6 +426,7 @@
         </div>
         <div class="meet__tabs">
           ${tab("summary", "Podsumowanie")}
+          ${tab("talk", "Rozmowa")}
           ${tab("transcript", "Transkrypcja")}
           ${tab("notes", "Notatki")}
         </div>
@@ -431,6 +457,38 @@
         ${t("Nagranie zostało przerwane")}${meeting.error ? `: ${escape(meeting.error)}` : "."}
         ${t("To, co zdążyło wejść na dysk, zostało — bywa całą rozmową bez ostatniej minuty.")}
       </p>`;
+    }
+
+    /* ROZMOWA PRZESIANA — trzecia postać tej samej rozmowy. Zapis mówi,
+       co padło; podsumowanie, co z tego wynika; to jest pomiędzy. */
+    if (state.tab === "talk") {
+      if (meeting.sifting) {
+        return `<p class="meet__blank meet__blank--work">${t("Przesiewam rozmowę…")}</p>`;
+      }
+      const sift = meeting.transcript?.length
+        ? `<div class="meet__act">
+             <button class="btn btn--sm" data-meet-sift="${meeting.id}">
+               ${t(meeting.talk?.length ? "Przesiej jeszcze raz" : "Przesiej rozmowę")}
+             </button>
+           </div>`
+        : "";
+      if (meeting.talkError) {
+        return `<p class="meet__blank meet__blank--warn">
+            ${t("Przesiewanie się nie udało")}: ${escape(meeting.talkError)}
+          </p>${sift}`;
+      }
+      if (meeting.talk?.length) {
+        return `${transcript({ transcript: meeting.talk }, false)}${sift}`;
+      }
+      return `<p class="meet__blank">
+          ${
+            live
+              ? t("Rozmowę przesiejemy po jej zakończeniu.")
+              : meeting.transcript?.length
+                ? t("Ten sam zapis bez szumu: bez „yyy”, bez „słychać mnie?”, bez trzech minut o pogodzie — a wciąż jako rozmowa.")
+                : t("Najpierw musi powstać zapis rozmowy.")
+          }
+        </p>${sift}`;
     }
 
     if (state.tab === "transcript") {
@@ -488,10 +546,18 @@
 
     const nothing = !meeting.transcript?.length && !String(meeting.notes ?? "").trim();
     const again = meeting.summary ? "Napisz jeszcze raz" : "Napisz podsumowanie";
+    /* Wyjście z aplikacji prowadzi przez Notatnik — i tylko tamtędy.
+       Notatka umie już PDF, Notion, Apple Notes i chmurę; drugi zestaw
+       tych samych przycisków tutaj byłby drugim miejscem do poprawiania. */
+    const out = meeting.summary
+      ? `<button class="btn btn--sm" data-meet-note="${meeting.id}">${t("Zapisz jako notatkę")}</button>
+         <button class="btn btn--ghost btn--sm" data-meet-copy="${meeting.id}">${t("Kopiuj")}</button>`
+      : "";
     const button = nothing
       ? ""
       : `<div class="meet__act">
            <button class="btn btn--sm" data-meet-sum="${meeting.id}">${t(again)}</button>
+           ${out}
          </div>`;
 
     if (meeting.summaryError) {

@@ -12,8 +12,17 @@
  * zakaz zmyślania ustaleń nie jest kwestią układu.
  */
 const assert = require("assert");
-const { digest, buildPrompt, readAnswer, transcriptText, material, TEMPLATES } =
-  require("../src/main/digest");
+const {
+  digest,
+  buildPrompt,
+  readAnswer,
+  transcriptText,
+  material,
+  tasksFrom,
+  asNote,
+  readDialogue,
+  TEMPLATES,
+} = require("../src/main/digest");
 
 let passed = 0;
 function check(label, condition) {
@@ -94,6 +103,72 @@ check("TITLE po angielsku też się liczy", readAnswer("TITLE: Weekly review\n\n
 check("Odpowiedź bez tytułu zostaje samą treścią", readAnswer("Po prostu treść.").title === null);
 check("…i nie gubi pierwszej linii", readAnswer("Po prostu treść.").summary === "Po prostu treść.");
 check("Pusta odpowiedź nie wymyśla tytułu", readAnswer("").title === null);
+
+/* ── Zadania i droga wyjścia ────────────────────────────────
+   Podsumowanie ma wyjść z aplikacji jako notatka — bo notatka umie już
+   PDF, Notion, Apple Notes i chmurę. Zadania stają się przy tym listą do
+   odhaczenia: w podsumowaniu były akapitem, a w notatce mogą być rzeczą,
+   którą się odhacza. */
+
+const podsumowanie = [
+  "**O czym było**",
+  "Termin raportu.",
+  "",
+  "**Zadania**",
+  "- Ania: wysłać dane, do czwartku",
+  "- Ty: zamknąć raport",
+  "",
+  "**Otwarte**",
+  "- Budżet na Q4",
+].join("\n");
+
+check("Zadania wychodzą z sekcji o zadaniach", tasksFrom(podsumowanie).length === 2);
+check("…co do treści", tasksFrom(podsumowanie)[0] === "Ania: wysłać dane, do czwartku");
+check("Punkty z innych sekcji nie są zadaniami", !tasksFrom(podsumowanie).includes("Budżet na Q4"));
+check("Podsumowanie bez zadań nie wymyśla ich", tasksFrom("**O czym było**\nNic.").length === 0);
+
+const notatka = asNote({
+  title: "Przegląd tygodnia",
+  at: "2026-08-29T10:00:00.000Z",
+  where: "Google Meet",
+  people: ["Ania", "Maciej"],
+  summary: podsumowanie,
+  notes: "kupić mleko",
+  transcript: rozmowa.transcript,
+});
+check("Notatka zaczyna się tytułem spotkania", notatka.startsWith("# Przegląd tygodnia"));
+check("…niesie, kto był", notatka.includes("**Kto był:** Ania, Maciej"));
+check("…zamienia zadania na listę do odhaczenia", notatka.includes("- [ ] Ty: zamknąć raport"));
+/* Zadania stoją w notatce RAZ. Zostawione i w podsumowaniu, i w liście
+   do odhaczenia, byłyby dwoma spisami tego samego — a odhaczenie jednego
+   nie zmieniałoby drugiego. */
+check(
+  "…i nie zostawia ich drugi raz w podsumowaniu",
+  notatka.split("Ty: zamknąć raport").length === 2,
+);
+check("…ale nie gubi sekcji po zadaniach", notatka.includes("Budżet na Q4"));
+check("…niesie notatki pisane ręką", notatka.includes("kupić mleko"));
+check("…i zapis rozmowy na końcu", notatka.indexOf("Zapis rozmowy") > notatka.indexOf("Zadania"));
+check(
+  "Bez zapisu rozmowy notatka jest samym wnioskiem",
+  !asNote({ summary: podsumowanie, transcript: rozmowa.transcript }, { transcript: false }).includes(
+    "Zapis rozmowy",
+  ),
+);
+
+/* ── Rozmowa przesiana ─────────────────────────────────────── */
+
+const dialog = readDialogue(
+  "[0:14] Ty: Dam radę do piątku.\nzdanie nie w formacie\n[1:02:07] Ania Kowalska: Wyślę dane.",
+);
+check("Wiersze rozmowy wracają z czasem i mówiącym", dialog.length === 2);
+check("…czas liczony w sekundach", dialog[0].at === 14);
+check("…także z godzinami", dialog[1].at === 3727);
+check("…i z pełnym imieniem", dialog[1].speaker === "Ania Kowalska");
+/* Wiersz nie w formacie POMIJAMY, zamiast ratować: doklejenie prozy modelu
+   jako czyjejś wypowiedzi byłoby włożeniem komuś w usta słów. */
+check("Proza modelu nie staje się czyjąś wypowiedzią", !dialog.some((l) => l.text.includes("nie w formacie")));
+check("Pusta odpowiedź to pusta rozmowa", readDialogue("").length === 0);
 
 /* ── Przebieg ───────────────────────────────────────────────── */
 

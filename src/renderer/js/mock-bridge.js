@@ -488,6 +488,42 @@ if (!window.cribro) {
           tell();
           return plan.armed;
         },
+        toNote: async (which) => {
+          const row = rows.find((item) => item.id === which);
+          if (!row) return null;
+          return window.cribro.notes.create({
+            text: `# ${row.title ?? "Spotkanie"}\n\n${row.summary ?? ""}`,
+          });
+        },
+        copy: async () => true,
+        polish: async (which) => {
+          const row = rows.find((item) => item.id === which);
+          if (!row) return false;
+          row.sifting = true;
+          tell();
+          await new Promise((r) => setTimeout(r, 1300));
+          row.sifting = false;
+          row.talk = [
+            { speaker: "Rozmówcy", at: 0, text: "Zdążymy z raportem przed poniedziałkiem?" },
+            { speaker: "Ty", at: 14, text: "Dam radę, ale potrzebuję danych z wtorku." },
+            { speaker: "Rozmówcy", at: 41, text: "Wyślę je dziś wieczorem, najpóźniej do dwudziestej." },
+          ];
+          tell();
+          return true;
+        },
+        retranscribe: async (which) => {
+          const row = rows.find((item) => item.id === which);
+          if (!row) return false;
+          row.transcribing = true;
+          tell();
+          await new Promise((r) => setTimeout(r, 1200));
+          row.transcribing = false;
+          row.transcript = row.transcript?.length
+            ? row.transcript
+            : [{ speaker: "Ty", lane: "mic", at: 0, text: "Przepisane jeszcze raz, z pliku." }];
+          tell();
+          return true;
+        },
         rename: async (which, title) => {
           const row = rows.find((item) => item.id === which);
           if (row) Object.assign(row, { title: title || null, titleByHand: !!title });

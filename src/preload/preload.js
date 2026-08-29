@@ -191,6 +191,13 @@ contextBridge.exposeInMainWorld("cribro", {
     summarize: (id) => ipcRenderer.invoke("meetings:summarize", id),
     // Przepisanie nagrania jeszcze raz, z plików na dysku.
     retranscribe: (id) => ipcRenderer.invoke("meetings:retranscribe", id),
+    /* Droga wyjścia: spotkanie jako notatka. Stamtąd prowadzą już wszystkie
+       pozostałe — PDF, Notion, Apple Notes, chmura. */
+    toNote: (id, transcript) => ipcRenderer.invoke("meetings:toNote", { id, transcript }),
+    copy: (id) => ipcRenderer.invoke("meetings:copy", id),
+    // Rozmowa bez szumu — to samo sito, co przy dyktowaniu, tylko materiał
+    // ma dwie strony zamiast jednej.
+    polish: (id) => ipcRenderer.invoke("meetings:polish", id),
     rename: (id, title) => ipcRenderer.invoke("meetings:rename", { id, title }),
     // Kalendarz: „notuj to spotkanie", zgoda zapadająca przed czasem.
     arm: (id, on) => ipcRenderer.invoke("meetings:arm", { id, on }),
