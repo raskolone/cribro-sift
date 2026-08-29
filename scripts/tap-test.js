@@ -28,7 +28,14 @@ const { parse, record, helperPath, wavHeader } = require("../src/main/tap");
    ScreenCaptureKit przy uśpionym ekranie nie zgłasza ŻADNEGO ekranu, więc
    nagrywanie odpada — i wygląda to na zepsutą funkcję, choć zepsuty jest
    tylko moment. `caffeinate -w` trzyma czuwanie dokładnie tak długo, jak
-   żyje ten proces, i nie budzi niczego, co już śpi. */
+   żyje ten proces — a `-u` budzi ekran, jeśli zdążył już zasnąć. Bez tego
+   drugiego cały ten test milczy na maszynie zostawionej na chwilę samej,
+   i milczy w sposób, który wygląda jak brak zgody. */
+try {
+  require("child_process").execFileSync("caffeinate", ["-u", "-t", "1"], { stdio: "ignore" });
+} catch {
+  /* nie macOS — nie ma czego budzić */
+}
 try {
   require("child_process")
     .spawn("caffeinate", ["-d", "-i", "-w", String(process.pid)], {

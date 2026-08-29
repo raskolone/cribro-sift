@@ -91,6 +91,12 @@ const EN = {
   "Piszesz sam, czego od niego oczekujesz.": "You write what you expect from it.",
   "Np. Same zadania, w punktach, po angielsku. Bez wstępu.":
     "E.g. Tasks only, as bullets, in English. No preamble.",
+  "Przepisuję nagranie…": "Transcribing the recording…",
+  "Przepisz nagranie": "Transcribe the recording",
+  "Przepisz jeszcze raz": "Transcribe it again",
+  "Przepisywanie się nie udało": "Transcribing did not work out",
+  "Nagranie zostało skasowane, a tekstu z niego nie ma — nie ma już czego pokazać.":
+    "The recording was deleted and no text came out of it — there is nothing left to show.",
   "Piszę podsumowanie…": "Writing the summary…",
   "Podsumowanie się nie udało": "The summary did not work out",
   "Napisz podsumowanie": "Write the summary",

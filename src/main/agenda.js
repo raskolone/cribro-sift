@@ -59,6 +59,9 @@ function parse(line) {
       from: Date.parse(event.from),
       to: Date.parse(event.to),
       guests: Number(event.guests) || 0,
+      /* Imiona zaproszonych. Po nich zapis rozmowy potrafi powiedzieć
+         „Ania" zamiast „Rozmówcy" — patrz main/merge.js i main/digest.js. */
+      people: (event.people ?? []).map((name) => String(name).trim()).filter(Boolean),
       link: String(event.link ?? "").trim() || null,
     }))
     .filter((event) => event.id && Number.isFinite(event.from) && Number.isFinite(event.to));

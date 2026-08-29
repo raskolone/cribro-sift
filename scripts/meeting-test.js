@@ -30,7 +30,14 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-meeting-"));
    ScreenCaptureKit przy uśpionym ekranie nie zgłasza ŻADNEGO ekranu, więc
    nagrywanie odpada — i wygląda to na zepsutą funkcję, choć zepsuty jest
    tylko moment. `caffeinate -w` trzyma czuwanie dokładnie tak długo, jak
-   żyje ten proces, i nie budzi niczego, co już śpi. */
+   żyje ten proces — a `-u` budzi ekran, jeśli zdążył już zasnąć. Bez tego
+   drugiego cały ten test milczy na maszynie zostawionej na chwilę samej,
+   i milczy w sposób, który wygląda jak brak zgody. */
+try {
+  require("child_process").execFileSync("caffeinate", ["-u", "-t", "1"], { stdio: "ignore" });
+} catch {
+  /* nie macOS — nie ma czego budzić */
+}
 try {
   require("child_process")
     .spawn("caffeinate", ["-d", "-i", "-w", String(process.pid)], {
@@ -173,6 +180,56 @@ app.whenReady().then(async () => {
   /* Ustawienie mówi „nagranie ginie po transkrypcji" i ma to robić naprawdę.
      Wyżej (bez klucza API) nic się nie przepisało i pliki ZOSTAŁY — bo nie
      ma czym ich zastąpić. Tutaj przepisanie się udało, więc mają zniknąć. */
+  /* ── Przepisanie jeszcze raz, z plików ──
+     Osobne nagranie z zachowanym dźwiękiem: to jedyny krok w tym module,
+     który wolno powtórzyć — i jedyny ratunek dla rozmowy nagranej bez
+     klucza API. Sprawdzamy, że naprawdę czyta z DYSKU, a nie z pamięci. */
+  store.saveSettings({ meetings: { keepAudio: true } });
+  const kept = [];
+  const again = new Meetings(store, {
+    transcribe: async (wav, _s, about) => {
+      kept.push({ size: wav.length, lane: about?.lane, context: about?.context ?? "" });
+      return { text: about?.lane === "mic" ? "Znowu ja, ten sam glos." : "I znowu druga strona." };
+    },
+    slice: { span: 1, overlap: 0.2, floor: -120 },
+  });
+  await again.start();
+  await wait(2600);
+  const zapis = await again.stop();
+  say("nagranie z zachowanym dźwiękiem zostaje na dysku", !!zapis.meeting?.tracks?.mic);
+
+  if (zapis.meeting) {
+    // Kasujemy zapis, żeby było widać, że drugie przepisanie robi go od zera.
+    store.updateMeeting(zapis.meeting.id, { transcript: [] });
+    const przed = kept.length;
+    const znowu = await again.retranscribe(zapis.meeting.id);
+    say("przepisanie z plików wywołało model jeszcze raz", kept.length > przed);
+    say("i dało zapis", znowu.length);
+    say("odcinki z pliku niosą kontekst poprzedniego",
+      kept.slice(przed).some((item) => item.context.length > 0));
+    const po = store.getMeetings().find((item) => item.id === zapis.meeting.id);
+    say("zapis wylądował we wpisie", po?.transcript?.length ?? 0);
+    say("po przepisaniu nic już nie chodzi", !!po && po.transcribing !== true);
+  }
+
+  /* ── Podnoszenie się po ubiciu aplikacji ──
+     Wpis w stanie „recording" i pliki bez nagłówka to wszystko, co zostaje
+     po aplikacji zamkniętej w połowie rozmowy. */
+  const kaleki = store.createMeeting({ title: "Ubite w połowie" });
+  const kalekiDir = store.meetingDir(kaleki.id);
+  fs.mkdirSync(kalekiDir, { recursive: true });
+  // Plik z samymi próbkami: nagłówek powstaje na końcu i nie zdążył.
+  fs.writeFileSync(path.join(kalekiDir, "tor-a-mikrofon.wav"), Buffer.alloc(44 + 16000 * 2 * 7));
+  const ile = meetings.recover();
+  const podniesione = store.getMeetings().find((item) => item.id === kaleki.id);
+  say("nagranie po ubiciu aplikacji zostaje domknięte", ile);
+  say("i ma stan „failed”", podniesione?.state);
+  say("i zmierzony czas z rozmiaru pliku", Math.round(podniesione?.seconds ?? 0));
+  say("i domknięty nagłówek WAV", (() => {
+    const bytes = fs.readFileSync(path.join(kalekiDir, "tor-a-mikrofon.wav"));
+    return bytes.subarray(0, 4).toString() === "RIFF" && bytes.readUInt32LE(40) === bytes.length - 44;
+  })());
+
   say("po przepisaniu nagranie znika z dysku", !written.meeting.tracks);
   say("…i naprawdę nie ma go w katalogu",
     fs.readdirSync(store.meetingDir(written.meeting.id)).length);
@@ -278,6 +335,33 @@ if (out.skip) {
   );
   check("…i katalog spotkania naprawdę jest pusty", step("…i naprawdę nie ma go w katalogu") === 0);
   check("…a samo spotkanie zostaje w spisie", step("…a spotkanie zostaje w spisie") === true);
+
+  check(
+    "Z zachowanym dźwiękiem nagranie zostaje na dysku",
+    step("nagranie z zachowanym dźwiękiem zostaje na dysku") === true,
+  );
+  check(
+    "Przepisanie z plików woła model od nowa",
+    step("przepisanie z plików wywołało model jeszcze raz") === true,
+  );
+  check("…i daje zapis rozmowy", step("i dało zapis") >= 1);
+  check(
+    "…z ciągłością między odcinkami",
+    step("odcinki z pliku niosą kontekst poprzedniego") === true,
+  );
+  check("…który ląduje we wpisie", step("zapis wylądował we wpisie") >= 1);
+  check("…i nie zostawia stanu „przepisuję”", step("po przepisaniu nic już nie chodzi") === true);
+
+  check(
+    "Nagranie po ubiciu aplikacji zostaje domknięte przy starcie",
+    step("nagranie po ubiciu aplikacji zostaje domknięte") >= 1,
+  );
+  check("…ze stanem „failed”", step("i ma stan „failed”") === "failed");
+  check("…z czasem policzonym z rozmiaru pliku", step("i zmierzony czas z rozmiaru pliku") === 7);
+  check(
+    "…i z nagłówkiem WAV dopisanym po fakcie",
+    step("i domknięty nagłówek WAV") === true,
+  );
   /* Druga strona tej samej reguły: wyżej, gdy przepisanie się nie udało,
      pliki musiały zostać — bo dźwięku nie da się nagrać drugi raz. */
   check(

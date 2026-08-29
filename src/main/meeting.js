@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require("fs");
+const path = require("path");
 const { record, wavHeader } = require("./tap");
 const { cutter } = require("./segments");
 const { splice } = require("./merge");
@@ -45,11 +46,15 @@ class Meetings {
    *        test mógł przepuścić przez ten obieg wymyślony tekst zamiast
    *        wołać cudzy serwer
    */
-  constructor(store, { onChange, onLevel, onError, onTranscript, transcribe, slice } = {}) {
+  constructor(store, { onChange, onLevel, onError, onTranscript, onSilence, transcribe, slice } = {}) {
     this.store = store;
     this.onChange = onChange ?? (() => {});
     this.onLevel = onLevel ?? (() => {});
     this.onError = onError ?? (() => {});
+    /* Tor, w którym od dłuższego czasu nic nie słychać. Najkosztowniejsza
+       cicha awaria w tym module: nagranie wychodzi, transkrypcja wychodzi,
+       tylko rozmowa jest w nim jednostronna — i widać to dopiero na końcu. */
+    this.onSilence = onSilence ?? (() => {});
     /* Osobno od onChange, bo to jest inna wiadomość. Zmiana STANU
        (zaczęło się, skończyło) przestawia znak w pasku menu i przebudowuje
        menu aplikacji; przybycie odcinka zapisu nie zmienia ani jednego,
@@ -70,6 +75,25 @@ class Meetings {
     this.pieces = [];
     this.jobs = [];
     this.misses = 0;
+    /* Ogon ostatniego odcinka każdego toru i słowniczek nazw własnych —
+       jedno i drugie idzie do modelu razem z następnym odcinkiem. */
+    this.tails = { mic: "", system: "" };
+    this.glossary = [];
+    this.speakers = null;
+    /* Ile ciszy z rzędu w każdym torze — liczone odcinkami, nie sekundami. */
+    this.quiet = { mic: 0, system: 0 };
+    this.told = { mic: false, system: false };
+  }
+
+  /**
+   * Po ilu cichych odcinkach z rzędu mówimy, że tor milczy.
+   *
+   * Odcinek to dwie minuty, więc dwa i pół odcinka to pięć minut. Mniej
+   * byłoby fałszywym alarmem przy każdym dłuższym monologu drugiej strony;
+   * więcej znaczyłoby, że o zepsutym nagraniu dowiadujesz się po kwadransie.
+   */
+  static get QUIET_LIMIT() {
+    return 3;
   }
 
   /**
@@ -113,7 +137,14 @@ class Meetings {
     const meeting = this.store.createMeeting({
       title: about?.title ?? null,
       where: about?.where ?? null,
+      /* Kto był zaproszony i jak podpisać drugi tor. Jedno i drugie
+         przychodzi z kalendarza (main/agenda.js) i jest jedyną drogą,
+         którą zapis rozmowy dowiaduje się, że po drugiej stronie jest
+         Ania, a nie „Rozmówcy". */
+      people: about?.people ?? [],
+      speakers: about?.speakers ?? null,
     });
+    this.speakers = about?.speakers ?? null;
     const dir = this.store.meetingDir(meeting.id);
 
     this.cutters = {
@@ -123,6 +154,10 @@ class Meetings {
     this.pieces = [];
     this.jobs = [];
     this.misses = 0;
+    this.tails = { mic: "", system: "" };
+    this.glossary = about?.people ?? [];
+    this.quiet = { mic: 0, system: 0 };
+    this.told = { mic: false, system: false };
 
     try {
       this.tap = record({
@@ -163,9 +198,18 @@ class Meetings {
    * a wpis zamknąłby się bez nich.
    */
   #write(piece) {
-    // Cisza nie jedzie nigdzie. W godzinnym spotkaniu jest jej więcej niż
-    // mowy, a płaci się za nią tyle samo.
-    if (piece.silent) return;
+    /* Cisza nie jedzie nigdzie. W godzinnym spotkaniu jest jej więcej niż
+       mowy, a płaci się za nią tyle samo. Liczymy ją jednak — bo tor, który
+       milczy CAŁY CZAS, to nie cisza w rozmowie, tylko zepsute nagranie. */
+    if (piece.silent) {
+      this.quiet[piece.lane] = (this.quiet[piece.lane] ?? 0) + 1;
+      if (this.quiet[piece.lane] >= Meetings.QUIET_LIMIT && !this.told[piece.lane]) {
+        this.told[piece.lane] = true;
+        this.onSilence(piece.lane);
+      }
+      return;
+    }
+    this.quiet[piece.lane] = 0;
     if (this.misses >= Meetings.GIVE_UP) return;
 
     const id = this.id;
@@ -176,15 +220,27 @@ class Meetings {
            w main/stt.js go nie czytają, a przydaje się dwóm rzeczom:
            testowi, który po nim rozpoznaje tor, i przyszłemu dostawcy,
            któremu można będzie powiedzieć, że słucha jednej osoby. */
+        /* CIĄGŁOŚĆ MIĘDZY ODCINKAMI. Każdy odcinek jedzie do modelu osobno
+           i bez tego nie wie nic o poprzednim — a wtedy imiona i nazwy
+           własne dryfują z odcinka na odcinek („Ania → Hania → Anna").
+           Dostaje więc ogon poprzedniego odcinka TEGO SAMEGO toru i listę
+           imion z kalendarza. Jedno i drugie jest podpowiedzią, nie
+           treścią: model ma z nich skorzystać przy zapisie tego, co
+           naprawdę słychać. */
         const { text } = await this.transcribe(wav, this.store.getSettings(), {
           lane: piece.lane,
           from: piece.from,
           to: piece.to,
+          context: this.tails?.[piece.lane] ?? "",
+          glossary: this.glossary ?? [],
         });
         this.misses = 0;
         const said = String(text ?? "").trim();
         if (!said) return;
         this.pieces.push({ lane: piece.lane, from: piece.from, to: piece.to, text: said });
+        // Ogon dla następnego odcinka tego toru — tyle, ile wystarczy na
+        // kontekst, a nie tyle, żeby model zaczął go przepisywać.
+        this.tails[piece.lane] = said.slice(-320);
         this.#stitch(id);
       } catch (problem) {
         this.misses += 1;
@@ -214,7 +270,7 @@ class Meetings {
    */
   #stitch(id) {
     if (!id) return;
-    this.store.updateMeeting(id, { transcript: splice(this.pieces) });
+    this.store.updateMeeting(id, { transcript: splice(this.pieces, { speakers: this.speakers }) });
     this.onTranscript();
   }
 
@@ -260,7 +316,7 @@ class Meetings {
     await Promise.allSettled(this.jobs);
     this.jobs = [];
 
-    const transcript = splice(this.pieces);
+    const transcript = splice(this.pieces, { speakers: this.speakers });
     this.pieces = [];
 
     /* Nagranie ginie po przepisaniu — tak mówi ustawienie i tak samo dzieje
@@ -314,6 +370,142 @@ class Meetings {
   async shutdown() {
     if (!this.recording) return;
     await this.stop().catch(() => {});
+  }
+
+  /**
+   * Przepisanie NAGRANIA Z DYSKU, jeszcze raz i od zera.
+   *
+   * Bez tego nagranie, przy którym przepisywanie odpadło — bo nie było
+   * klucza API albo sieci — zostaje martwym plikiem: godzina dźwięku,
+   * której nic już nie tknie. A jest to jedyny krok w całym module, który
+   * DA SIĘ powtórzyć: pliki leżą, model można zmienić, wytyczne poprawić.
+   *
+   * Czytamy strumieniem, porcjami. Godzina rozmowy to sto piętnaście
+   * megabajtów na tor i wczytanie tego w całości byłoby dwustu trzydziestoma
+   * megabajtami w pamięci po to, żeby przepuścić je przez krajalnicę,
+   * która i tak bierze po kawałku.
+   */
+  async retranscribe(id) {
+    const meeting = this.store.getMeetings().find((item) => item.id === id);
+    if (!meeting) throw new Error("Nie ma takiego spotkania.");
+    const files = meeting.tracks;
+    if (!files?.mic || !fs.existsSync(files.mic)) {
+      throw new Error(
+        "Nagranie zostało skasowane po pierwszej transkrypcji — nie ma już z czego przepisywać.",
+      );
+    }
+
+    this.store.updateMeeting(id, { transcribing: true, transcriptError: null });
+    this.onChange();
+
+    const pieces = [];
+    const tails = { mic: "", system: "" };
+    const glossary = meeting.people ?? [];
+    const settings = this.store.getSettings();
+
+    try {
+      for (const [lane, file] of Object.entries(files)) {
+        if (!file || !fs.existsSync(file)) continue;
+        const cut = cutter({ lane, ...this.slice });
+        const chew = async (segments) => {
+          for (const piece of segments) {
+            if (piece.silent) continue;
+            const wav = Buffer.concat([wavHeader(piece.pcm.length), piece.pcm]);
+            const { text } = await this.transcribe(wav, settings, {
+              lane,
+              from: piece.from,
+              to: piece.to,
+              context: tails[lane],
+              glossary,
+            });
+            const said = String(text ?? "").trim();
+            if (!said) continue;
+            tails[lane] = said.slice(-320);
+            pieces.push({ lane, from: piece.from, to: piece.to, text: said });
+            /* Zapisujemy po każdym odcinku. Przepisanie godziny trwa
+               kilka minut i przez ten czas ma być WIDAĆ, że coś rośnie —
+               a przerwane w połowie ma zostawić tę połowę. */
+            this.store.updateMeeting(id, {
+              transcript: splice(pieces, { speakers: meeting.speakers }),
+            });
+            this.onTranscript();
+          }
+        };
+
+        // 4 MB na porcję: dwie minuty dźwięku, czyli mniej więcej jeden
+        // odcinek — krajalnica nie czeka dłużej, niż musi.
+        await new Promise((resolve, reject) => {
+          const stream = fs.createReadStream(file, { start: 44, highWaterMark: 4 << 20 });
+          let queue = Promise.resolve();
+          stream.on("data", (chunk) => {
+            stream.pause();
+            queue = queue
+              .then(() => chew(cut.push(chunk)))
+              .then(() => stream.resume())
+              .catch(reject);
+          });
+          stream.on("end", () => queue.then(() => chew(cut.flush())).then(resolve, reject));
+          stream.on("error", reject);
+        });
+      }
+
+      const transcript = splice(pieces, { speakers: meeting.speakers });
+      this.store.updateMeeting(id, { transcript, transcribing: false, transcriptError: null });
+      this.onChange();
+      return transcript;
+    } catch (problem) {
+      this.store.updateMeeting(id, { transcribing: false, transcriptError: problem.message });
+      this.onChange();
+      throw problem;
+    }
+  }
+
+  /**
+   * Sprzątanie po nagraniu, które nie miało jak się skończyć.
+   *
+   * Aplikacja ubita w połowie rozmowy zostawia wpis w stanie „recording"
+   * i dwa pliki bez nagłówka. Wpis taki wisi potem w spisie na zawsze,
+   * bo nic już go nie zamknie — a leży pod nim godzina dźwięku, z której
+   * da się zrobić wszystko. Domykamy go więc przy starcie: czas liczymy
+   * z rozmiaru pliku, nagłówek WAV dopisujemy, stan ustawiamy na „failed",
+   * bo przerwane to jest.
+   */
+  recover() {
+    const stuck = this.store
+      .getMeetings()
+      .filter((item) => item.state === "recording" && item.id !== this.id);
+    for (const meeting of stuck) {
+      const dir = this.store.meetingDir(meeting.id);
+      const files = {
+        mic: path.join(dir, "tor-a-mikrofon.wav"),
+        system: path.join(dir, "tor-b-system.wav"),
+      };
+      if (!fs.existsSync(files.mic)) {
+        this.store.deleteMeeting(meeting.id);
+        continue;
+      }
+      const bytes = Math.max(0, fs.statSync(files.mic).size - 44);
+      // Nagłówek pisze się na końcu nagrania (patrz main/tap.js) — po ubiciu
+      // aplikacji nie zdążył powstać i bez niego pliku nic nie otworzy.
+      const handle = fs.openSync(files.mic, "r+");
+      fs.writeSync(handle, wavHeader(bytes), 0, 44, 0);
+      fs.closeSync(handle);
+      if (fs.existsSync(files.system)) {
+        const other = Math.max(0, fs.statSync(files.system).size - 44);
+        const second = fs.openSync(files.system, "r+");
+        fs.writeSync(second, wavHeader(other), 0, 44, 0);
+        fs.closeSync(second);
+      }
+      this.store.updateMeeting(meeting.id, {
+        state: "failed",
+        error: "Aplikacja zamknęła się w trakcie nagrywania.",
+        seconds: bytes / 2 / 16000,
+        endedAt: new Date().toISOString(),
+        tracks: files,
+      });
+    }
+    if (stuck.length) this.onChange();
+    return stuck.length;
   }
 
   /** Spis do pokazania: bez wpisów, po których nie zostało już nic. */

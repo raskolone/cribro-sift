@@ -37,6 +37,7 @@ const { detectConflicts } = require("./shortcuts");
 const { grabRegion, readText, compose, stampName } = require("./shot");
 const { Meetings } = require("./meeting");
 const { Watcher: MeetingWatcher } = require("./detect");
+const { speakerFor } = require("./merge");
 const { digest } = require("./digest");
 const agendaSource = require("./agenda");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
@@ -1939,7 +1940,9 @@ async function toggleMeeting(about = null) {
       }
       return;
     }
-    await meetings.start(about);
+    // Nagranie z menu też zasługuje na nazwę: jeśli w kalendarzu coś
+    // właśnie trwa, bierzemy stamtąd nazwę i ludzi.
+    await meetings.start(about ?? aboutMeeting(null));
   } catch (problem) {
     broadcast("pipeline:error", { stage: "spotkanie", message: problem.message });
   }
@@ -1982,6 +1985,42 @@ async function summarizeMeeting(id) {
    Rozstrzyganie, CZY na ekranie stoi rozmowa, siedzi w main/detect.js
    i nie zna Electrona. Tutaj jest reszta: skąd wziąć spis okien, co
    z odpowiedzią zrobić i komu o niej powiedzieć. */
+
+/**
+ * Imię i nazwisko właściciela konta.
+ *
+ * Potrzebne do jednej rzeczy: żeby w rozmowie we dwoje odróżnić w liście
+ * zaproszonych siebie od tej drugiej osoby i podpisać jej imieniem drugi
+ * tor (patrz speakerFor w main/merge.js). Pytamy raz — nie zmienia się.
+ */
+let myName = null;
+function whoAmI() {
+  if (myName !== null) return myName;
+  try {
+    myName = require("child_process").execFileSync("id", ["-F"], { encoding: "utf8" }).trim();
+  } catch {
+    myName = ""; // nie macOS albo konto bez pełnej nazwy
+  }
+  return myName;
+}
+
+/**
+ * Wszystko, co wiadomo o spotkaniu, ZANIM się zacznie.
+ *
+ * Dwa źródła i wyraźne pierwszeństwo: kalendarz zna nazwę i ludzi, okno
+ * przeglądarki zna tylko kod pokoju. Nazwa z kalendarza wygrywa więc
+ * zawsze, gdy w tej chwili trwa wpis, który wygląda na tę rozmowę.
+ */
+function aboutMeeting(spot) {
+  const live = agendaSource.running(agenda.events, Date.now());
+  const people = live?.people ?? [];
+  return {
+    title: live?.title ?? spot?.title ?? null,
+    where: spot?.where ?? (live ? "Kalendarz" : null),
+    people,
+    speakers: people.length ? { system: speakerFor(people, whoAmI()) } : null,
+  };
+}
 
 /** Rozmowa wykryta, o którą jeszcze nie zapytano (albo zapytano i czeka). */
 let spotted = null;
@@ -2074,7 +2113,7 @@ async function meetingSpotted(meeting) {
        „sam z siebie", wybrał niewidzialność — dowodem, że nagranie ruszyło,
        jest znaczek i znak w pasku menu. */
     startedFromSpot = true;
-    await toggleMeeting({ title: meeting.title, where: meeting.where });
+    await toggleMeeting(aboutMeeting(meeting));
     return;
   }
   if (how !== "ask") return;
@@ -2096,7 +2135,7 @@ async function answerMeeting(yes) {
   tellMeetings();
   if (!yes || !meeting) return false;
   startedFromSpot = true;
-  await toggleMeeting({ title: meeting.title, where: meeting.where });
+  await toggleMeeting(aboutMeeting(meeting));
   createMainWindow().webContents.send("view:go", "meetings");
   return true;
 }
@@ -2139,7 +2178,7 @@ async function lookAtAgenda() {
   if (!mine) return;
 
   startedFromSpot = true;
-  await toggleMeeting({ title: mine.title, where: "Kalendarz" });
+  await toggleMeeting({ ...aboutMeeting(null), title: mine.title, where: "Kalendarz" });
 }
 
 function watchAgenda(settings = store.getSettings()) {
@@ -3624,6 +3663,23 @@ function registerIpc() {
      idzie po zakończeniu rozmowy — bo to ta sama czynność, tylko wywołana
      ręką. Da się ją powtórzyć w nieskończoność, transkrypcja leży. */
   ipcMain.handle("meetings:summarize", (_e, id) => summarizeMeeting(id));
+  /* Przepisanie nagrania jeszcze raz, z plików. Jedyny krok w tym module,
+     który da się powtórzyć — i jedyny ratunek dla rozmowy nagranej bez
+     klucza API albo bez sieci. */
+  ipcMain.handle("meetings:retranscribe", async (_e, id) => {
+    try {
+      const transcript = await meetings.retranscribe(id);
+      /* Skoro jest już tekst, jest z czego zrobić wniosek. Robimy go sami,
+         bo po to się przepisuje drugi raz. */
+      if (transcript?.length && store.getSettings().meetings?.summarize !== false) {
+        void summarizeMeeting(id);
+      }
+      return true;
+    } catch (problem) {
+      broadcast("pipeline:error", { stage: "transkrypcja", message: problem.message });
+      return false;
+    }
+  });
   /* „Notuj to spotkanie" przy wpisie z kalendarza. Zgoda zapada RAZ,
      przed spotkaniem — a nie w chwili, w której trzeba już słuchać. */
   ipcMain.handle("meetings:arm", (_e, { id, on } = {}) => {
@@ -4005,8 +4061,25 @@ if (!app.requestSingleInstanceLock()) {
       /* Przybył odcinek zapisu. Okna mają się o tym dowiedzieć, ale pasek
          menu i menu aplikacji nie mają się o co przebudowywać. */
       onTranscript: () => broadcast("meeting:changed", meetingState()),
+      /* Tor, w którym nic nie słychać, to najkosztowniejsza cicha awaria
+         w całym module: godzina nagrana z jednej strony rozmowy, a wiadomo
+         o tym dopiero na końcu. Mówimy o tym raz, w trakcie. */
+      onSilence: (lane) =>
+        broadcast("pipeline:error", {
+          stage: "spotkanie",
+          message:
+            lane === "mic"
+              ? "Od pięciu minut nie słychać Twojego mikrofonu — sprawdź, czy nie jest wyciszony."
+              : "Od pięciu minut nie słychać drugiej strony — sprawdź, czy dźwięk rozmowy nie idzie do słuchawek Bluetooth.",
+        }),
       onError: (message) => broadcast("pipeline:error", { stage: "spotkanie", message }),
     });
+
+    /* Nagrania, które nie miały jak się skończyć — bo aplikacja zginęła
+       w połowie rozmowy. Domykamy je zaraz po starcie: pliki bez nagłówka
+       są bajtami, których nic nie otworzy, a wpis w stanie „recording"
+       wisiałby w spisie na zawsze. */
+    meetings.recover();
 
     applySpellcheck(store.getSettings());
     // Menu pod prawym przyciskiem dostaje każde okno, także to otwarte

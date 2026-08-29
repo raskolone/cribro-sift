@@ -14,7 +14,7 @@
  * powtórzeniem cudzego „tak".
  */
 const assert = require("assert");
-const { splice, trimRepeat, echoRatio, repeatLength } = require("../src/main/merge");
+const { splice, trimRepeat, echoRatio, repeatLength, speakerFor } = require("../src/main/merge");
 
 let passed = 0;
 function check(label, condition) {
@@ -139,6 +139,42 @@ check(
   "Odcinki przychodzące nie po kolei są układane",
   splice([piece("mic", 30, 40, "trzecie"), piece("system", 0, 10, "pierwsze")])[0].text ===
     "pierwsze",
+);
+
+/* ── Kto jest po drugiej stronie ─────────────────────────────
+   Kalendarz zna nazwiska, ale zapis rozmowy nie wie, które słowa należą
+   do kogo. Podpisać drugi tor da się więc tylko wtedy, gdy jest tam
+   dokładnie jedna osoba — inaczej byłoby to przypisanie cudzych słów
+   konkretnemu człowiekowi, czyli gorsze niż „Rozmówcy", bo wygląda
+   na wiedzę. */
+
+check(
+  "W rozmowie we dwoje druga strona dostaje imię",
+  speakerFor(["Maciej Wyrozumski", "Ania Kowalska"], "Maciej Wyrozumski") === "Ania Kowalska",
+);
+check(
+  "Skrócone imię w kalendarzu też się rozpoznaje",
+  speakerFor(["Maciej", "Ania Kowalska"], "Maciej Wyrozumski") === "Ania Kowalska",
+);
+check(
+  "Ogonki nie przeszkadzają",
+  speakerFor(["Łukasz Żak", "Ania"], "Lukasz Zak") === "Ania",
+);
+check(
+  "Przy trzech osobach zostaje domyślny podpis",
+  speakerFor(["Maciej", "Ania", "Bartek"], "Maciej") === "Rozmówcy",
+);
+check("Bez listy też", speakerFor([], "Maciej") === "Rozmówcy");
+check(
+  "Gdy nie wiadomo, kim jesteś — również",
+  speakerFor(["Ania", "Bartek"], "") === "Rozmówcy",
+);
+
+out = splice([piece("system", 0, 5, "Dzień dobry.")], { speakers: { system: "Ania Kowalska" } });
+check("Podany podpis trafia do zapisu", out[0].speaker === "Ania Kowalska");
+check(
+  "…a tor mikrofonu zostaje tobą",
+  splice([piece("mic", 0, 5, "Cześć.")], { speakers: { system: "Ania" } })[0].speaker === "Ty",
 );
 
 console.log(`\n${passed} sprawdzeń przeszło.`);

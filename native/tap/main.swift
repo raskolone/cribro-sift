@@ -521,6 +521,16 @@ func agenda(hours: Double) async {
         row.append("\"from\":\(quoted(iso.string(from: event.startDate)))")
         row.append("\"to\":\(quoted(iso.string(from: event.endDate)))")
         row.append("\"guests\":\(event.attendees?.count ?? 0)")
+        /* Imiona zaproszonych. Wychodzą z tego programu po to, żeby zapis
+           rozmowy mówił „Ania", a nie „Rozmówcy" — i nie idą nigdzie dalej
+           niż do polecenia dla modelu, który i tak dostaje całą rozmowę.
+           Adresów e-mail nie bierzemy: do nazwania mówiącego nie są
+           potrzebne, a są znacznie więcej warte niż imię. */
+        var names = (event.attendees ?? [])
+            .compactMap { $0.name }
+            .filter { !$0.isEmpty && !$0.contains("@") }
+        if let mine = event.organizer?.name, !names.contains(mine) { names.insert(mine, at: 0) }
+        row.append("\"people\":[" + names.map(quoted).joined(separator: ",") + "]")
         row.append("\"link\":\(quoted(link ?? ""))")
         rows.append("{" + row.joined(separator: ",") + "}")
     }

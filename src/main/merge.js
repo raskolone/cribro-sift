@@ -27,8 +27,51 @@
  * Plik nie zna Electrona ani sieci — wchodzą odcinki, wychodzi zapis.
  */
 
-/** Kto mówi. Imiona dochodzą później, z kalendarza i z etykiet na ekranie. */
+/** Kto mówi, dopóki nie wiadomo, kto konkretnie. */
 const SPEAKER = { mic: "Ty", system: "Rozmówcy" };
+
+/**
+ * Uproszczenie do PORÓWNANIA imion: bez ogonków, bez wielkości liter.
+ *
+ * „Ł" trzeba wymienić osobno i nie jest to przeoczenie Unicode'u: rozkład
+ * NFD zdejmuje znaki diakrytyczne dopisane do litery, a Ł jest jedną
+ * literą z przekreśleniem, nie L z ogonkiem. Bez tej linijki „Łukasz"
+ * z kalendarza nigdy nie zgadza się z „Lukasz" z konta systemowego.
+ */
+const plain = (text) =>
+  String(text ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[łŁ]/g, "l")
+    .toLowerCase()
+    .trim();
+
+/**
+ * Jak podpisać drugą stronę, gdy kalendarz zna nazwiska.
+ *
+ * ROZMOWA W DWIE OSOBY jest jedynym przypadkiem, w którym da się to
+ * powiedzieć na pewno: skoro w spotkaniu jest dwóch ludzi i jednym z nich
+ * jesteś ty, drugi tor należy do tego drugiego. Przy trzech osobach tor
+ * systemu miesza ich wszystkich w jedno i podpisanie go czyimkolwiek
+ * imieniem byłoby przypisaniem cudzych słów konkretnej osobie — a to jest
+ * gorsze niż „Rozmówcy", bo wygląda na wiedzę.
+ *
+ * @param {string[]} people  imiona z kalendarza (z tobą włącznie)
+ * @param {string} me        twoje imię i nazwisko z systemu
+ */
+function speakerFor(people, me) {
+  const named = (people ?? []).map((name) => String(name ?? "").trim()).filter(Boolean);
+  if (named.length !== 2) return SPEAKER.system;
+  const mine = plain(me);
+  if (!mine) return SPEAKER.system;
+  const others = named.filter((name) => {
+    const one = plain(name);
+    // „Maciej" wśród „Maciej Wyrozumski" i odwrotnie — kalendarze zapisują
+    // to samo nazwisko na kilka sposobów.
+    return !(one === mine || one.includes(mine) || mine.includes(one));
+  });
+  return others.length === 1 ? others[0] : SPEAKER.system;
+}
 
 /* Normalizacja do PORÓWNYWANIA, nie do zapisu. Zapisujemy to, co padło;
    porównujemy to, co zostaje po zdjęciu interpunkcji i wielkości liter —
@@ -144,7 +187,10 @@ const MIN_ECHO_WORDS = 4;
  * @param {number} [options.gap]   przerwa, po której zaczyna się nowa wypowiedź
  * @returns {Array<{speaker, lane, at, text}>}
  */
-function splice(pieces, { echo = 0.6, slack = 2, gap = 12 } = {}) {
+function splice(pieces, { echo = 0.6, slack = 2, gap = 12, speakers } = {}) {
+  // Podpisy mówiących wchodzą z zewnątrz, o ile ktoś je zna — patrz
+  // speakerFor wyżej i main/meeting.js.
+  const who = { ...SPEAKER, ...(speakers ?? {}) };
   const usable = (pieces ?? [])
     .filter((piece) => piece && String(piece.text ?? "").trim())
     .map((piece) => ({ ...piece, text: String(piece.text).trim() }))
@@ -198,7 +244,7 @@ function splice(pieces, { echo = 0.6, slack = 2, gap = 12 } = {}) {
       continue;
     }
     lines.push({
-      speaker: SPEAKER[piece.lane] ?? piece.lane,
+      speaker: who[piece.lane] ?? piece.lane,
       lane: piece.lane,
       at: piece.from,
       to: piece.to,
@@ -209,4 +255,14 @@ function splice(pieces, { echo = 0.6, slack = 2, gap = 12 } = {}) {
   return lines.map(({ speaker, lane, at, text }) => ({ speaker, lane, at, text }));
 }
 
-module.exports = { splice, trimRepeat, echoRatio, repeatLength, words, sentences, SPEAKER, MIN_ECHO_WORDS };
+module.exports = {
+  splice,
+  trimRepeat,
+  echoRatio,
+  repeatLength,
+  words,
+  sentences,
+  speakerFor,
+  SPEAKER,
+  MIN_ECHO_WORDS,
+};

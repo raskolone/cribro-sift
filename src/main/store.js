@@ -507,6 +507,11 @@ class Store {
       // Skąd rozmowa — „Google Meet", „Zoom". Z wykrywania, gdy było czym
       // wykryć; z niczego, gdy nagranie ruszyło z menu.
       where: null,
+      /* Kto był zaproszony (z kalendarza) i jak podpisać drugi tor.
+         Jedno i drugie służy jednej rzeczy: żeby zapis rozmowy mówił
+         „Ania", a nie „Rozmówcy" — patrz speakerFor w main/merge.js. */
+      people: [],
+      speakers: null,
       // recording | done | failed
       state: "recording",
       error: null,

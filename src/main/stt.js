@@ -40,7 +40,32 @@ const MOCK_TRANSCRIPTS = [
  * @param {object} settings  całe ustawienia (potrzebne do współdzielenia klucza)
  * @returns {Promise<{text: string, provider: string, model: string}>}
  */
-async function transcribe(audio, settings) {
+/**
+ * Podpowiedź dla modelu: co padło przed chwilą i jakie nazwy własne są
+ * w grze.
+ *
+ * To nie jest treść do przepisania i musi być tak nazwane, bo model
+ * dostający sam tekst „na wejściu" chętnie dopisze go do odpowiedzi.
+ * Ogon poprzedniego odcinka trzyma ciągłość zdania przeciętego na granicy,
+ * a lista imion pilnuje, żeby „Ania" nie stała się „Hanią" w połowie
+ * rozmowy — kalendarz wie, kto jest w pokoju (patrz main/agenda.js).
+ */
+function hintFor(about) {
+  const parts = [];
+  const names = (about?.glossary ?? []).filter(Boolean);
+  if (names.length) {
+    parts.push(`Nazwy własne, które mogą paść: ${names.join(", ")}. Zapisuj je dokładnie tak.`);
+  }
+  const before = String(about?.context ?? "").trim();
+  if (before) {
+    parts.push(
+      `Poprzedni fragment tej samej wypowiedzi kończył się tak: „…${before}". To jest KONTEKST, nie treść — nie przepisuj go ponownie.`,
+    );
+  }
+  return parts.length ? `\n\n${parts.join("\n")}` : "";
+}
+
+async function transcribe(audio, settings, about = null) {
   const { provider, model } = settings.stt;
   const language = settings.language;
 
@@ -59,13 +84,13 @@ async function transcribe(audio, settings) {
   const apiKey = keyFor(provider, settings);
   if (!apiKey) throw new Error(`Brak klucza API dla dostawcy „${provider}".`);
 
-  if (provider === "gemini") return geminiTranscribe(audio, model, apiKey, language);
-  if (provider === "openai") return openaiTranscribe(audio, model, apiKey, language);
+  if (provider === "gemini") return geminiTranscribe(audio, model, apiKey, language, about);
+  if (provider === "openai") return openaiTranscribe(audio, model, apiKey, language, about);
   throw new Error(`Nieznany dostawca transkrypcji: ${provider}`);
 }
 
-async function geminiTranscribe(audio, model, apiKey, language) {
-  const hint = `\n\n${directive(language)}`;
+async function geminiTranscribe(audio, model, apiKey, language, about) {
+  const hint = `\n\n${directive(language)}${hintFor(about)}`;
 
   const response = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
     method: "POST",
@@ -98,7 +123,7 @@ async function geminiTranscribe(audio, model, apiKey, language) {
   return { text, provider: "gemini", model };
 }
 
-async function openaiTranscribe(audio, model, apiKey, language) {
+async function openaiTranscribe(audio, model, apiKey, language, about) {
   const form = new FormData();
   form.append("file", new Blob([audio], { type: "audio/wav" }), "dictation.wav");
   form.append("model", model);
@@ -109,7 +134,9 @@ async function openaiTranscribe(audio, model, apiKey, language) {
   // to, czego dwujęzyczne dyktowanie ma unikać.
   const code = fixedCode(language);
   if (code) form.append("language", code);
-  const hint = whisperHint(language);
+  /* Whisper ma na to własne pole i jest ono dokładnie tym: podpowiedzią
+     o brzmieniu nazw i o tym, co padło przed chwilą. */
+  const hint = [whisperHint(language), hintFor(about).trim()].filter(Boolean).join(" ");
   if (hint) form.append("prompt", hint);
 
   const response = await fetch(OPENAI_URL, {
@@ -146,4 +173,4 @@ async function describeError(response, who) {
   return `${who} zwrócił błąd ${response.status}: ${detail}`;
 }
 
-module.exports = { transcribe, describeError };
+module.exports = { transcribe, describeError, hintFor };

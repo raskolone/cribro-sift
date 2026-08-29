@@ -126,6 +126,12 @@
         return;
       }
 
+      const again = event.target.closest("[data-meet-again]");
+      if (again) {
+        await api.meetings.retranscribe(again.dataset.meetAgain);
+        return;
+      }
+
       const write = event.target.closest("[data-meet-sum]");
       if (write) {
         // Notatki najpierw na dysk: podsumowanie ma je uwzględnić, a leżą
@@ -428,14 +434,37 @@
     }
 
     if (state.tab === "transcript") {
-      if (meeting.transcript?.length) return transcript(meeting, live);
+      if (meeting.transcribing) {
+        return `<p class="meet__blank meet__blank--work">${t("Przepisuję nagranie…")}</p>
+          ${meeting.transcript?.length ? transcript(meeting, false) : ""}`;
+      }
+
+      /* Nagranie da się przepisać jeszcze raz — dopóki leży na dysku.
+         To jest jedyny krok w tym module, który wolno powtórzyć, i jedyny
+         ratunek dla rozmowy nagranej bez klucza API albo bez sieci. */
+      const again = meeting.tracks?.mic
+        ? `<div class="meet__act">
+             <button class="btn btn--sm" data-meet-again="${meeting.id}">
+               ${t(meeting.transcript?.length ? "Przepisz jeszcze raz" : "Przepisz nagranie")}
+             </button>
+           </div>`
+        : "";
+
+      if (meeting.transcriptError) {
+        return `<p class="meet__blank meet__blank--warn">
+            ${t("Przepisywanie się nie udało")}: ${escape(meeting.transcriptError)}
+          </p>${again}`;
+      }
+      if (meeting.transcript?.length) return `${transcript(meeting, live)}${live ? "" : again}`;
       return `<p class="meet__blank">
-        ${
-          live
-            ? t("Pierwsze zdania pojawią się tu za chwilę — zapis powstaje odcinkami.")
-            : t("Nagranie leży na dysku, ale nie zostało jeszcze przepisane.")
-        }
-      </p>`;
+          ${
+            live
+              ? t("Pierwsze zdania pojawią się tu za chwilę — zapis powstaje odcinkami.")
+              : meeting.tracks?.mic
+                ? t("Nagranie leży na dysku, ale nie zostało jeszcze przepisane.")
+                : t("Nagranie zostało skasowane, a tekstu z niego nie ma — nie ma już czego pokazać.")
+          }
+        </p>${again}`;
     }
 
     return summary(meeting, live);

@@ -133,6 +133,15 @@ function transcriptText(lines, { cap = MAX_CHARS } = {}) {
  */
 function material(meeting) {
   const parts = [];
+  /* Kto był w pokoju — z kalendarza. Bez tej listy model nie ma jak
+     przypisać ustalenia do osoby i pisze bezosobowo („ustalono, że…"),
+     a to jest dokładnie ta informacja, po którą sięga się do notatek. */
+  const people = (meeting?.people ?? []).filter(Boolean);
+  if (people.length) {
+    parts.push(
+      `ZAPROSZENI (z kalendarza, kolejność bez znaczenia): ${people.join(", ")}.\nZapis nie mówi, które słowa należą do kogo z nich — nie zgaduj tego. Imion używaj tylko wtedy, gdy padły w rozmowie.`,
+    );
+  }
   const notes = String(meeting?.notes ?? "").trim();
   if (notes) parts.push(`NOTATKI PISANE RĘKĄ W TRAKCIE ROZMOWY:\n${notes}`);
   const talk = transcriptText(meeting?.transcript);
