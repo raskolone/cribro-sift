@@ -622,9 +622,52 @@
       return gaps;
     }
 
+    /**
+     * Linia, przy której ma stanąć uchwyt.
+     *
+     * NIE WOLNO pytać o nią samym trafieniem w element i to jest cała nauka
+     * z pierwszej wersji, która „po prostu nie działała". Uchwyt stoi
+     * w pasku po lewej stronie notatki, więc ręka idąca po niego przechodzi
+     * przez ten pasek — czyli przez sam `.prose`, w którym żadnej linii pod
+     * kursorem nie ma. Uchwyt znikał dokładnie w chwili, w której się po
+     * niego sięgało, a kliknięcie trafiało już w tekst.
+     *
+     * Automat tego nie widział, bo skakał myszą prosto na środek uchwytu.
+     * Ręka przechodzi przez wszystkie piksele po drodze.
+     *
+     * Dlatego o linię pyta się PIONEM: liczy się, na wysokości której linii
+     * jest kursor, a nie w co trafił. Przy okazji uchwyt trzyma się także
+     * w przerwach między akapitami, gdzie też nie ma czego trafić.
+     */
+    #lineAt(event) {
+      const direct = this.#lineFor(event.target);
+      if (direct) return direct;
+
+      const bounds = this.root.getBoundingClientRect();
+      if (event.clientX < bounds.left || event.clientX > bounds.right) return null;
+
+      let best = null;
+      let nearestGap = Infinity;
+      for (const line of this.#lines()) {
+        const box = line.getBoundingClientRect();
+        const gap =
+          event.clientY < box.top
+            ? box.top - event.clientY
+            : event.clientY > box.bottom
+              ? event.clientY - box.bottom
+              : 0;
+        if (gap < nearestGap) {
+          nearestGap = gap;
+          best = line;
+        }
+      }
+      // Dalej niż pół wiersza od czegokolwiek — to już nie jest „przy linii".
+      return nearestGap <= GRIP_H ? best : null;
+    }
+
     #gripFollow(event) {
       if (this.drag) return;
-      const line = this.#lineFor(event.target);
+      const line = this.#lineAt(event);
       if (!line) {
         this.#gripHide();
         return;

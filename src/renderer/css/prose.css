@@ -321,9 +321,14 @@
 
 /* ── Przenoszenie linii ──
    Uchwyt jak w Notion: sześć kropek w marginesie, przy linii, nad którą
-   stoi kursor. Nie jest częścią notatki — leży w <body> i stoi na
-   współrzędnych ekranu (dlaczego, patrz js/editor.js). Dlatego opisują go
-   selektory bez `.prose`: w drzewie nie ma nad nim żadnego.
+   stoi kursor. Nie jest częścią notatki — leży wprost w korzeniu dokumentu
+   i stoi na współrzędnych ekranu (dlaczego, patrz js/editor.js). Dlatego
+   opisują go selektory bez `.prose`: w drzewie nie ma nad nim żadnego.
+
+   W komentarzu nie ma tu ANI JEDNEGO dosłownego znacznika HTML i to nie
+   jest czepialstwo: `npm run mockup` wkleja ten arkusz do dokumentu, a
+   parser HTML-a czyta wtedy taki zapis jak prawdziwy znacznik i rozcina
+   stronę w tym miejscu. Arkusz wygląda wtedy na stronie jak tekst.
 
    Pojawia się dopiero pod kursorem i to jest cała jego obecność. Notatka
    ma wyglądać jak tekst, a nie jak tabela z uchwytami przy każdym wierszu. */

@@ -38,6 +38,51 @@ const EN = {
   "Zwiń pas boczny": "Collapse sidebar",
   "Rozwiń pas boczny": "Expand sidebar",
 
+  /* ── Meeting Notes ── */
+  "Meeting Notes": "Meeting Notes",
+  Spotkania: "Meetings",
+  "Zapis rozmowy i wniosek z niej. Spis po lewej, spotkanie po prawej.":
+    "The record of a conversation and what follows from it. List on the left, meeting on the right.",
+  "Nagraj spotkanie": "Record a meeting",
+  "Zakończ spotkanie": "End the meeting",
+  Zakończ: "End",
+  Spotkanie: "Meeting",
+  dziś: "today",
+  wczoraj: "yesterday",
+  "nagrywa się": "recording",
+  przerwane: "interrupted",
+  "Nagrane spotkania pojawią się tutaj.": "Recorded meetings will show up here.",
+  "Wybierz spotkanie z listy albo nagraj nowe.": "Pick a meeting from the list, or record a new one.",
+  Podsumowanie: "Summary",
+  Transkrypcja: "Transcript",
+  Nieznany: "Unknown",
+  "Skasować to spotkanie razem z nagraniem?": "Delete this meeting along with its recording?",
+  "Trwa nagrywanie. Tekst pojawi się po zakończeniu.":
+    "Recording. The text will appear once it ends.",
+  "Nagranie zostało przerwane": "The recording was interrupted",
+  "To, co zdążyło wejść na dysk, zostało — bywa całą rozmową bez ostatniej minuty.":
+    "Whatever made it to disk was kept — sometimes that is the whole conversation bar the last minute.",
+  "Nagranie leży na dysku, ale nie zostało jeszcze przepisane.":
+    "The recording is on disk, but it has not been transcribed yet.",
+  "Podsumowanie powstaje z transkrypcji, według wybranego szablonu.":
+    "The summary is built from the transcript, following the chosen template.",
+  "Jak działają spotkania": "How meetings work",
+  "Kiedy zacząć nagrywać": "When to start recording",
+  "Nigdy sam": "Never on its own",
+  "Nagrywanie tylko z menu albo stąd.": "Recording only from the menu or from here.",
+  Pytaj: "Ask",
+  "Powiadomienie, gdy wygląda na spotkanie. Jedno kliknięcie.":
+    "A notification when it looks like a meeting. One click.",
+  "Sam z siebie": "On its own",
+  "Wykryte spotkanie nagrywa się bez pytania.": "A detected meeting records without asking.",
+  "Zachowaj nagranie": "Keep the recording",
+  "Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu.":
+    "By default the recording is deleted after transcription — same as with dictation.",
+  "Krótsze niż (sekundy) to pomyłka": "Shorter than (seconds) is a mistake",
+  "Szuflada na podsumowania": "Drawer for summaries",
+  "Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek w pasku menu świeci na fioletowo przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.":
+    "Recording involves people who never clicked anything in this app. The menu bar mark glows violet the whole time, and macOS shows its own indicator next to it.",
+
   /* ── Pasek górny i stany ── */
   Dyktuj: "Dictate",
   Gotowe: "Ready",

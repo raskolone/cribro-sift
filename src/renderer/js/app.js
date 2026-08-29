@@ -18,6 +18,10 @@ const VIEWS = {
     title: "Notatki",
     subtitle: "Lista po lewej, notatka po prawej. Podwójne kliknięcie otwiera ją w osobnym okienku.",
   },
+  meetings: {
+    title: "Meeting Notes",
+    subtitle: "Zapis rozmowy i wniosek z niej. Spis po lewej, spotkanie po prawej.",
+  },
   sieve: { title: "Sito", subtitle: "Jedno pokrętło: jak gęsto przesiewać." },
   grains: { title: "Ziarna", subtitle: "Słowa, których sito nigdy nie tknie." },
   commands: { title: "Polecenia", subtitle: "Zdania, po których sito wie, co zrobić." },
@@ -1688,6 +1692,10 @@ function render() {
   if (state.view === "start") renderStart();
   if (state.view === "sifted") renderSifted();
   if (state.view === "notes") NotesView.show();
+  /* Widok spotkań sam pyta proces główny o spis i o to, czy coś się właśnie
+     nagrywa — dlatego dostaje tylko ustawienia, a resztę bierze sobie sam. */
+  if (state.view === "meetings") MeetingsView.show($("#view-meetings"), state.settings);
+  else MeetingsView.hide();
   if (state.view === "sieve") renderSieve();
   if (state.view === "grains") renderGrains();
   if (state.view === "commands") renderCommands();
@@ -2501,8 +2509,14 @@ api.onError(({ message, stage, empty }) => {
 api.settings.onChange((settings) => {
   state.settings = settings;
   setLanguage(settings.uiLanguage ?? "pl");
+  MeetingsView.settings(settings);
   render();
 });
+
+/* Spotkanie zaczyna się i kończy także spoza tego okna — z menu, z tacy
+   paska, a niedługo samo z siebie. Widok musi o tym wiedzieć niezależnie
+   od tego, kto nacisnął, bo przycisk w spisie zmienia wtedy napis. */
+api.meetings?.onChange?.((live) => MeetingsView.changed(live));
 
 /* Synchronizacja chodzi w tle i sama z siebie — karta konta ma pokazywać
    jej stan także wtedy, gdy nikt niczego nie kliknął. Komunikat spod

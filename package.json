@@ -17,7 +17,7 @@
     "app": "npm run tap && npm run pack && npm run sign",
     "deploy": "bash scripts/install.sh",
     "smoke": "node scripts/smoke.js",
-    "test": "node scripts/smoke.js && node scripts/hotkey-test.js && node scripts/notes-test.js && node scripts/editor-test.js && node scripts/blockmove-test.js && node scripts/drag-test.js && node scripts/tap-test.js && node scripts/meeting-test.js && node scripts/toolbar-test.js && node scripts/sync-test.js && node scripts/genie-test.js && node scripts/oauth-test.js && node scripts/commands-test.js && node scripts/shot-test.js",
+    "test": "node scripts/smoke.js && node scripts/hotkey-test.js && node scripts/notes-test.js && node scripts/editor-test.js && node scripts/blockmove-test.js && node scripts/drag-test.js && node scripts/tap-test.js && node scripts/meeting-test.js && node scripts/segments-test.js && node scripts/merge-test.js && node scripts/toolbar-test.js && node scripts/sync-test.js && node scripts/genie-test.js && node scripts/oauth-test.js && node scripts/commands-test.js && node scripts/shot-test.js",
     "tap": "bash scripts/build-tap.sh"
   },
   "keywords": [

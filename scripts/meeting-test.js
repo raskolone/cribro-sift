@@ -31,6 +31,14 @@ const fs = require("fs");
 const path = require("path");
 
 app.disableHardwareAcceleration();
+/* Strażnik czasu. execFileSync po swoim limicie wysyła SIGTERM, którego
+   Electron nie honoruje — zawieszony test potrafił wisieć kwadrans zamiast
+   minuty i zabierał ze sobą cały przebieg npm test. Program musi umieć
+   skończyć się sam. */
+setTimeout(() => {
+  process.stdout.write("\\n@@WYNIK@@" + JSON.stringify({ steps: [], skip: "nagrywanie nie odpowiedziało w 45 s" }) + "@@KONIEC@@\\n");
+  app.exit(0);
+}, 45000);
 // Własny katalog danych: test nie ma prawa dotknąć ustawień na tym komputerze.
 app.setPath("userData", ${JSON.stringify(path.join(work, "dane"))});
 
@@ -64,11 +72,15 @@ app.whenReady().then(async () => {
   say("i ma stan „recording”", store.getMeetings()[0] && store.getMeetings()[0].state);
   await wait(2500);
   const short = await meetings.stop();
+
+  /* Błąd helpera rozstrzyga się TUTAJ, przed asercjami o odrzuceniu.
+     Gdy nagrywanie odmówi, #fail zatrzymuje je samo — a wtedy stop() nie ma
+     już czego odrzucać i test pytałby o zachowanie, którego nie wywołał. */
+  if (problem) { out.skip = problem; process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n"); app.exit(0); return; }
+
   say("krótkie nagranie zostaje odrzucone", short.discarded);
   say("i nie zostawia wpisu", store.getMeetings().length);
   say("ani katalogu", fs.existsSync(path.join(store.meetingsDir)) ? fs.readdirSync(store.meetingsDir).length : 0);
-
-  if (problem) { out.skip = problem; process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n"); app.exit(0); return; }
 
   // ── Prawdziwe spotkanie ──
   store.saveSettings({ meetings: { minSeconds: 1 } });
@@ -139,9 +151,11 @@ check(
   step("wpis powstaje OD RAZU, nie po zakończeniu") === 1,
 );
 check("…i od razu ma stan „recording”", step("i ma stan „recording”") === "recording");
-check("Nagranie krótsze niż próg jest pomyłką i ginie", step("krótkie nagranie zostaje odrzucone") === true);
-check("…nie zostawiając wpisu", step("i nie zostawia wpisu") === 0);
-check("…ani katalogu", step("ani katalogu") === 0);
+if (!out.skip) {
+  check("Nagranie krótsze niż próg jest pomyłką i ginie", step("krótkie nagranie zostaje odrzucone") === true);
+  check("…nie zostawiając wpisu", step("i nie zostawia wpisu") === 0);
+  check("…ani katalogu", step("ani katalogu") === 0);
+}
 
 if (out.skip) {
   console.log(`\n⚠ dalsza część pominięta: ${out.skip}`);

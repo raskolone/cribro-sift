@@ -201,6 +201,12 @@ const cases = [
     expect: "## Inne\n\nDrobiazgi.\n\n## ▸ Ustalenia\n\nAnia robi raport.",
   },
   {
+    name: "Krótkie przeciągnięcie w dolną połowę sąsiada też przenosi",
+    markdown: "- pierwszy\n- drugi\n- trzeci",
+    move: { grab: "pierwszy", over: "drugi", below: true },
+    expect: "- drugi\n- pierwszy\n- trzeci",
+  },
+  {
     name: "⌥↓ przesuwa punkt o jedno miejsce w dół",
     markdown: "- pierwszy\n- drugi\n- trzeci",
     move: { grab: "pierwszy", key: "Down" },
@@ -262,9 +268,21 @@ app.whenReady().then(async () => {
       note.grip = grip;
       if (!grip) { out.push({ error: "uchwyt się nie pokazał" }); continue; }
 
-      // 2. mysz przechodzi NA uchwyt, potem chwyta
-      mouse("mouseMove", grip.x, grip.y);
-      await wait(60);
+      /* 2. mysz PRZECHODZI po uchwyt, krok po kroku.
+         Skok prosto na jego środek jest tym, czego ręka nigdy nie robi —
+         i właśnie dlatego pierwsza wersja tego testu przepuściła błąd,
+         w którym uchwyt znikał w połowie drogi po niego. Kursor musi
+         przejść przez pasek notatki, tak jak przechodzi naprawdę. */
+      const reach = 6;
+      for (let step = 1; step <= reach; step += 1) {
+        mouse("mouseMove",
+          Math.round(on.x + ((grip.x - on.x) * step) / reach),
+          Math.round(on.y + ((grip.y - on.y) * step) / reach));
+        await wait(25);
+      }
+      note.survived = await js("!!window.__grip()");
+      if (!note.survived) { out.push({ error: "uchwyt zniknął w drodze po niego" }); continue; }
+
       mouse("mouseDown", grip.x, grip.y);
       await wait(40);
 

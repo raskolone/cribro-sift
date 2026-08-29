@@ -734,16 +734,27 @@
   let moved = false;
   let swallowClick = false;
 
-  /* Chwyt zapamiętujemy RAZ i jako odległość od środka znaczka, nie jako
-     punkt w oknie. Okno w trakcie przeciągania zmienia rozmiar (taca się
-     chowa, znaczek bywa przyklamrowany do krawędzi), więc punkt liczony
-     z bieżącej kotwicy przeskakiwałby razem z nią — a przeskakuje wtedy
-     to, co człowiek trzyma w ręce. */
+  /* Chwyt zapamiętujemy jako KOTWICĘ EKRANOWĄ i przesunięcie od niej —
+     nie jako odstęp od środka znaczka wewnątrz okna.
+
+     Różnica wygląda na kosmetyczną, a jest powodem szarpnięć. Odstęp
+     liczony w oknie (clientX − geom.ax) jest prawdziwy tylko dopóki okno
+     ma ten sam rozmiar i znaczek to samo miejsce w środku. A w trakcie
+     przeciągania nie ma: taca chowa się na pierwszym ruchu, więc okno
+     kurczy się do samego znaczka, `geom.ax` skacze na nową wartość —
+     a zapamiętany odstęp zostaje stary. Znaczek przeskakiwał wtedy o całą
+     szerokość tacy, dokładnie w chwili, w której ręka ruszała.
+
+     Kotwica ekranowa nie wie nic o oknie i dlatego nie ma po czym skoczyć:
+     nowe miejsce to stare plus tyle, ile przejechała ręka. Ten sam wzór,
+     na którym stoi rozciąganie szyby uchwytem (patrz `sizing` wyżej). */
   badge.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     grab = {
-      dx: event.clientX - geom.ax,
-      dy: event.clientY - geom.ay,
+      // skąd znaczek startuje na ekranie
+      ax: geom.sx,
+      ay: geom.sy,
+      // i skąd startuje ręka
       sx: event.screenX,
       sy: event.screenY,
     };
@@ -769,8 +780,8 @@
     }
     moved = true;
     const anchor = {
-      x: Math.round(event.screenX - grab.dx),
-      y: Math.round(event.screenY - grab.dy),
+      x: Math.round(grab.ax + (event.screenX - grab.sx)),
+      y: Math.round(grab.ay + (event.screenY - grab.sy)),
     };
     /* Kotwica ekranowa jedzie razem z ręką. Bez tego wpisu zostałaby ta
        sprzed przeciągnięcia — a to z niej liczy się miejsce znaczka, gdyby
@@ -798,8 +809,8 @@
     swallowClick = true;
     api.widget.drop({
       anchor: {
-        x: Math.round(event.screenX - held.dx),
-        y: Math.round(event.screenY - held.dy),
+        x: Math.round(held.ax + (event.screenX - held.sx)),
+        y: Math.round(held.ay + (event.screenY - held.sy)),
       },
       dir: geom.dir,
     });

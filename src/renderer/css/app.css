@@ -2117,3 +2117,256 @@ input.tag-input:focus {
     transform: perspective(1400px) rotateX(22deg) scaleY(0.94);
   }
 }
+
+/* ══ Meeting Notes ═══════════════════════════════════════════════
+   Zapis rozmowy i wniosek z niej. Układ ten sam co w Notatniku — spis
+   po lewej, treść po prawej — bo dwa widoki obok siebie nie mają uczyć
+   dwóch nawyków. Różnica jest jedna i wynika z rzeczy, a nie z gustu:
+   spotkanie ma DWA teksty (zapis i wniosek), więc po prawej stronie stoją
+   zakładki, których notatka nie potrzebuje. */
+
+.meet {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: var(--s-5);
+  align-items: start;
+  height: 100%;
+}
+@media (max-width: 900px) {
+  .meet { grid-template-columns: 1fr; }
+}
+
+/* ── Spis ── */
+
+.meet__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  min-width: 0;
+}
+.meet__head { display: flex; }
+.meet__record { width: 100%; justify-content: center; }
+
+/* Nagrywanie ma jeden kolor w całej aplikacji i to jest fiolet. Przycisk
+   „Zakończ" musi mówić to samo, co znaczek w pasku menu i pierścień HUD-a —
+   inaczej odpowiedź na pytanie „czy to nagrywa?" zależałaby od tego, gdzie
+   się akurat patrzy. */
+.btn--rec {
+  background: var(--rec);
+  color: var(--rec-ink);
+  border-color: transparent;
+  box-shadow: var(--rec-glow);
+}
+.btn--rec:hover { background: var(--rec-soft); }
+
+.meet__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.meet__row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--s-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.meet__row:hover { background: var(--surface-2); }
+.meet__row.is-chosen {
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+}
+.meet__row-title {
+  font-size: var(--fs-body);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meet__row-meta {
+  font: 400 var(--fs-label) / 1.4 var(--font-mono);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+.meet__live { color: var(--rec-soft); font-style: normal; }
+.meet__failed { color: var(--warn); font-style: normal; margin-left: 6px; }
+.meet__empty,
+.meet__blank {
+  color: var(--text-mute);
+  font-size: var(--fs-small);
+  padding: var(--s-4);
+  margin: 0;
+}
+.meet__blank--warn { color: var(--warn); }
+
+/* ── Ustawienia spotkań ──
+   Stoją POD spisem, a nie w Ustawieniach ogólnych, i to jest decyzja:
+   przestawia się je patrząc na spotkania, a nie szukając ich wśród
+   skrótów i kluczy API. */
+
+.meet__settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background-image: var(--glass-fill), var(--surface-gradient);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+}
+.meet__settings h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-h4);
+  color: var(--text-hi);
+}
+.meet__legend {
+  margin: var(--s-2) 0 0;
+  font: 400 var(--fs-label) / 1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+.meet__opt,
+.meet__switch {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  gap: var(--s-3);
+  align-items: start;
+  cursor: pointer;
+}
+.meet__opt span,
+.meet__switch span { display: flex; flex-direction: column; gap: 2px; }
+.meet__opt b,
+.meet__switch b { font-weight: 500; font-size: var(--fs-small); color: var(--text); }
+.meet__opt i,
+.meet__switch i { font-style: normal; font-size: var(--fs-label); color: var(--text-mute); line-height: 1.5; }
+.meet__opt input,
+.meet__switch input { margin-top: 3px; accent-color: var(--accent); }
+
+.meet__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font-size: var(--fs-small);
+  color: var(--text-2);
+}
+.meet__field input {
+  width: 9ch;
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--ink);
+  color: var(--text);
+  font: 400 var(--fs-small) / 1.3 var(--font-mono);
+  text-align: right;
+}
+.meet__field input[type="text"] { width: 14ch; text-align: left; font-family: var(--font-body); }
+.meet__field input:focus-visible { outline: 2px solid var(--accent-55); outline-offset: 1px; }
+
+/* Zdanie o tym, że nagrywanie dotyczy cudzych słów. Nie jest to ozdoba
+   ani drobny druk — to jedyne miejsce w aplikacji, w którym coś dzieje się
+   kosztem ludzi, którzy niczego tu nie klikali. */
+.meet__note {
+  margin: var(--s-2) 0 0;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  color: var(--text-mute);
+}
+
+/* ── Spotkanie ── */
+
+.meet__detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 60vh;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background-image: var(--glass-fill), var(--surface-gradient);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  overflow: hidden;
+}
+.meet__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4);
+  border-bottom: 1px solid var(--line);
+}
+.meet__meta { flex: 1; min-width: 0; }
+.meet__meta h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-h4);
+  color: var(--text-hi);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meet__meta p {
+  margin: 2px 0 0;
+  font: 400 var(--fs-label) / 1.4 var(--font-mono);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+.meet__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.meet__tab {
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-mute);
+  font-size: var(--fs-label);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.meet__tab:hover { color: var(--text); }
+.meet__tab.is-chosen { background: var(--accent-12); color: var(--accent); }
+
+.meet__body {
+  flex: 1;
+  padding: var(--s-5);
+  overflow-y: auto;
+}
+.meet__summary { white-space: pre-wrap; line-height: 1.75; }
+
+/* Zapis rozmowy. Kto i kiedy stoją w kolumnie po lewej, żeby oko biegło
+   po wypowiedziach, a nie po znacznikach — a znacznik czasu i tak jest
+   potrzebny dopiero wtedy, gdy się czegoś szuka. */
+.meet__transcript { display: flex; flex-direction: column; gap: var(--s-3); }
+.meet__line {
+  display: grid;
+  grid-template-columns: 8ch 5ch minmax(0, 1fr);
+  gap: var(--s-3);
+  margin: 0;
+  line-height: 1.7;
+}
+.meet__who { font-size: var(--fs-label); color: var(--accent); font-weight: 500; }
+.meet__at {
+  font: 400 var(--fs-label) / 1.7 var(--font-mono);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.meet__said { color: var(--text); }

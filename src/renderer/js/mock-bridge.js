@@ -348,6 +348,50 @@ if (!window.cribro) {
       };
     })(),
 
+    /* Spotkania. W makiecie nie ma czego nagrywać, ale JEST co pokazać:
+       przykładowy spis, przełącznik i zakładki. Bez tego zakładka Meeting
+       Notes w podglądzie byłaby pustą stroną, a to jedyne miejsce, w którym
+       da się obejrzeć jej wygląd bez budowania aplikacji. */
+    meetings: (() => {
+      const rows = [
+        {
+          id: "m-demo-1",
+          at: new Date(Date.now() - 3 * 3600e3).toISOString(),
+          endedAt: new Date(Date.now() - 2.2 * 3600e3).toISOString(),
+          seconds: 2880,
+          title: "Przegląd tygodnia",
+          state: "done",
+          tracks: { mic: "", system: "" },
+        },
+        {
+          id: "m-demo-2",
+          at: new Date(Date.now() - 26 * 3600e3).toISOString(),
+          endedAt: new Date(Date.now() - 25.4 * 3600e3).toISOString(),
+          seconds: 2160,
+          title: null,
+          state: "done",
+          tracks: { mic: "", system: "" },
+        },
+      ];
+      let live = false;
+      return {
+        toggle: async () => {
+          live = !live;
+          emit("meeting:changed", { recording: live, seconds: 0 });
+          return true;
+        },
+        state: async () => ({ recording: live, id: null, seconds: 0 }),
+        list: async () => rows,
+        remove: async (id) => {
+          const at = rows.findIndex((row) => row.id === id);
+          if (at !== -1) rows.splice(at, 1);
+          return true;
+        },
+        onChange: on("meeting:changed"),
+        onDone: on("meeting:done"),
+      };
+    })(),
+
     widget: {
       show: async () => true,
       settings: async () => ({ enabled: false, x: null, y: null }),
