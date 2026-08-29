@@ -34,6 +34,7 @@ const { noteToPdf } = require("./pdf");
 const { sendNote: sendToNotion, check: checkNotion } = require("./notion");
 const { detectConflicts } = require("./shortcuts");
 const { grabRegion, readText, compose, stampName } = require("./shot");
+const { Meetings } = require("./meeting");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
 const { translator } = require("../shared/strings");
 
@@ -42,6 +43,11 @@ const { translator } = require("../shared/strings");
    i na czarno w jasnym. Stany pracy są kolorowe, żeby rzucały się w oczy. */
 const TRAY_ICON = {
   idle: "idleTemplate.png",
+  /* Spotkanie bierze tę samą ikonę co nasłuch — i to nie jest oszczędność
+     na rysunku. Fiolet znaczy w tej aplikacji jedno: „mikrofon jest
+     otwarty”. Osobny znak dla spotkania kazałby uczyć się drugiego symbolu
+     na tę samą odpowiedź na to samo pytanie („czy to nagrywa?”). */
+  meeting: "listening.png",
   listening: "listening.png",
   sifting: "sifting.png",
   done: "done.png",
@@ -49,6 +55,7 @@ const TRAY_ICON = {
 
 const TRAY_TOOLTIP = {
   idle: "Cribro Sift — trzymaj ⌃⌥ i mów",
+  meeting: "Nagrywam spotkanie",
   listening: "Słucham…",
   sifting: "Przesiewam…",
   done: "Gotowe — tekst w schowku",
@@ -69,6 +76,7 @@ function trayIcon(state) {
 
 let store;
 let cloud;
+let meetings;
 let hotkeys;
 let tray;
 let mainWindow = null;
@@ -1799,6 +1807,46 @@ function languageRadios(settings, language, field, apply) {
  * zabierałoby na niej miejsce dokładnie tym rzeczom, dla których powstała,
  * a menu i tak jest zawsze pod ręką, z klawiszami skrótu.
  */
+/**
+ * Pozycja „Nagraj spotkanie" — ta sama w menu aplikacji i w tacy paska.
+ *
+ * Jedna pozycja, dwa znaczenia, bo tak wygląda ta czynność w głowie: nie
+ * ma osobnego „zacznij" i „skończ", jest przełącznik, którego napis mówi,
+ * co się stanie po kliknięciu.
+ */
+function meetingMenuItem(t) {
+  const live = !!meetings?.recording;
+  return {
+    label: live ? t("Zakończ spotkanie") : t("Nagraj spotkanie"),
+    click: () => toggleMeeting(),
+  };
+}
+
+/**
+ * Włączenie albo zakończenie nagrywania, razem z tym, co trzeba o tym
+ * powiedzieć. Meldunek jest osobno od samej czynności, bo `meeting.js`
+ * nie ma prawa wiedzieć nic o oknach.
+ */
+async function toggleMeeting() {
+  try {
+    if (meetings.recording) {
+      const { discarded, meeting, seconds } = await meetings.stop();
+      if (discarded) {
+        broadcast("pipeline:error", {
+          stage: "spotkanie",
+          message: `Nagranie trwało ${Math.round(seconds)} s i zostało odrzucone jako pomyłka.`,
+        });
+      } else if (meeting) {
+        broadcast("meeting:done", meeting);
+      }
+      return;
+    }
+    await meetings.start();
+  } catch (problem) {
+    broadcast("pipeline:error", { stage: "spotkanie", message: problem.message });
+  }
+}
+
 function buildAppMenu() {
   const settings = store.getSettings();
   const t = translator(settings.uiLanguage);
@@ -1840,6 +1888,10 @@ function buildAppMenu() {
           accelerator: "Command+D",
           click: () => toggleCapture("menu"),
         },
+        /* Bez klawiszy i to jest decyzja: spotkanie zaczyna się raz na
+           godzinę, a skrót zajęty na zawsze kosztuje tyle samo co używany
+           co chwilę. Klawisze dostanie, gdy będzie o co prosić. */
+        meetingMenuItem(t),
         { type: "separator" },
         { role: "close", label: t("Zamknij okno") },
       ],
@@ -1919,6 +1971,7 @@ function refreshTrayMenu() {
       { label: t("Notatnik"), click: () => createNotesWindow() },
       { label: t("Szybka notatka"), click: () => quickNote() },
       { label: `${t("Tekst z ekranu")}…`, click: () => grabScreenText() },
+      meetingMenuItem(t),
       { label: t("Ustawienia"), click: () => createMainWindow().webContents.send("view:go", "settings") },
       { type: "separator" },
       {
@@ -2234,6 +2287,20 @@ async function toggleCapture(trigger) {
   return state;
 }
 
+/**
+ * Znak nagrywania spotkania w pasku menu.
+ *
+ * Ustawiany osobno od setState, bo spotkanie i dyktowanie to dwa niezależne
+ * stany tej samej aplikacji. Dyktowanie ma pierwszeństwo: trwa kilkanaście
+ * sekund i to o nim mówi pigułka, a spotkanie i tak trwa dalej pod spodem.
+ */
+function applyMeetingTray() {
+  if (!tray || state !== "idle") return;
+  const live = !!meetings?.recording;
+  tray.setImage(trayIcon(live ? "meeting" : "idle"));
+  tray.setToolTip(live ? TRAY_TOOLTIP.meeting : TRAY_TOOLTIP.idle);
+}
+
 function setState(next, detail = {}) {
   state = next;
   if (tray) {
@@ -2253,6 +2320,9 @@ function setState(next, detail = {}) {
     // okno zabrałoby własne zanikanie w połowie.
     if (detail.empty) setTimeout(() => state === "idle" && hud?.hide(), NOTHING_HEARD_MS + 400);
     else hud?.hide();
+    // Dyktowanie skończone, ale spotkanie mogło się nie skończyć — znak
+    // w pasku menu ma wtedy wrócić na fiolet, a nie zgasnąć.
+    applyMeetingTray();
   } else if (hud && !hud.isVisible()) {
     hud.showInactive(); // nigdy .show() — fokus musi zostać tam, gdzie jest kursor
   }
@@ -3028,6 +3098,17 @@ function registerIpc() {
   // okazji Notatnik i okno główne, których nikt nie prosił o zniknięcie.
   ipcMain.on("widget:blur", () => widget?.blur());
 
+  /* Spotkania. Na tym etapie tyle, ile naprawdę jest: przełącznik, stan
+     i spis. Transkrypcja i podsumowanie dojdą własnymi kanałami. */
+  ipcMain.handle("meetings:toggle", () => toggleMeeting());
+  ipcMain.handle("meetings:state", () => meetings.state);
+  ipcMain.handle("meetings:list", () => meetings.list());
+  ipcMain.handle("meetings:delete", (_e, id) => {
+    store.deleteMeeting(id);
+    broadcast("meeting:changed", meetings.state);
+    return true;
+  });
+
   ipcMain.handle("history:get", () => store.getHistory());
   ipcMain.handle("history:update", (_e, { id, patch }) => store.updateEntry(id, patch));
   ipcMain.handle("history:delete", (_e, id) => (store.deleteEntry(id), true));
@@ -3370,6 +3451,23 @@ if (!app.requestSingleInstanceLock()) {
     cloud = new Supabase();
     cloud.configure(store.getSettings().cloud);
 
+    /* Spotkania chodzą OBOK dyktowania, nie zamiast niego: to dwa różne
+       stany i dwa różne mikrofony (ScreenCaptureKit kontra getUserMedia).
+       Dyktowanie notatki w trakcie rozmowy ma działać. */
+    meetings = new Meetings(store, {
+      onChange: () => {
+        broadcast("meeting:changed", meetings.state);
+        applyMeetingTray();
+        refreshMenus();
+      },
+      onLevel: (level) => {
+        // Ten sam kanał, którym poziom głosu dochodzi do znaczka przy
+        // dyktowaniu — znaczek nie musi wiedzieć, skąd mówią.
+        if (state === "idle") widget?.webContents.send("widget:level", level);
+      },
+      onError: (message) => broadcast("pipeline:error", { stage: "spotkanie", message }),
+    });
+
     applySpellcheck(store.getSettings());
     // Menu pod prawym przyciskiem dostaje każde okno, także to otwarte
     // później — dopinanie go w każdej funkcji tworzącej okno z osobna
@@ -3408,5 +3506,14 @@ if (!app.requestSingleInstanceLock()) {
   // Aplikacja żyje w pasku menu. Sam fakt, że ten listener istnieje,
   // powstrzymuje Electrona przed zamknięciem jej po zamknięciu okien.
   app.on("window-all-closed", () => {});
-  app.on("will-quit", () => hotkeys?.stop());
+  app.on("will-quit", (event) => {
+    hotkeys?.stop();
+    /* Nagrywanie trzeba domknąć, zanim proces zniknie. Program pomocniczy
+       przeżyłby zamknięcie okna, a pliki WAV zostałyby bez nagłówka —
+       czyli jako bajty, których nic nie otworzy. */
+    if (meetings?.recording) {
+      event.preventDefault();
+      meetings.shutdown().finally(() => app.exit(0));
+    }
+  });
 }

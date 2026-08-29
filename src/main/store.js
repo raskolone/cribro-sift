@@ -165,6 +165,35 @@ const DEFAULTS = {
      zamiast robić drugą obok. */
   notion: { token: "", parent: "", pages: {} },
 
+  /* Spotkania — notatki z rozmowy, nie z dyktowania.
+
+     Dyktowanie słucha JEDNEGO mikrofonu przez kilkanaście sekund. Spotkanie
+     to DWA źródła dźwięku przez godzinę i z tej jednej różnicy wynika reszta:
+     osobny program natywny (patrz main/tap.js), osobne pliki na dysku
+     i osobny wpis, bo transkrypt spotkania nie jest notatką ani wpisem
+     w historii dyktowania.
+
+     `detect` domyślnie „ask" i nie jest to ostrożność dla ostrożności.
+     Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali —
+     to jedyne miejsce w Cribro, w którym coś dzieje się cudzym kosztem.
+
+     `minSeconds`: krótsze nie jest spotkaniem, tylko pomyłką przy menu.
+     Ginie bez zapisu i bez pytania, zamiast zaśmiecać spis.
+
+     `keepAudio` wyłączone: nagranie ginie po transkrypcji, tak samo jak
+     nagranie dyktowania. Obietnica z NSMicrophoneUsageDescription obowiązuje
+     tu tak samo, choć głosów jest więcej niż jeden. */
+  meetings: {
+    enabled: false,
+    detect: "ask", // off | ask | auto
+    keepAudio: false,
+    minSeconds: 90,
+    folder: "Spotkania",
+    // Dźwięk systemu to dźwięk wszystkich aplikacji z oknami, więc muzyka
+    // z tła weszłaby do transkrypcji jako czyjaś wypowiedź.
+    exclude: ["Spotify", "Music"],
+  },
+
   /* Przewodnik — kilka slajdów o tym, co aplikacja właściwie robi.
 
      `seen` mówi tylko tyle, czy przewodnik pokazał się już sam. Nie jest to
@@ -176,7 +205,7 @@ const DEFAULTS = {
 };
 
 /** Numer układu ustawień. Podniesienie znaczy: przy starcie coś poprawiamy. */
-const SCHEMA = 6;
+const SCHEMA = 7;
 
 /** Zakładka synchronizacji: dokąd doszliśmy i czyje to konto. */
 const CLOUD_STATE = { userId: null, cursor: null, lastSyncAt: null };
@@ -216,6 +245,13 @@ class Store {
     this.historyPath = path.join(dir, "history.json");
     this.notesPath = path.join(dir, "notes.json");
     this.cloudPath = path.join(dir, "cloud.json");
+    this.meetingsPath = path.join(dir, "spotkania.json");
+    /* Nagrania i transkrypty leżą KATALOG PO SPOTKANIU, obok spisu.
+       Spis jest lekki i czytany przy każdym otwarciu widoku; transkrypt
+       dwugodzinnej rozmowy jest ciężki i czytany raz. Trzymane razem
+       kazałyby przepisywać to drugie przy każdej zmianie pierwszego —
+       a ten sklep zapisuje całe pliki, synchronicznie. */
+    this.meetingsDir = path.join(dir, "spotkania");
     const stored = this.#read(this.settingsPath, DEFAULTS);
     const wasSchema = stored.schema ?? 1;
     this.settings = migrate(stored);
@@ -225,6 +261,7 @@ class Store {
     this.history = this.#read(this.historyPath, []);
     this.notes = this.#read(this.notesPath, []);
     this.cloud = this.#read(this.cloudPath, CLOUD_STATE);
+    this.meetings = this.#read(this.meetingsPath, []);
   }
 
   #read(file, fallback) {
@@ -411,6 +448,62 @@ class Store {
     note.updatedAt = new Date().toISOString();
     this.#write(this.notesPath, this.notes);
     return note;
+  }
+
+  /* ── Spotkania ───────────────────────────────────────────────
+     Spis jest listą metryk, nie treści. Wszystko, co waży — nagranie,
+     a niedługo transkrypt — leży w katalogu spotkania i wczytuje się
+     dopiero wtedy, gdy ktoś na nie spojrzy. */
+
+  /** Katalog tego jednego spotkania. Tworzony przy pierwszym zapisie. */
+  meetingDir(id) {
+    const dir = path.join(this.meetingsDir, id);
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  getMeetings() {
+    return this.meetings;
+  }
+
+  createMeeting(patch = {}) {
+    const meeting = {
+      id: `m${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      at: new Date().toISOString(),
+      endedAt: null,
+      seconds: 0,
+      title: null,
+      // recording | done | failed
+      state: "recording",
+      error: null,
+      tracks: null,
+      noteId: null,
+      ...patch,
+    };
+    this.meetings.unshift(meeting);
+    this.#write(this.meetingsPath, this.meetings);
+    return meeting;
+  }
+
+  updateMeeting(id, patch) {
+    const meeting = this.meetings.find((item) => item.id === id);
+    if (!meeting) return null;
+    Object.assign(meeting, patch);
+    this.#write(this.meetingsPath, this.meetings);
+    return meeting;
+  }
+
+  /**
+   * Skasowanie spotkania zabiera też jego katalog.
+   *
+   * Nagrobka tu nie ma, w odróżnieniu od notatek: spis spotkań nie jedzie
+   * do chmury, więc nie ma komu tłumaczyć, że czegoś już nie ma.
+   */
+  deleteMeeting(id) {
+    this.meetings = this.meetings.filter((item) => item.id !== id);
+    this.#write(this.meetingsPath, this.meetings);
+    fs.rmSync(path.join(this.meetingsDir, id), { recursive: true, force: true });
+    return true;
   }
 
   /** Liczby na kaflu „Przesiane" — ile szumu faktycznie odpadło. */

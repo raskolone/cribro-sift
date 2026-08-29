@@ -165,6 +165,20 @@ contextBridge.exposeInMainWorld("cribro", {
     folded: (gen) => ipcRenderer.send("deck:folded", { gen }),
   },
 
+  /* Spotkania — nagranie rozmowy, nie dyktowanie.
+
+     Most jest wąski, bo na tym etapie moduł naprawdę robi tyle: włącza,
+     wyłącza i mówi, co już nagrał. Transkrypcja i podsumowanie dojdą
+     własnymi kanałami, gdy będą czym. */
+  meetings: {
+    toggle: () => ipcRenderer.invoke("meetings:toggle"),
+    state: () => ipcRenderer.invoke("meetings:state"),
+    list: () => ipcRenderer.invoke("meetings:list"),
+    remove: (id) => ipcRenderer.invoke("meetings:delete", id),
+    onChange: on("meeting:changed"),
+    onDone: on("meeting:done"),
+  },
+
   system: {
     copy: (text) => ipcRenderer.invoke("clipboard:copy", text),
     status: () => ipcRenderer.invoke("hotkey:status"),
