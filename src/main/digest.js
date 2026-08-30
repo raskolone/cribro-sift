@@ -40,6 +40,39 @@ const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const MAX_CHARS = 120_000;
 
 /**
+ * Znaczniki, którymi wolno pisać — czyli DOKŁADNIE te, które umie notatka.
+ *
+ * To nie jest kosmetyka i nie jest to lista życzeń. Podsumowanie kończy
+ * jako notatka w Notatniku (patrz keepMeetingNote w main/main.js), a notatka
+ * jest Markdownem tłumaczonym na sformatowany tekst przez shared/richtext.js.
+ * Co model napisze POZA tym zestawem, zostanie w notatce zwykłym tekstem
+ * z gwiazdkami w środku — czyli będzie wyglądać na usterkę.
+ *
+ * Zakres jest wąski celowo: dokładnie to, co potrafi pasek narzędzi notatki.
+ * Wszystkiego innego nie ma, więc nie ma też czego stracić po drodze.
+ *
+ * NAJWAŻNIEJSZE JEST TU POLE DO ODHACZENIA. Zadanie zapisane jako „- [ ]"
+ * staje się w notatce prawdziwą listą do odhaczenia, którą się klika —
+ * a nie akapitem o zadaniach. To jest cała różnica między notatką, którą
+ * się czyta, a notatką, z której się pracuje.
+ */
+const MARKUP = `ZNACZNIKI. Podsumowanie pisz znacznikami, które ta aplikacja rozumie i pokazuje jako sformatowany tekst. Wolno używać WYŁĄCZNIE tych:
+
+  ## Nagłówek           nagłówek sekcji (## albo ### — nie używaj #)
+  ## ▾ Nagłówek         nagłówek składany, ROZWINIĘTY: wszystko pod nim da się schować jednym kliknięciem
+  ## ▸ Nagłówek         nagłówek składany, ZWINIĘTY — dla części, które zwykle się pomija
+  **pogrubienie**       _kursywa_       \`kod\`
+  - punkt               lista
+  1. punkt              lista numerowana
+  - [ ] zadanie         POLE DO ODHACZENIA — używaj go dla wszystkiego, co ktoś ma zrobić
+  > cytat               dosłowne zdanie, które padło
+  ---                   linia rozdzielająca
+
+Czego NIE używasz: tabel, HTML-a, bloków kodu z potrójnym grawisem, nagłówka pierwszego stopnia (#) ani żadnych innych znaczników. Nie owijasz całej odpowiedzi w blok kodu.
+
+Znacznika używaj wtedy, gdy niesie znaczenie: „- [ ]" dla rzeczy do zrobienia, „>" dla zdania, które naprawdę padło. Pogrubienie w co drugim zdaniu nie podkreśla niczego.`;
+
+/**
  * Umowa, której nie zmienia żaden szablon.
  *
  * Szablon mówi, JAK ma wyglądać wynik. To niżej mówi, czego nie wolno
@@ -63,7 +96,11 @@ ZAKAZY BEZWZGLĘDNE:
 FORMAT ODPOWIEDZI — dokładnie taki:
 TYTUŁ: <nazwa spotkania, najwyżej sześć słów, o czym była rozmowa; bez daty i bez godziny>
 <pusta linia>
-<podsumowanie>`;
+<podsumowanie>
+
+${MARKUP}`;
+
+
 
 /**
  * Szablony podsumowania — czyli to, co użytkownik naprawdę wybiera.
@@ -74,20 +111,32 @@ TYTUŁ: <nazwa spotkania, najwyżej sześć słów, o czym była rozmowa; bez da
  */
 const TEMPLATES = {
   generic: {
-    name: "Zwykłe podsumowanie",
-    hint: "O czym było, co ustalono, co komu zostało.",
-    rules: `Ułóż podsumowanie z sekcji, każda z nagłówkiem **pogrubionym**:
+    name: "W punktach",
+    hint: "Najważniejsze na górze, reszta punktami. Zadania jako lista do odhaczenia.",
+    rules: `Ułóż podsumowanie W PUNKTACH i zacznij od tego, co najważniejsze.
 
-**O czym było** — dwa, trzy zdania. Sam temat i powód rozmowy.
-**Ustalenia** — lista tego, co postanowiono. Każdy punkt jednym zdaniem.
-**Zadania** — lista w formie „kto: co, termin". Termin tylko wtedy, gdy padł.
-**Otwarte** — lista spraw, których nie rozstrzygnięto, i pytań bez odpowiedzi.
+## Najważniejsze
+Od jednego do trzech punktów, każdy jednym zdaniem. To jest odpowiedź na pytanie „co z tej rozmowy wynika" — dla kogoś, kto przeczyta TYLKO tę sekcję i nic więcej. Nie streszczasz tu przebiegu; wybierasz to, co naprawdę waży. Jeżeli rozmowa nie przyniosła nic ważnego, piszesz to jednym zdaniem, zamiast szukać na siłę.
 
-SEKCJĘ, DLA KTÓREJ NIE MA TREŚCI, POMIJASZ W CAŁOŚCI. Nagłówek bez punktów obiecuje coś, czego nie ma.`,
+## O czym było
+Punkty. Każdy jednym zdaniem: temat po temacie, w kolejności, w której padły.
+
+## Ustalenia
+Punkty. Co postanowiono — i tylko to, co naprawdę postanowiono. Rozmowa bez rozstrzygnięć nie ma tej sekcji.
+
+## Zadania
+POLA DO ODHACZENIA, po jednym na zadanie, w formie:
+- [ ] Kto: co, termin
+Imię tylko wtedy, gdy padło; termin tylko wtedy, gdy padł. Bez zadań nie ma tej sekcji.
+
+## ▸ Otwarte
+Punkty: sprawy nierozstrzygnięte i pytania bez odpowiedzi. Ta jedna sekcja jest ZWINIĘTA (strzałka ▸), bo zagląda się do niej rzadziej niż do reszty — ale ma być, gdy jest w niej coś.
+
+SEKCJĘ, DLA KTÓREJ NIE MA TREŚCI, POMIJASZ W CAŁOŚCI — razem z nagłówkiem. Nagłówek bez punktów obiecuje coś, czego nie ma.`,
   },
   custom: {
     name: "Własne wytyczne",
-    hint: "Piszesz sam, czego oczekujesz od podsumowania.",
+    hint: "Piszesz sam, czego oczekujesz — razem z tym, jak wynik ma wyglądać.",
     rules: null, // bierze się z ustawień — patrz buildPrompt
   },
 };
@@ -425,10 +474,17 @@ function tasksFrom(summary) {
     if (inside && other.test(line) && !bullet.test(line)) break;
     if (!inside) continue;
     const hit = bullet.exec(line);
-    if (hit) out.push(hit[1].replace(/\*\*/g, "").trim());
+    if (!hit) continue;
+    /* Model umie już pisać polami do odhaczenia (patrz MARKUP wyżej), więc
+       punkt bywa gotowym „- [ ] zrobić X". Sam nawias trzeba wtedy zdjąć —
+       inaczej zadanie wróciłoby niżej jako „- [ ] [ ] zrobić X". */
+    out.push(hit[1].replace(/^\[[ xX]\]\s*/, "").replace(/\*\*/g, "").trim());
   }
   return out.filter(Boolean);
 }
+
+/** Czy podsumowanie ma już pola do odhaczenia — czyli czy zrobiło to za nas. */
+const hasCheckboxes = (summary) => /^\s*[-*]\s+\[[ xX]\]\s+\S/m.test(String(summary ?? ""));
 
 const stampDate = (iso) => {
   const at = new Date(iso);
@@ -609,10 +665,21 @@ function asNote(meeting, { transcript = true, me = "" } = {}) {
   const people = (meeting?.people ?? []).filter(Boolean);
   if (people.length) out.push(`**Kto był:** ${people.join(", ")}`, "");
 
-  const tasks = tasksFrom(meeting?.summary);
+  /* ══ ZADANIA: PRZENOSIMY JE TYLKO WTEDY, GDY TRZEBA ══
+
+     Ten krok powstał, gdy model pisał zadania akapitem — lista „kto: co,
+     termin" czyta się dobrze, ale nie da się jej odhaczyć. Wycinaliśmy ją
+     więc z podsumowania i wstawialiśmy niżej jako pola do odhaczenia.
+
+     Dziś model pisze pola sam (patrz MARKUP wyżej), a wtedy ten krok nie ma
+     już co poprawiać — i nie wolno mu niczego ruszać. Przepisanie gotowej
+     listy od nowa gubiłoby to, co ktoś zdążył odhaczyć, i przestawiałoby
+     sekcję na koniec notatki wbrew układowi, o który poproszono we własnych
+     wytycznych. Podsumowanie z polami zostaje więc DOKŁADNIE takie, jakie
+     przyszło. */
+  const ready = hasCheckboxes(meeting?.summary);
+  const tasks = ready ? [] : tasksFrom(meeting?.summary);
   if (meeting?.summary) {
-    /* Sekcję zadań wycinamy z podsumowania i wstawiamy niżej jako listę
-       do odhaczenia — inaczej te same punkty stałyby w notatce dwa razy. */
     const body = tasks.length ? stripTasks(meeting.summary) : meeting.summary;
     out.push(body.trim(), "");
   }
@@ -633,6 +700,46 @@ function asNote(meeting, { transcript = true, me = "" } = {}) {
   }
 
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/* ── Zwijanie w podsumowaniu ───────────────────────────────────
+
+   Strzałka przy nagłówku stoi W TREŚCI, a nie obok niej — dokładnie tak,
+   jak w notatce (patrz TOGGLE_MARK w shared/richtext.js). To nie jest
+   szczegół zapisu, tylko rozstrzygnięcie: „ta część jest schowana" to coś,
+   co ktoś postanowił, a nie stan okna.
+
+   Podglądowi podsumowania jest to potrzebne bardziej niż notatce. Zakładka
+   Spotkania przerysowuje się przy każdym meldunku z procesu głównego —
+   a w trakcie rozmowy przychodzi on co odcinek zapisu, czyli co dwie minuty.
+   Zwinięcie trzymane tylko w oknie zamykałoby się wtedy samo, w środku
+   czytania, bez żadnego powodu widocznego dla człowieka. */
+
+/** Nagłówki składane w podsumowaniu — w kolejności, w której stoją. */
+const TOGGLE_LINE = /^(\s{0,3}#{1,6}[ \t]+)([\u25B8\u25BE])([ \t]*)/;
+
+/**
+ * Przestawienie n-tego nagłówka składanego.
+ *
+ * @param {string} summary
+ * @param {number} index  który z kolei nagłówek składany, licząc od zera
+ * @param {boolean} open  ma być rozwinięty
+ * @returns {string} podsumowanie z przestawioną strzałką
+ */
+function flipToggle(summary, index, open) {
+  const lines = String(summary ?? "").split("\n");
+  let seen = -1;
+  for (let at = 0; at < lines.length; at += 1) {
+    const hit = TOGGLE_LINE.exec(lines[at]);
+    if (!hit) continue;
+    seen += 1;
+    if (seen !== index) continue;
+    lines[at] = lines[at].replace(TOGGLE_LINE, `$1${open ? "\u25BE" : "\u25B8"}$3`);
+    return lines.join("\n");
+  }
+  // Nagłówka o tym numerze nie ma — podsumowanie zmieniło się pod ręką.
+  // Zwracamy je nietknięte, zamiast przestawiać cudzy nagłówek.
+  return String(summary ?? "");
 }
 
 /** Podsumowanie bez sekcji zadań — te idą osobno, jako lista do odhaczenia. */
@@ -670,6 +777,8 @@ module.exports = {
   transcriptText,
   material,
   tasksFrom,
+  hasCheckboxes,
+  flipToggle,
   asNote,
   noteTitle,
   withWhom,

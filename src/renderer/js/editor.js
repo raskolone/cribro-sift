@@ -19,7 +19,11 @@
  */
 
 (function () {
-  const { markdownToHtml, htmlToMarkdown } = window.CribroRichtext;
+  const { markdownToHtml, htmlToMarkdown, foldRange, clickFold } = window.CribroRichtext;
+  /* Pod inną nazwą, bo metoda klasy nazywa się tak samo — a `applyFolds()`
+     w ciele metody sięgałoby wtedy po funkcję z modułu, nie po metodę,
+     i czytałoby się jak pomyłka nawet wtedy, gdy nią nie jest. */
+  const foldTree = window.CribroRichtext.applyFolds;
   const { landing, nearest, pointless } = window.CribroBlockMove;
 
   const CHECKBOX_ZONE = 26; // szerokość pola do odhaczenia, w pikselach
@@ -329,16 +333,11 @@
       this.#restoreSelection(saved);
     }
 
-    /** Co należy do tego nagłówka: wszystko aż do nagłówka nie niższego. */
+    /** Co należy do tego nagłówka: wszystko aż do nagłówka nie niższego.
+        Zasada mieszka w shared/richtext.js, bo obowiązuje także tam, gdzie
+        notatki się nie pisze — w podglądzie podsumowania spotkania. */
     #foldRange(heading) {
-      const rank = HEADINGS.indexOf(heading.tagName);
-      const inside = [];
-      for (let node = heading.nextElementSibling; node; node = node.nextElementSibling) {
-        const other = HEADINGS.indexOf(node.tagName);
-        if (other !== -1 && other <= rank) break;
-        inside.push(node);
-      }
-      return inside;
+      return foldRange(heading);
     }
 
     /**
@@ -346,14 +345,24 @@
      * zmianie, bo blok dopisany pod zwiniętym nagłówkiem też ma być
      * schowany — a bloków przybywa przy każdym naciśnięciu Entera.
      *
+     * Zostawia po sobie TRZY ślady w drzewie, i każdy odpowiada na inne
+     * pytanie, które człowiek zadaje patrząc na notatkę:
+     *
+     *   data-folded  „tego nie widać" — samo chowanie;
+     *   data-inside  „to należy do nagłówka wyżej" — po tym CSS rysuje
+     *                wcięcie i pionową kreskę, więc widać zawartość toggle
+     *                ZANIM się go zwinie. Bez tego jedynym sposobem, żeby
+     *                się dowiedzieć, co jest w środku, było zwinięcie
+     *                i sprawdzenie, co zniknęło;
+     *   data-hidden  ile bloków chowa zwinięty nagłówek. Zwinięty toggle
+     *                bez tej liczby wygląda jak zwykły nagłówek i nie ma
+     *                po czym poznać, że coś pod nim jest.
+     *
      * Publiczna, bo woła ją także okno: kliknięcie w strzałkę obsługuje
      * edytor, ale wczytanie notatki z zewnątrz — już nie.
      */
     applyFolds() {
-      for (const node of this.root.children) node.removeAttribute("data-folded");
-      for (const heading of this.root.querySelectorAll('[data-toggle="closed"]')) {
-        for (const node of this.#foldRange(heading)) node.setAttribute("data-folded", "true");
-      }
+      foldTree(this.root);
     }
 
     /** Kreska w miejscu kursora, a pod nią akapit, w którym pisze się dalej. */
@@ -1071,18 +1080,11 @@
     #click(event) {
       // Strzałka nagłówka składanego. Jest przed odhaczaniem, bo nagłówek
       // nie jest punktem listy i te dwa obszary nigdy się nie spotkają.
-      const heading = event.target.closest?.("h1[data-toggle], h2[data-toggle], h3[data-toggle]");
-      if (heading) {
-        const box = heading.getBoundingClientRect();
-        if (event.clientX <= box.left + TOGGLE_ZONE) {
-          event.preventDefault();
-          heading.setAttribute(
-            "data-toggle",
-            heading.getAttribute("data-toggle") === "closed" ? "open" : "closed",
-          );
-          this.#changed();
-          return;
-        }
+      // Sam gest siedzi w shared/richtext.js — ten sam, co w podglądzie
+      // podsumowania spotkania, żeby strzałka znaczyła wszędzie to samo.
+      if (clickFold(event, this.root, { zone: TOGGLE_ZONE })) {
+        this.#changed();
+        return;
       }
 
       const item = event.target.closest?.("ul.task > li");

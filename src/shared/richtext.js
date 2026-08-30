@@ -311,7 +311,98 @@
     );
   }
 
-  const RICHTEXT = { markdownToHtml, htmlToMarkdown, inlineToHtml, escapeHtml };
+  /* ── Nagłówki składane: co należy do czego ────────────────────
+
+     Toggle jest NADRZĘDNY. Wrzuca się do niego akapity, listy, zadania
+     i głębsze nagłówki, a zwinięcie zamyka je wszystkie naraz — dokładnie
+     tak, jak w Notion. Granicę wyznacza stopień nagłówka, jak w każdym
+     konspekcie: H2 trzyma wszystko aż do następnego H2 albo H1.
+
+     Ta zasada mieszka TUTAJ, a nie w edytorze, bo obowiązuje w dwóch
+     miejscach naraz: w notatce, którą się pisze, i w podsumowaniu
+     spotkania, które się tylko czyta. Dwie kopie rozjechałyby się przy
+     pierwszej zmianie, a wtedy ta sama notatka zwijałaby się inaczej
+     w dwóch oknach tej samej aplikacji. */
+
+  const FOLDABLE = ["H1", "H2", "H3"];
+
+  /** Bloki należące do tego nagłówka — aż do nagłówka nie niższego stopnia. */
+  function foldRange(heading) {
+    const rank = FOLDABLE.indexOf(heading.tagName);
+    const inside = [];
+    for (let node = heading.nextElementSibling; node; node = node.nextElementSibling) {
+      const other = FOLDABLE.indexOf(node.tagName);
+      if (other !== -1 && other <= rank) break;
+      inside.push(node);
+    }
+    return inside;
+  }
+
+  /**
+   * Trzy ślady w drzewie, każdy na inne pytanie:
+   *
+   *   data-folded  „tego nie widać";
+   *   data-inside  „to należy do nagłówka wyżej" — po tym CSS rysuje
+   *                wcięcie z prowadnicą, więc zawartość toggle widać
+   *                ZANIM się go zwinie;
+   *   data-hidden  ile bloków chowa zwinięty nagłówek — bez tej liczby
+   *                zwinięty toggle wygląda jak zwykły nagłówek.
+   *
+   * @param {Element} root  pojemnik z blokami najwyższego poziomu
+   */
+  function applyFolds(root) {
+    if (!root?.children) return;
+    for (const node of root.children) {
+      node.removeAttribute("data-folded");
+      node.removeAttribute("data-inside");
+      node.removeAttribute("data-hidden");
+    }
+    for (const heading of root.querySelectorAll("[data-toggle]")) {
+      const inside = foldRange(heading);
+      const closed = heading.getAttribute("data-toggle") === "closed";
+      for (const node of inside) {
+        node.setAttribute("data-inside", "true");
+        if (closed) node.setAttribute("data-folded", "true");
+      }
+      /* Liczba stoi przy nagłówku tylko wtedy, gdy jest co liczyć: „0"
+         przy pustym toggle byłoby informacją o niczym. */
+      if (closed && inside.length) heading.setAttribute("data-hidden", String(inside.length));
+    }
+  }
+
+  /**
+   * Kliknięcie w strzałkę nagłówka składanego.
+   *
+   * Wspólne dla edytora i dla podglądu, bo gest jest ten sam i ma znaczyć
+   * to samo. Strefa kliknięcia to lewy skraj bloku — tam, gdzie CSS rysuje
+   * strzałkę; reszta nagłówka zostaje tekstem, w który można wejść kursorem.
+   *
+   * @returns {boolean} czy kliknięcie było kliknięciem w strzałkę
+   */
+  function clickFold(event, root, { zone = 22 } = {}) {
+    const heading = event.target?.closest?.(
+      "h1[data-toggle], h2[data-toggle], h3[data-toggle]",
+    );
+    if (!heading || !root?.contains?.(heading)) return false;
+    if (event.clientX > heading.getBoundingClientRect().left + zone) return false;
+    event.preventDefault();
+    heading.setAttribute(
+      "data-toggle",
+      heading.getAttribute("data-toggle") === "closed" ? "open" : "closed",
+    );
+    applyFolds(root);
+    return true;
+  }
+
+  const RICHTEXT = {
+    markdownToHtml,
+    htmlToMarkdown,
+    inlineToHtml,
+    escapeHtml,
+    applyFolds,
+    foldRange,
+    clickFold,
+  };
 
   if (typeof module !== "undefined" && module.exports) module.exports = RICHTEXT;
   if (typeof window !== "undefined") window.CribroRichtext = RICHTEXT;

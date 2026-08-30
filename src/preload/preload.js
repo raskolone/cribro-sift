@@ -205,6 +205,15 @@ contextBridge.exposeInMainWorld("cribro", {
     openWindow: (id) => ipcRenderer.invoke("meetings:openWindow", id),
     // Kalendarz: „notuj to spotkanie", zgoda zapadająca przed czasem.
     arm: (id, on) => ipcRenderer.invoke("meetings:arm", { id, on }),
+    /* Zgoda systemowa na czytanie kalendarza. `how` mówi, o co prosimy:
+       "ask" — niech system zapyta, "open" — otwórz właściwy panel Ustawień,
+       "retry" — spytaj kalendarz jeszcze raz. W odpowiedzi wraca świeży
+       stan, więc okno nie musi zgadywać, czy się udało. */
+    calendar: (how) => ipcRenderer.invoke("meetings:calendar", how),
+    /* Zwinięcie nagłówka w podsumowaniu. Strzałka stoi w treści, więc to
+       jest zmiana podsumowania — a nie stan okna, który ginie przy
+       najbliższym przerysowaniu. */
+    fold: (id, index, open) => ipcRenderer.invoke("meetings:fold", { id, index, open }),
     onChange: on("meeting:changed"),
     onDone: on("meeting:done"),
   },

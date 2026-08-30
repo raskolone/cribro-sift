@@ -158,6 +158,47 @@
          i były najdłuższą rzeczą w tej zakładce — trzy ekrany przełączników
          pod trzema rozmowami. Dotyka się ich raz, a spisu codziennie, więc
          teraz są tam, gdzie się ich szuka: pod znakiem ustawień. */
+      /* Zgoda na kalendarz. Trzy czynności pod jednym przyciskiem, bo
+         z punktu widzenia człowieka to jedna sprawa: „chcę widzieć swój
+         kalendarz". Którą z trzech — rozstrzyga stan (patrz agendaCard). */
+      /* Strzałka nagłówka składanego w podsumowaniu. Ten sam gest i ten
+         sam kod, co w notatce (shared/richtext.js) — inaczej strzałka
+         znaczyłaby w tej aplikacji dwie różne rzeczy.
+
+         Zmiana idzie NA DYSK, do samego podsumowania: strzałka stoi
+         w treści, a zakładka przerysowuje się co odcinek zapisu, czyli
+         w trakcie rozmowy co dwie minuty. Zwinięcie trzymane tylko w oknie
+         otwierałoby się wtedy samo, w środku czytania. */
+      const rich = event.target.closest?.("[data-meet-rich]");
+      if (rich) {
+        const heads = [...rich.querySelectorAll("[data-toggle]")];
+        const head = event.target.closest?.("[data-toggle]");
+        const index = head ? heads.indexOf(head) : -1;
+        if (window.CribroRichtext?.clickFold?.(event, rich)) {
+          const meeting = state.meetings.find((item) => item.id === state.selected);
+          const open = head.getAttribute("data-toggle") !== "closed";
+          // Trzymamy też u siebie: najbliższy meldunek z procesu głównego
+          // przyszedłby z podsumowaniem sprzed chwili i cofnąłby kliknięcie.
+          if (meeting?.summary && index >= 0) {
+            meeting.summary = foldInText(meeting.summary, index, open);
+            void api.meetings.fold(meeting.id, index, open);
+          }
+          return;
+        }
+      }
+
+      const cal = event.target.closest("[data-meet-calendar]");
+      if (cal) {
+        const how = cal.dataset.meetCalendar;
+        cal.disabled = true;
+        cal.textContent = t("Pytam system…");
+        const plan = await api.meetings.calendar(how);
+        if (plan) state.agenda = plan;
+        paintList();
+        window.translateTree(root);
+        return;
+      }
+
       const cog = event.target.closest("[data-meet-cog]");
       if (cog) {
         state.settingsOpen = !state.settingsOpen;
@@ -385,10 +426,16 @@
         <button class="btn ${live ? "btn--air" : "btn--primary"} meet__record" data-meet-record>
           ${live ? `${t("Zakończ")} · ${duration(state.seconds)}` : t("Nagraj spotkanie")}
         </button>
+        <!-- Koło zębate Z PODPISEM. Sam znak, choćby najlepiej narysowany,
+             odpowiada tylko na pytanie „co to jest", a nie na „co tam
+             znajdę" — a znajduje się tam nie tylko przełącznik nagrywania,
+             lecz także wytyczne, według których pisze się podsumowanie.
+             Dlatego podpis mówi „Ustawienia i AI", a nie „Ustawienia". -->
         <button class="meet__cog${state.settingsOpen ? " is-open" : ""}" data-meet-cog
                 aria-expanded="${state.settingsOpen}"
-                title="${t("Jak działają spotkania")}" aria-label="${t("Jak działają spotkania")}">
+                title="${t("Ustawienia spotkań i wytyczne podsumowań")}">
           <svg><use href="#i-gear" /></svg>
+          <span>${t("Ustawienia i AI")}</span>
         </button>
       </div>
       ${agendaCard()}
@@ -432,10 +479,61 @@
     const plan = state.agenda;
     if (!state.settings?.meetings?.calendar) return "";
 
-    if (plan?.access === "denied") {
+    /* ══ BRAK ZGODY MA CZTERY POWODY I CZTERY RÓŻNE ODPOWIEDZI ══
+
+       Wcześniej stało tu jedno zdanie na wszystkie: „przyznaj ją
+       w Ustawieniach systemowych, w sekcji Kalendarz". Dla kogoś, kogo
+       system NIGDY nie zapytał, była to rada nie do wykonania — wpisu
+       w tamtej sekcji jeszcze nie ma, bo powstaje dopiero po pierwszym
+       pytaniu. Człowiek szukał tam przełącznika, którego nie było, i miał
+       prawo uznać, że aplikacja kłamie.
+
+       Teraz każdy stan mówi, CO SIĘ STAŁO, i daje przycisk robiący
+       dokładnie tę jedną rzecz, która pomaga. */
+    const blocked = {
+      notDetermined: {
+        say: "macOS nie pytał jeszcze o kalendarz. Kliknij — zapyta teraz, raz.",
+        act: "Poproś o dostęp",
+        how: "ask",
+      },
+      denied: {
+        say: "Dostęp do kalendarza jest wyłączony. Włącza się go w Ustawieniach systemowych, w sekcji Kalendarz — przy pozycji „Cribro Sift”.",
+        act: "Otwórz Ustawienia systemowe",
+        how: "open",
+      },
+      writeOnly: {
+        say: "Cribro ma zgodę tylko na dopisywanie do kalendarza, a chce wyłącznie CZYTAĆ nadchodzące spotkania. W Ustawieniach systemowych zmień to na pełny dostęp.",
+        act: "Otwórz Ustawienia systemowe",
+        how: "open",
+      },
+      restricted: {
+        say: "Dostęp do kalendarza jest zablokowany zasadami tego komputera — tego nie zmieni ani Cribro, ani Ustawienia systemowe.",
+        act: null,
+        how: null,
+      },
+      missing: {
+        say: "Brakuje programu pomocniczego, który czyta kalendarz. Zbuduj aplikację jeszcze raz (npm run app).",
+        act: null,
+        how: null,
+      },
+      error: {
+        say: "Kalendarz nie odpowiedział. Spróbuj jeszcze raz za chwilę.",
+        act: "Spróbuj jeszcze raz",
+        how: "retry",
+      },
+    }[plan?.access];
+
+    if (blocked) {
       return `<div class="meet__plan">
           <p class="meet__legend">${t("Nadchodzące")}</p>
-          <p class="meet__empty">${t("Brak zgody na kalendarz — przyznaj ją w Ustawieniach systemowych, w sekcji Kalendarz.")}</p>
+          <p class="meet__empty">${t(blocked.say)}</p>
+          ${
+            blocked.act
+              ? `<div class="meet__act meet__act--tight">
+                   <button class="btn btn--sm" data-meet-calendar="${blocked.how}">${t(blocked.act)}</button>
+                 </div>`
+              : ""
+          }
         </div>`;
     }
     if (!plan?.events?.length) {
@@ -526,12 +624,13 @@
 
         <div class="meet__group">
           <p class="meet__legend">${t("Jakie podsumowanie")}</p>
-          ${shape("generic", "Zwykłe podsumowanie", "O czym było, co ustalono, co komu zostało.")}
-          ${shape("custom", "Własne wytyczne", "Piszesz sam, czego od niego oczekujesz.")}
+          ${shape("generic", "W punktach", "Najważniejsze na górze, reszta punktami. Zadania jako lista do odhaczenia.")}
+          ${shape("custom", "Własne wytyczne", "Piszesz sam, czego oczekujesz — razem z tym, jak wynik ma wyglądać.")}
           <label class="meet__field${meet.template === "custom" ? "" : " is-off"}">
-            <textarea rows="4" data-meet-set="instructions"
-                      placeholder="${t("Np. Same zadania, w punktach, po angielsku. Bez wstępu.")}">${escape(meet.instructions ?? "")}</textarea>
+            <textarea rows="6" data-meet-set="instructions"
+                      placeholder="${t("Np. Sama lista zadań do odhaczenia, po angielsku, bez wstępu. Na końcu jeden cytat, który najlepiej oddaje rozmowę.")}">${escape(meet.instructions ?? "")}</textarea>
           </label>
+          ${meet.template === "custom" ? markupHelp() : ""}
         </div>
 
         <div class="meet__group">
@@ -557,6 +656,42 @@
           <button class="btn btn--ghost btn--sm" data-meet-say>${t("Skopiuj zdanie do wklejenia")}</button>
         </div>
       </div>`;
+  }
+
+  /**
+   * Ściągawka ze znaczników — przy własnych wytycznych.
+   *
+   * Podsumowanie kończy jako notatka, a notatka rozumie dokładnie tyle
+   * formatowania, ile potrafi jej pasek narzędzi. Kto pisze własne
+   * wytyczne, musi wiedzieć, o co WOLNO poprosić: „zrób z tego listę do
+   * odhaczenia" działa, „zrób tabelę" — nie, bo tabeli nie ma czym
+   * pokazać. Bez tej ściągawki jedyną drogą do tej wiedzy byłoby
+   * zgadywanie po wyniku.
+   *
+   * Ta sama lista jedzie do modelu w kontrakcie (MARKUP w main/digest.js).
+   * Gdyby się rozjechały, człowiek prosiłby o coś, czego model ma zakazane
+   * — więc zmieniając jedno, zmień drugie.
+   */
+  function markupHelp() {
+    const rows = [
+      ["## Nagłówek", "nagłówek sekcji"],
+      ["## ▾ Nagłówek", "nagłówek składany — wszystko pod nim zwija się jednym kliknięciem"],
+      ["- [ ] zadanie", "pole do odhaczenia"],
+      ["- punkt", "lista"],
+      ["1. punkt", "lista numerowana"],
+      ["**waga**  _przechył_", "pogrubienie i kursywa"],
+      ["> cytat", "zdanie, które padło"],
+      ["---", "linia rozdzielająca"],
+    ];
+    return `
+      <details class="meet__help">
+        <summary>${t("Czego można od niego zażądać")}</summary>
+        <p>${t("Podsumowanie staje się notatką, więc rozumie dokładnie to samo formatowanie, co notatka. Poproś o listę do odhaczenia — dostaniesz listę do odhaczenia.")}</p>
+        <dl>
+          ${rows.map(([mark, what]) => `<dt data-i18n="skip">${escape(mark)}</dt><dd>${t(what)}</dd>`).join("")}
+        </dl>
+        <p class="meet__help-no">${t("Tabel, HTML-a i bloków kodu nie ma — notatka nie ma ich czym pokazać.")}</p>
+      </details>`;
   }
 
   /* ── Spotkanie ─────────────────────────────────────────────── */
@@ -717,11 +852,21 @@
     }
 
     if (meeting.summary) {
-      /* Model pisze Markdownem (pogrubione nagłówki, listy) — pokazujemy to
-         tym samym tłumaczem, którym notatka zamienia gwiazdki na pogrubienie.
-         Zapisany zostaje Markdown, bo z niego da się zrobić notatkę. */
+      /* ══ PODSUMOWANIE JEST NOTATKĄ, TYLKO JESZCZE NIE W NOTATNIKU ══
+
+         Ten sam tłumacz Markdownu, te same style `.prose` i te same
+         nagłówki składane, co w notatce — bo to jest ta sama rzecz na
+         dwa kroki przed. Model pisze pola do odhaczenia i nagłówki
+         składane (patrz MARKUP w main/digest.js), więc muszą się tu
+         zachowywać tak, jak się zachowują wszędzie indziej: strzałka ma
+         zwijać, a nie być rysunkiem strzałki.
+
+         Zwijanie jest tu WIDOKIEM, nie treścią: stan wraca do stanu
+         wyjściowego przy następnym przerysowaniu i nie idzie na dysk.
+         Notatka jest miejscem, w którym zmiany zostają — i to ona,
+         a nie ten podgląd, ma pasek narzędzi. */
       const rich = window.CribroRichtext?.markdownToHtml?.(meeting.summary);
-      return `<div class="meet__summary prose">${rich ?? escape(meeting.summary)}</div>${button}`;
+      return `<div class="meet__summary prose" data-meet-rich>${rich ?? escape(meeting.summary)}</div>${button}`;
     }
 
     return `<p class="meet__blank">
@@ -856,6 +1001,30 @@
     if (!state.solo && !busy?.closest(".meet__list")) paintList();
     if (!busy?.closest(".meet__detail")) paintDetail();
     window.translateTree(root);
+    foldSummary();
+  }
+
+  /* Przestawienie n-tej strzałki w tekście podsumowania. Ta sama zasada,
+     co flipToggle w main/digest.js — i te same trzy linijki, bo proces
+     główny nie zdąży odpowiedzieć przed najbliższym przerysowaniem. */
+  const TOGGLE_LINE = /^(\s{0,3}#{1,6}[ \t]+)([\u25B8\u25BE])([ \t]*)/;
+  function foldInText(summary, index, open) {
+    const lines = String(summary ?? "").split("\n");
+    let seen = -1;
+    for (let at = 0; at < lines.length; at += 1) {
+      if (!TOGGLE_LINE.test(lines[at])) continue;
+      seen += 1;
+      if (seen !== index) continue;
+      lines[at] = lines[at].replace(TOGGLE_LINE, `$1${open ? "\u25BE" : "\u25B8"}$3`);
+      break;
+    }
+    return lines.join("\n");
+  }
+
+  /** Nagłówki składane w podsumowaniu — ta sama zasada, co w notatce. */
+  function foldSummary() {
+    const rich = root?.querySelector("[data-meet-rich]");
+    if (rich) window.CribroRichtext?.applyFolds?.(rich);
   }
 
   async function reload() {

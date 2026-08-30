@@ -489,22 +489,63 @@ if (!window.cribro) {
           tell();
           await new Promise((r) => setTimeout(r, 1400));
           row.summarizing = false;
+          /* Układ jest ten sam, co w gotowym szablonie (patrz TEMPLATES
+             w main/digest.js): najważniejsze na górze, reszta punktami,
+             zadania polami do odhaczenia, „Otwarte" zwinięte. Makieta ma
+             pokazywać to, co naprawdę wychodzi z modelu — razem
+             z nagłówkiem składanym, bo to jego widać najbardziej. */
           row.summary = [
-            "**O czym było**",
-            "Termin raportu i dane potrzebne do jego zamknięcia.",
+            "## Najważniejsze",
             "",
-            "**Ustalenia**",
+            "- Raport zamyka się w niedzielę, nie w poniedziałek — dane przyszły wcześniej.",
+            "",
+            "## O czym było",
+            "",
+            "- Termin raportu i dane potrzebne do jego zamknięcia.",
+            "- Kolejność: najpierw dane z wtorku, potem zamknięcie.",
+            "",
+            "## Ustalenia",
+            "",
             "- Raport ma być gotowy przed poniedziałkiem.",
             "- Dane z wtorku przychodzą dziś wieczorem.",
             "",
-            "**Zadania**",
-            "- Rozmówcy: wysłać dane z wtorku, dziś wieczorem.",
-            "- Ty: zamknąć raport do niedzieli.",
+            "## Zadania",
+            "",
+            "- [ ] Ania: wysłać dane z wtorku, dziś wieczorem",
+            "- [ ] Ty: zamknąć raport do niedzieli",
+            "",
+            "## \u25B8 Otwarte",
+            "",
+            "- Kto przejmuje stare API — bez rozstrzygnięcia.",
+            "",
+            "> Zdążę, ale potrzebuję danych z wtorku.",
           ].join("\n");
           if (!row.titleByHand) row.title = "Raport przed poniedziałkiem";
           tell();
           return { summary: row.summary };
         },
+        /* Zwinięcie nagłówka w podsumowaniu — w atrapie tak samo jak
+           naprawdę: strzałka jest treścią, więc zmienia treść. */
+        fold: async (which, index, open) => {
+          const row = rows.find((item) => item.id === which);
+          if (!row?.summary) return false;
+          const lines = row.summary.split("\n");
+          const mark = /^(\s{0,3}#{1,6}[ \t]+)([\u25B8\u25BE])([ \t]*)/;
+          let seen = -1;
+          for (let at = 0; at < lines.length; at += 1) {
+            if (!mark.test(lines[at])) continue;
+            seen += 1;
+            if (seen !== index) continue;
+            lines[at] = lines[at].replace(mark, `$1${open ? "\u25BE" : "\u25B8"}$3`);
+            break;
+          }
+          row.summary = lines.join("\n");
+          return true;
+        },
+        /* Zgoda na kalendarz. W przeglądarce nie ma czego pytać, więc
+           atrapa oddaje ten sam plan, co dotąd — makieta ma pokazywać
+           kalendarz, a nie okno z odmową. */
+        calendar: async () => plan,
         arm: async (which, on) => {
           const armed = new Set(plan.armed);
           if (on) armed.add(which);

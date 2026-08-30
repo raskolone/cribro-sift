@@ -90,17 +90,64 @@
   border-top-color: var(--accent);
 }
 /* Ile jest schowane. Bez tej liczby zwinięty nagłówek wygląda tak samo
-   jak zwykły i nie ma po czym poznać, że coś pod nim jest. */
+   jak zwykły i nie ma po czym poznać, że coś pod nim jest — a „…" mówiło
+   tylko tyle, że coś. Liczbę wstawia applyFolds w js/editor.js. */
 .prose [data-toggle="closed"]::after {
-  content: "…";
-  margin-left: 0.4em;
-  color: var(--text-faint);
+  content: attr(data-hidden);
+  margin-left: 0.5em;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  color: var(--text-mute);
   font-family: var(--font-mono);
-  font-size: 0.7em;
-  vertical-align: 0.25em;
+  font-weight: 400;
+  font-size: 0.62em;
+  letter-spacing: 0;
+  vertical-align: 0.3em;
+}
+/* Zwinięty nagłówek, pod którym nic nie ma, nie ma czym się chwalić. */
+.prose [data-toggle="closed"]:not([data-hidden])::after {
+  content: none;
 }
 .prose [data-folded="true"] {
   display: none;
+}
+
+/* ── Wnętrze nagłówka składanego ──
+   Toggle jest NADRZĘDNY: to, co pod nim, należy do niego i znika razem
+   z nim. Dotąd nie było tego po czym poznać — jedynym sposobem, żeby
+   sprawdzić, co jest w środku, było zwinięcie i zobaczenie, co zniknęło.
+
+   Wcięcie z cienką prowadnicą mówi to wprost i mówi to bez słowa: bloki
+   należące do nagłówka stoją odsunięte, a kreska po lewej biegnie od
+   pierwszego z nich do ostatniego. To ta sama zasada, co przy liście
+   zagnieżdżonej — przynależność widać po tym, gdzie coś stoi. */
+.prose [data-inside="true"] {
+  margin-left: 11px;
+  padding-left: 14px;
+  /* Kreska musi być widoczna, ale nie ma być ramką: to prowadnica, po
+     której wzrok zjeżdża w dół, a nie przegroda. Stąd --line-strong,
+     a nie akcent — akcent w tej aplikacji znaczy „zrobione" i „włączone”. */
+  border-left: 1px solid var(--line-strong);
+  transition: border-color var(--t);
+}
+/* Najechanie na nagłówek podświetla całe jego wnętrze — to jest ta jedna
+   chwila, w której pytanie „co się schowa, jak to kliknę" naprawdę pada. */
+.prose [data-toggle]:hover ~ [data-inside="true"] {
+  border-left-color: var(--accent-30);
+}
+/* Nagłówek w środku innego nagłówka jest już wcięty przez własny stopień —
+   drugie wcięcie robiłoby schodki rosnące w prawo bez potrzeby. */
+.prose h1[data-inside="true"],
+.prose h2[data-inside="true"],
+.prose h3[data-inside="true"] {
+  margin-left: 11px;
+}
+/* Kreska sąsiadujących bloków ma być JEDNĄ kreską, a nie ciągiem odcinków
+   z dziurami na odstępach między akapitami. */
+.prose [data-inside="true"] + [data-inside="true"] {
+  margin-top: 0;
+  padding-top: var(--s-3);
 }
 
 /* Linia rozdzielająca. Nie kreska przez całą szerokość i nie ramka —

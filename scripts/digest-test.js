@@ -72,8 +72,24 @@ check("Pusty zapis jest nazwany wprost, a nie przemilczany",
 /* ── Polecenie ──────────────────────────────────────────────── */
 
 const gotowe = buildPrompt(rozmowa, { template: "generic" });
-check("Gotowy szablon niesie swój układ", gotowe.system.includes("**Ustalenia**"));
+/* Sekcje są NAGŁÓWKAMI, nie pogrubionymi linijkami. To nie jest zmiana
+   kosmetyczna: nagłówek w notatce da się zwinąć razem z tym, co pod nim,
+   a pogrubionej linijki — nie. Podsumowanie kończy jako notatka, więc pisze
+   się je znacznikami, które notatka rozumie (patrz MARKUP w digest.js). */
+check("Gotowy szablon niesie swój układ", gotowe.system.includes("## Ustalenia"));
+check("…zaczyna od tego, co najważniejsze", gotowe.system.includes("## Najważniejsze"));
+check("…zadania każe pisać polami do odhaczenia", gotowe.system.includes("- [ ] Kto: co, termin"));
+check("…jedną sekcję oddaje zwiniętą", gotowe.system.includes("## \u25B8 Otwarte"));
 check("…i każe pominąć sekcję bez treści", gotowe.system.includes("POMIJASZ W CAŁOŚCI"));
+
+/* ── Znaczniki: te same, co w notatce ──────────────────────────
+   Model, który napisze coś poza tym zestawem, zostawi w notatce gwiazdki
+   w tekście — czyli coś, co wygląda na usterkę. */
+for (const mark of ["## Nagłówek", "## \u25BE Nagłówek", "- [ ] zadanie", "> cytat", "---"]) {
+  check(`Kontrakt pokazuje znacznik „${mark}"`, gotowe.system.includes(mark));
+}
+check("Kontrakt zabrania tabel", /tabel/i.test(gotowe.system));
+check("…i bloków kodu", /bloków kodu/i.test(gotowe.system));
 
 const własne = buildPrompt(rozmowa, {
   template: "custom",
@@ -89,7 +105,18 @@ check("Wybrany szablon wraca w wyniku", własne.template === "custom");
    zlepek zdań bez żadnego układu. */
 const puste = buildPrompt(rozmowa, { template: "custom", instructions: "   " });
 check("Puste własne wytyczne wracają do gotowego szablonu", puste.template === "generic");
-check("…i mają jego układ", puste.system.includes("**Ustalenia**"));
+check("…i mają jego układ", puste.system.includes("## Ustalenia"));
+
+/* Własne wytyczne mówią, CZEGO chcemy; znaczniki mówią, CZYM wolno to
+   napisać. Kto poprosi o checklistę, ma ją dostać jako pola do odhaczenia
+   — a nie jako akapit o zadaniach. */
+const checklista = buildPrompt(rozmowa, {
+  template: "custom",
+  instructions: "Sama checklista zadań, nic więcej.",
+});
+check("Własne wytyczne dostają ten sam zestaw znaczników",
+  checklista.system.includes("- [ ] zadanie"));
+check("…i ten sam zakaz tabel", /tabel/i.test(checklista.system));
 
 /* ── Odpowiedź ──────────────────────────────────────────────── */
 

@@ -28,11 +28,26 @@ KEYCHAIN_PASS="cribro"
 [ -f "$SRC" ] || { echo "Nie znaleziono źródła: $SRC"; exit 1; }
 mkdir -p "$OUT_DIR"
 
+# Info.plist WKLEJANY W BINARKĘ.
+#
+# cribro-tap jest gołym plikiem wykonywalnym, nie pakietem — nie ma katalogu
+# Contents, w którym mógłby leżeć Info.plist. A jest podpisany własną
+# tożsamością, więc dla TCC jest OSOBNYM klientem: Info.plist aplikacji obok
+# go nie dotyczy.
+#
+# Bez NSCalendarsFullAccessUsageDescription EventKit odmawia NATYCHMIAST
+# I BEZ PYTANIA — nie pada żadne okno, a program dostaje „denied”, jakby
+# ktoś zgody odmówił. Dokładnie o to rozbijał się kalendarz. Szczegóły:
+# build/tap-info.plist.
+PLIST="$ROOT/build/tap-info.plist"
+[ -f "$PLIST" ] || { echo "Nie znaleziono $PLIST — bez niego kalendarz nie zapyta o zgodę"; exit 1; }
+
 build() {
   local arch="$1" out="$2"
   swiftc -O \
     -target "${arch}-apple-macos${DEPLOY}" \
     -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia \
+    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$PLIST" \
     -o "$out" "$SRC"
 }
 
@@ -71,6 +86,19 @@ else
   codesign --force --sign - --timestamp=none "$OUT"
   echo "UWAGA: brak tożsamości „${NAME}” — podpis ad-hoc."
   echo "       Zgoda „Nagrywanie ekranu” przepadnie przy przebudowie. Napraw: npm run identity"
+fi
+
+# Sprawdzenie, że opis naprawdę wszedł do binarki. Brak tej sekcji nie
+# objawia się błędem budowania — objawia się kalendarzem, który milczy.
+# `grep -q` zamyka potok po pierwszym trafieniu, otool dostaje SIGPIPE,
+# a `set -o pipefail` czyta to jako porażkę całego potoku — czyli sprawdzenie
+# meldowałoby brak sekcji dokładnie wtedy, gdy sekcja JEST. Stąd liczenie
+# trafień zamiast pytania „czy jest”.
+SECTIONS="$(otool -l "$OUT" 2>/dev/null | grep -c "__info_plist" || true)"
+if [ "$SECTIONS" -gt 0 ]; then
+  echo "Opisy zgód: wklejone w binarkę ✓"
+else
+  echo "UWAGA: w binarce nie ma sekcji __info_plist — kalendarz nie zapyta o zgodę."
 fi
 
 echo "Gotowe: $OUT"

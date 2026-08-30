@@ -140,6 +140,50 @@ const EN = {
   "Podsumowanie powstaje z transkrypcji, według wybranego szablonu.":
     "The summary is built from the transcript, following the chosen template.",
   "Jak działają spotkania": "How meetings work",
+  /* Koło zębate w zakładce Spotkania. Podpis mówi „i AI", bo pod spodem
+     są nie tylko przełączniki nagrywania, ale i wytyczne, według których
+     powstaje podsumowanie. */
+  "Ustawienia i AI": "Settings & AI",
+  "Ustawienia spotkań i wytyczne podsumowań": "Meeting settings and summary guidelines",
+  /* Zgoda na kalendarz — cztery stany, cztery różne odpowiedzi. */
+  "macOS nie pytał jeszcze o kalendarz. Kliknij — zapyta teraz, raz.":
+    "macOS has not asked about your calendar yet. Click and it will ask, once.",
+  "Poproś o dostęp": "Ask for access",
+  "Dostęp do kalendarza jest wyłączony. Włącza się go w Ustawieniach systemowych, w sekcji Kalendarz — przy pozycji „Cribro Sift”.":
+    "Calendar access is switched off. Turn it on in System Settings, under Calendars, next to “Cribro Sift”.",
+  "Otwórz Ustawienia systemowe": "Open System Settings",
+  "Cribro ma zgodę tylko na dopisywanie do kalendarza, a chce wyłącznie CZYTAĆ nadchodzące spotkania. W Ustawieniach systemowych zmień to na pełny dostęp.":
+    "Cribro may only add to your calendar, but it wants to READ upcoming meetings and nothing else. Change it to full access in System Settings.",
+  "Dostęp do kalendarza jest zablokowany zasadami tego komputera — tego nie zmieni ani Cribro, ani Ustawienia systemowe.":
+    "Calendar access is blocked by this computer's policy — neither Cribro nor System Settings can change that.",
+  "Brakuje programu pomocniczego, który czyta kalendarz. Zbuduj aplikację jeszcze raz (npm run app).":
+    "The helper that reads the calendar is missing. Build the app again (npm run app).",
+  "Kalendarz nie odpowiedział. Spróbuj jeszcze raz za chwilę.":
+    "The calendar did not answer. Try again in a moment.",
+  "Spróbuj jeszcze raz": "Try again",
+  "Pytam system…": "Asking the system…",
+  /* Wytyczne podsumowania i ściągawka ze znaczników. */
+  "W punktach": "In bullets",
+  "Najważniejsze na górze, reszta punktami. Zadania jako lista do odhaczenia.":
+    "The important part on top, the rest in bullets. Tasks as a checklist.",
+  "Piszesz sam, czego oczekujesz — razem z tym, jak wynik ma wyglądać.":
+    "You write what you expect — including what the result should look like.",
+  "Np. Sama lista zadań do odhaczenia, po angielsku, bez wstępu. Na końcu jeden cytat, który najlepiej oddaje rozmowę.":
+    "E.g. Just a checklist of tasks, in English, no preamble. End with the one quote that best captures the conversation.",
+  "Czego można od niego zażądać": "What you may ask it for",
+  "Podsumowanie staje się notatką, więc rozumie dokładnie to samo formatowanie, co notatka. Poproś o listę do odhaczenia — dostaniesz listę do odhaczenia.":
+    "The summary becomes a note, so it understands exactly the same formatting a note does. Ask for a checklist and you get a checklist.",
+  "Tabel, HTML-a i bloków kodu nie ma — notatka nie ma ich czym pokazać.":
+    "No tables, no HTML, no code blocks — a note has nothing to render them with.",
+  "nagłówek sekcji": "section heading",
+  "nagłówek składany — wszystko pod nim zwija się jednym kliknięciem":
+    "collapsible heading — everything under it folds with one click",
+  "pole do odhaczenia": "checkbox",
+  lista: "list",
+  "lista numerowana": "numbered list",
+  "pogrubienie i kursywa": "bold and italic",
+  "zdanie, które padło": "a sentence that was actually said",
+  "linia rozdzielająca": "divider",
   "Kiedy zacząć nagrywać": "When to start recording",
   "Nigdy sam": "Never on its own",
   "Nagrywanie tylko z menu albo stąd.": "Recording only from the menu or from here.",

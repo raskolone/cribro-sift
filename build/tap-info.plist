@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- ════════════════════════════════════════════════════════════════
+         Info.plist WKLEJONY W BINARKĘ cribro-tap.
+
+         To nie jest zwykły plik obok programu — leci do sekcji
+         __TEXT,__info_plist przy linkowaniu (patrz scripts/build-tap.sh).
+         Program pomocniczy jest gołym plikiem wykonywalnym, nie pakietem,
+         więc nie ma gdzie indziej trzymać tego, czego macOS od niego chce.
+
+         ── PO CO, CZYLI DLACZEGO KALENDARZ MILCZAŁ ──
+
+         Kalendarz czyta cribro-tap, nie aplikacja: EventKit siedzi po
+         stronie natywnej. A cribro-tap jest podpisany WŁASNĄ tożsamością
+         (Identifier=cribro-tap), więc dla TCC jest osobnym klientem —
+         Info.plist aplikacji obok nie jest jego Info.plistem.
+
+         Program bez NSCalendarsFullAccessUsageDescription dostaje odmowę
+         NATYCHMIAST I BEZ PYTANIA. Nie pada żadne okno, nie ma czego
+         kliknąć, a odpowiedź brzmi „denied" — dokładnie tak, jakby ktoś
+         zgody odmówił. To był powód, dla którego zakładka Spotkania
+         mówiła „brak zgody na kalendarz" u kogoś, kto nigdy nie widział
+         pytania o kalendarz.
+
+         Mikrofon i nagrywanie ekranu działały mimo braku tego pliku, bo
+         idą inną drogą: mikrofon przez uprawnienie w podpisie
+         (build/entitlements.tap.plist), a nagrywanie ekranu przez zgodę
+         klikaną w Ustawieniach systemowych, która nie potrzebuje opisu.
+         Trzymamy tu jednak wszystkie trzy opisy — żeby następna zgoda,
+         o którą ten program poprosi, nie odbiła się o to samo.
+         ════════════════════════════════════════════════════════════════ -->
+
+    <key>CFBundleIdentifier</key>
+    <string>com.cribro.sift.tap</string>
+    <key>CFBundleName</key>
+    <string>Cribro Sift</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+
+    <!-- Te same zdania co w Info.plist aplikacji (package.json → build.mac.
+         extendInfo). Człowiek zobaczy je w oknie systemu i to jest jedyne
+         miejsce, w którym Cribro tłumaczy się z dostępu do kalendarza —
+         musi więc mówić prawdę i mówić ją krótko. -->
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Cribro Sift czyta kalendarz tylko po to, żeby pokazać nadchodzące spotkania i zaproponować notatki z nich. Nic z kalendarza nie opuszcza tego komputera.</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>Cribro Sift czyta kalendarz tylko po to, żeby pokazać nadchodzące spotkania i zaproponować notatki z nich. Nic z kalendarza nie opuszcza tego komputera.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Cribro Sift nagrywa Twój głos wyłącznie po to, żeby zamienić go na tekst. Nagranie jest kasowane zaraz po transkrypcji.</string>
+  </dict>
+</plist>

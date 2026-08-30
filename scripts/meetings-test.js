@@ -89,8 +89,13 @@ const widok = read("src", "renderer", "js", "meetings-view.js");
 
 check("Przy „Nagraj spotkanie” stoi koło zębate",
   /data-meet-cog/.test(widok) && /<use href="#i-gear"/.test(widok));
-check("Koło zębate mówi, dokąd prowadzi",
-  /title="\$\{t\("Jak działają spotkania"\)\}"/.test(widok));
+/* Sam znak odpowiada tylko na „co to jest", nie na „co tam znajdę" —
+   a znajdują się tam także wytyczne, według których powstaje podsumowanie.
+   Stąd podpis przy kole, a nie sama ikona. */
+check("Koło zębate ma podpis, a nie tylko rysunek",
+  /<span>\$\{t\("Ustawienia i AI"\)\}<\/span>/.test(widok));
+check("…i mówi w podpowiedzi, co jest pod spodem",
+  /title="\$\{t\("Ustawienia spotkań i wytyczne podsumowań"\)\}"/.test(widok));
 check("Ustawienia rysują się dopiero po otwarciu szuflady",
   /\$\{state\.settingsOpen \? settingsCard\(\) : ""\}/.test(widok));
 check("Wybór szuflady zostaje między uruchomieniami",
@@ -152,5 +157,44 @@ check("Notatka niesie CAŁY zapis rozmowy — dlatego wolno skasować nagranie",
   /asNote\(meeting, \{ transcript: true, me \}\)/.test(reguły));
 check("Rodzaj „meeting” trafia do notatki — po nim poznaje ją przegródka",
   /kind: "meeting",/.test(reguły));
+
+/* ── 5. Wytyczne podsumowania ─────────────────────────────────── */
+
+check("Szablon ogólny nazywa się tym, czym jest",
+  /shape\("generic", "W punktach"/.test(widok));
+check("Własne wytyczne stoją obok, a nie zamiast",
+  /shape\("custom", "Własne wytyczne"/.test(widok));
+check("Pole na własne wytyczne otwiera się razem z ich wyborem",
+  /meet\.template === "custom" \? "" : " is-off"/.test(widok));
+check("Przy własnych wytycznych stoi ściągawka ze znaczników",
+  /meet\.template === "custom" \? markupHelp\(\) : ""/.test(widok));
+check("…a w niej pole do odhaczenia i nagłówek składany",
+  /\["- \[ \] zadanie"/.test(widok) && /\["## \u25BE Nagłówek"/.test(widok));
+
+/* ── 6. Podsumowanie zachowuje się jak notatka ────────────────── */
+
+check("Podsumowanie rysuje ten sam tłumacz Markdownu, co notatka",
+  /window\.CribroRichtext\?\.markdownToHtml\?\.\(meeting\.summary\)/.test(widok));
+check("…i te same style prose", /class="meet__summary prose" data-meet-rich/.test(widok));
+check("…a nagłówki składane naprawdę się w nim składają",
+  /window\.CribroRichtext\?\.applyFolds\?\.\(rich\)/.test(widok) &&
+    /window\.CribroRichtext\?\.clickFold\?\.\(event, rich\)/.test(widok));
+
+const digest = read("src", "main", "digest.js");
+check("Model dostaje dokładnie te znaczniki, które umie notatka",
+  /- \[ \] zadanie\s+POLE DO ODHACZENIA/.test(digest));
+check("Gotowa lista do odhaczenia nie jest przepisywana od nowa",
+  /const ready = hasCheckboxes\(meeting\?\.summary\);/.test(digest));
+
+/* ── 7. Zgoda na kalendarz ────────────────────────────────────── */
+
+check("„nie pytano” dostaje przycisk, który pyta",
+  /notDetermined: \{[\s\S]{0,200}how: "ask"/.test(widok));
+check("„odmówiono” dostaje drogę do Ustawień systemowych",
+  /denied: \{[\s\S]{0,300}how: "open"/.test(widok));
+check("Program pomocniczy niesie opis zgody na kalendarz",
+  /NSCalendarsFullAccessUsageDescription/.test(read("build", "tap-info.plist")));
+check("…i jest on wklejany w binarkę przy budowaniu",
+  /-sectcreate -Xlinker __TEXT -Xlinker __info_plist/.test(read("scripts", "build-tap.sh")));
 
 console.log(`\nSpotkania: ${passed} sprawdzeń przeszło. Ustawienia pod kołem, zapis na wierzchu, notatka sama.`);

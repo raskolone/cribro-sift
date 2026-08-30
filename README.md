@@ -601,10 +601,32 @@ jako `####` zjeżdża do trzeciego zamiast zniknąć.
 na ekranie. Nie kreska przez całą szerokość i nie ramka: notatka nie jest
 formularzem, a przerwa ma być przerwą, nie przegrodą.
 
-**Nagłówek składany** chowa wszystko pod sobą aż do następnego nagłówka tego
-samego albo wyższego stopnia. Notatka ze spotkania rośnie w dół przez godzinę
-i po tej godzinie nikt nie chce widzieć jej całej naraz — chce widzieć spis
-części i rozwinąć jedną. Klika się w strzałkę przy nagłówku.
+**Nagłówek składany** — toggle — jest **nadrzędny**: wrzuca się do niego
+akapity, listy, zadania, cytaty i głębsze nagłówki, a zwinięcie zamyka je
+wszystkie naraz. Granicę wyznacza stopień nagłówka, tak jak w każdym
+konspekcie: H2 trzyma wszystko aż do następnego H2 albo H1. Notatka ze
+spotkania rośnie w dół przez godzinę i po tej godzinie nikt nie chce widzieć
+jej całej naraz — chce widzieć spis części i rozwinąć jedną. Klika się
+w strzałkę przy nagłówku.
+
+**Widać, co jest w środku, zanim się to zwinie.** Bloki należące do nagłówka
+stoją odsunięte, a cienka prowadnica po lewej biegnie od pierwszego do
+ostatniego — ta sama zasada, co przy liście zagnieżdżonej: przynależność
+widać po tym, gdzie coś stoi. Najechanie na nagłówek podświetla całe jego
+wnętrze, bo to jest ta jedna chwila, w której pada pytanie „co się schowa,
+jak to kliknę".
+
+**Zwinięty nagłówek mówi, ile chowa** — liczbą przy tytule, nie wielokropkiem.
+Bez niej wygląda jak zwykły nagłówek i nie ma po czym poznać, że coś pod nim
+jest. Przenoszenie zwiniętego nagłówka (uchwyt albo ⌥↑/⌥↓) zabiera całą jego
+zawartość: przeniesienie samego nagłówka rozsypałoby notatkę dokładnie tam,
+gdzie autor jej nie widzi.
+
+Zasada „co należy do czego" mieszka w `shared/richtext.js`, a nie w edytorze,
+bo obowiązuje w dwóch miejscach naraz: w notatce, którą się pisze, i
+w podsumowaniu spotkania, które się tylko czyta. Dwie kopie rozjechałyby się
+przy pierwszej zmianie — a wtedy ta sama notatka zwijałaby się inaczej
+w dwóch oknach tej samej aplikacji.
 
 Stan zwinięcia idzie **do pliku**, strzałką przy nagłówku:
 
@@ -1242,6 +1264,30 @@ zakończeniu ekran wraca do **Podsumowania**, bo to ono jest powodem, dla
 którego się nagrywało. Zakładka wybrana ręką zostaje tam, gdzie ją
 postawiono, do końca tej rozmowy.
 
+#### Kalendarz i zgoda na niego
+
+Kalendarz czyta **program pomocniczy** `cribro-tap` przez EventKit, a nie
+aplikacja — więc dla macOS jest to OSOBNY klient uprawnień, podpisany własną
+tożsamością. Program bez `NSCalendarsFullAccessUsageDescription` dostaje
+odmowę **natychmiast i bez pytania**: nie pada żadne okno, nie ma czego
+kliknąć, a odpowiedź brzmi „denied" — dokładnie tak, jakby ktoś zgody
+odmówił. Opis jedzie więc wklejony w binarkę, do sekcji
+`__TEXT,__info_plist` (patrz `build/tap-info.plist` i `scripts/build-tap.sh`).
+
+Program mówi teraz, JAKI dokładnie jest stan zgody, bo „nie pytano" i
+„odmówiono" mają dwa różne wyjścia:
+
+| Stan | Co widać w zakładce | Co robi przycisk |
+| --- | --- | --- |
+| `notDetermined` | „macOS nie pytał jeszcze o kalendarz" | prosi — system stawia swoje okno |
+| `denied` | „dostęp jest wyłączony" | otwiera *Prywatność → Kalendarze* |
+| `writeOnly` | „zgoda tylko na dopisywanie" | otwiera ten sam panel |
+| `restricted` | zablokowane zasadami urządzenia | nic — i mówi o tym wprost |
+
+Wpis Cribro pojawia się w *Ustawieniach systemowych* **dopiero po pierwszym
+pytaniu**. Odsyłanie tam kogoś, kogo system nigdy nie zapytał, było radą nie
+do wykonania — i tak właśnie wyglądało to wcześniej.
+
 #### Nazwa rozmowy
 
 Karta Google Meet nazywa się tak, jak nazwano pokój — „Meet – Przegląd
@@ -1252,6 +1298,58 @@ pyta: przed startem Cribro zerka raz na tytuły okien. Kod pokoju
 `src/main/detect.js`. Nazwy przepisanej z okna rozmowy podsumowanie już nie
 zmienia; nazwę wziętą z kalendarza albo żadną — owszem, i wtedy pisze ją
 z treści.
+
+#### Jakie ma być podsumowanie
+
+**Ustawienia i AI → Jakie podsumowanie.** Dwie drogi i obie prowadzą przez
+ten sam kontrakt (`CONTRACT` + `MARKUP` w `src/main/digest.js`), którego
+żadne wytyczne nie zmieniają: nie wolno dopisywać ustaleń, których nie było,
+i nie wolno zgadywać, kto jest kim.
+
+**W punktach** (domyślne) — najważniejsze na górze, reszta punktami:
+
+```
+## Najważniejsze     jeden do trzech punktów: co z tej rozmowy wynika
+## O czym było       punkty, temat po temacie
+## Ustalenia         punkty, co postanowiono
+## Zadania           - [ ] Kto: co, termin
+## ▸ Otwarte         sprawy nierozstrzygnięte — sekcja zwinięta
+```
+
+**Własne wytyczne** — piszesz sam, czego oczekujesz, razem z tym, jak wynik
+ma wyglądać. „Sama checklista zadań, po angielsku, bez wstępu" da checklistę.
+
+#### To samo formatowanie, co w notatkach
+
+Podsumowanie **kończy jako notatka**, więc pisze się je znacznikami, które
+notatka rozumie — i to jest cały powód, dla którego model dostaje ich listę
+w kontrakcie. Zakres jest ten sam, co potrafi pasek narzędzi notatki:
+
+| Znacznik | Co znaczy |
+| --- | --- |
+| `## Nagłówek` | nagłówek sekcji |
+| `## ▾ Nagłówek` | nagłówek składany, rozwinięty |
+| `## ▸ Nagłówek` | nagłówek składany, zwinięty |
+| `- [ ] zadanie` | pole do odhaczenia |
+| `- punkt` · `1. punkt` | lista, lista numerowana |
+| `**waga**` · `_przechył_` · `` `kod` `` | znaczniki w linii |
+| `> cytat` | zdanie, które padło |
+| `---` | linia rozdzielająca |
+
+Tabel, HTML-a i bloków kodu nie ma, bo notatka nie ma ich czym pokazać.
+Ściągawkę widać przy własnych wytycznych, żeby nie trzeba było zgadywać po
+wyniku, o co wolno poprosić.
+
+W zakładce Spotkania podsumowanie rysuje **ten sam tłumacz Markdownu i te
+same style**, co notatka — razem z działającymi nagłówkami składanymi.
+Kliknięcie w strzałkę idzie przy tym NA DYSK, do samego podsumowania
+(`flipToggle` w `digest.js`): zakładka przerysowuje się co odcinek zapisu,
+czyli w trakcie rozmowy co dwie minuty, a zwinięcie trzymane tylko w oknie
+otwierałoby się wtedy samo, w środku czytania.
+
+Gotowej listy do odhaczenia `asNote` już nie przepisuje. Ten krok powstał,
+gdy model pisał zadania akapitem; dziś pisze pola sam, a przepisywanie ich od
+nowa gubiłoby to, co ktoś zdążył odhaczyć.
 
 #### Notatka powstaje sama
 
@@ -1603,7 +1701,8 @@ src/renderer/
   css/onboarding.css  przewodnik: układ slajdów i ruch ośmiu scen
 src/shared/
   strings.js     słownik pl → en, wspólny dla obu procesów
-  richtext.js    Markdown ↔ HTML — jedno miejsce dla obu kierunków
+  richtext.js    Markdown ↔ HTML i nagłówki składane — wspólne dla edytora
+                 notatki i dla podglądu podsumowania spotkania
   js/constellation.js  tło: dryfujące punkty i linie bliskości, 30 kl./s
   css/tokens.css kopia tokenów motywu — jedyne miejsce z surowym kolorem
 supabase/
@@ -1631,7 +1730,10 @@ scripts/         testy, zrzuty ekranu, ikona
   meetnote-live-test.js  ta sama notatka na prawdziwym sklepie: co się dzieje
                     z kartką dopisaną ręką, skasowaną i przyniesioną z chmury
   meetings-test.js  przegródka „Notatki ze spotkań", koło zębate, domyślna
-                    zakładka w trakcie nagrywania, nazwa z okna Google Meet
+                    zakładka w trakcie nagrywania, nazwa z okna Google Meet,
+                    wytyczne podsumowania i cztery stany zgody na kalendarz
+  toggle-test.js    nagłówek składany w prawdziwym DOM: co należy do czego,
+                    ile chowa, co zostaje w pliku i czy wraca zwinięty
   owner-test.js     krok „Silniki" należy do właściciela: kto nim jest, co
                     wychodzi mostem, czego nie da się zapisać, co mówi błąd
   blind-test.js     to samo, ale w PRAWDZIWYM oknie: przejście po wszystkich

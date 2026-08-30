@@ -39,7 +39,7 @@ const { grabRegion, readText, compose, stampName } = require("./shot");
 const { Meetings } = require("./meeting");
 const { Watcher: MeetingWatcher, spot: spotMeeting } = require("./detect");
 const { speakerFor } = require("./merge");
-const { digest, polish, asNote, send: sendToModel } = require("./digest");
+const { digest, polish, asNote, flipToggle, send: sendToModel } = require("./digest");
 const { keepNote } = require("./meetnote");
 const agendaSource = require("./agenda");
 const { Google } = require("./google");
@@ -2387,9 +2387,11 @@ let agendaSeenAt = null;
     kwadransach, a nie w losowych sekundach. */
 const AGENDA_EVERY = 60_000;
 
-async function lookAtAgenda() {
+async function lookAtAgenda({ force = false } = {}) {
   const settings = store.getSettings();
-  if (!settings.meetings?.calendar) return;
+  /* `force` znaczy: pytam, bo człowiek właśnie kliknął. Wtedy ustawienie
+     „Pokaż kalendarz" nie ma nic do rzeczy — kliknięcie JEST włączeniem. */
+  if (!force && !settings.meetings?.calendar) return;
 
   const fresh = await agendaSource.read();
   agenda = fresh;
@@ -4319,6 +4321,50 @@ function registerIpc() {
     broadcast("meeting:changed", meetingState());
     return kept;
   });
+  /* Zwinięcie nagłówka w podsumowaniu. Strzałka stoi w treści, nie obok
+     niej (patrz flipToggle w main/digest.js), więc kliknięcie w nią jest
+     zmianą podsumowania — i dlatego przeżywa przerysowanie zakładki,
+     które w trakcie rozmowy przychodzi co dwie minuty. */
+  ipcMain.handle("meetings:fold", (_e, { id, index, open } = {}) => {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting?.summary) return false;
+    const summary = flipToggle(meeting.summary, Number(index), !!open);
+    if (summary === meeting.summary) return false;
+    store.updateMeeting(id, { summary });
+    /* Notatki NIE ruszamy. Zwinięcie jest sposobem czytania podsumowania
+       tutaj; notatka ma własną strzałkę przy własnym nagłówku i własnego
+       człowieka, który ją przestawia. */
+    broadcast("meeting:changed", meetingState());
+    return true;
+  });
+
+  /* ══ ZGODA NA KALENDARZ ══
+
+     Kalendarz czyta program pomocniczy (main/agenda.js → cribro-tap), więc
+     zgody nie da się tu wyprosić żadnym API Electrona — okno systemowe
+     pokazuje się dopiero wtedy, gdy TEN program o nią poprosi. Prośbą jest
+     więc zwyczajne spytanie o kalendarz: helper widzi stan „nie pytano",
+     woła EventKit i macOS stawia okno.
+
+     Trzy czynności, bo trzy różne sytuacje mają trzy różne wyjścia
+     (patrz agendaCard w renderer/js/meetings-view.js). */
+  ipcMain.handle("meetings:calendar", async (_e, how) => {
+    if (how === "open") {
+      /* Sekcja „Kalendarze" w Prywatności. Wpis Cribro pojawia się tam
+         DOPIERO po pierwszym pytaniu — dlatego przycisk „otwórz” dostaje
+         tylko ten, komu system już raz odmówił. */
+      await shell.openExternal(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
+      );
+      return meetingState().agenda;
+    }
+
+    // "ask" i "retry" to ta sama czynność: spytać kalendarz jeszcze raz.
+    // Przy stanie „nie pytano" system pokaże przy okazji swoje okno.
+    await lookAtAgenda({ force: true });
+    return meetingState().agenda;
+  });
+
   /* Tytuł wpisany ręką. Znacznik `titleByHand` chroni go przed inteligentną
      zmianą nazwy: kto nazwał spotkanie sam, podjął decyzję. */
   ipcMain.handle("meetings:openWindow", (_e, id) => (openMeetingWindow(id), true));

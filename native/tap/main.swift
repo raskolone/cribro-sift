@@ -501,19 +501,66 @@ var back = 1.0
 func agenda(hours: Double, back: Double) async {
     let store = EKEventStore()
 
-    /// macOS 14 wprowadził dostęp „tylko do odczytu"; starsze chcą pełnego.
-    let granted: Bool
+    /* ══ „NIE PYTANO" TO CO INNEGO NIŻ „ODMÓWIONO" ══
+
+       Wcześniej ten program mówił tylko „granted" albo „denied" — i przez
+       to okno aplikacji pokazywało jedno zdanie na dwie zupełnie różne
+       sytuacje. „Odmówiono" znaczy: idź do Ustawień systemowych i przestaw
+       przełącznik. „Nie pytano" znaczy: kliknij, a system zapyta. Kto
+       dostawał tę pierwszą radę na tę drugą sytuację, szukał w Ustawieniach
+       przełącznika, którego tam jeszcze nie było — bo wpis powstaje dopiero
+       po pierwszym pytaniu.
+
+       Stan czytamy PRZED prośbą i oddajemy go osobno. Prosimy wyłącznie
+       wtedy, gdy jest o co prosić: wołanie requestFullAccessToEvents przy
+       stanie „denied" nie pokazuje niczego i wraca fałszem, czyli robi
+       hałas bez skutku. */
+    let status = EKEventStore.authorizationStatus(for: .event)
+
+    var granted: Bool
     if #available(macOS 14.0, *) {
-        granted = (try? await store.requestFullAccessToEvents()) ?? false
+        granted = status == .fullAccess
     } else {
-        granted = await withCheckedContinuation { go in
-            store.requestAccess(to: .event) { ok, _ in go.resume(returning: ok) }
+        granted = status == .authorized
+    }
+
+    var state: String
+    switch status {
+    case .restricted: state = "restricted"   // zabroniona przez zasady urządzenia
+    case .denied: state = "denied"
+    default: state = granted ? "granted" : "notDetermined"
+    }
+    if #available(macOS 14.0, *), status == .writeOnly {
+        // Zgoda „tylko do zapisu" nie pozwala CZYTAĆ wpisów — dla nas to
+        // jest brak zgody, tylko o innej nazwie i z innym przełącznikiem.
+        state = "writeOnly"
+    }
+
+    if !granted && state == "notDetermined" {
+        if #available(macOS 14.0, *) {
+            granted = (try? await store.requestFullAccessToEvents()) ?? false
+        } else {
+            granted = await withCheckedContinuation { go in
+                store.requestAccess(to: .event) { ok, _ in go.resume(returning: ok) }
+            }
+        }
+        /* Po pytaniu stan jest już rozstrzygnięty — ale jeśli system
+           odpowiedział odmową BEZ pokazania okna (tak dzieje się, gdy
+           program nie niesie opisu zgody, patrz build/tap-info.plist),
+           zostaje „notDetermined" i aplikacja powie o tym wprost, zamiast
+           odsyłać do przełącznika, którego nie ma. */
+        let after = EKEventStore.authorizationStatus(for: .event)
+        if granted {
+            state = "granted"
+        } else if after == .denied {
+            state = "denied"
         }
     }
+
     guard granted else {
         // Brak zgody nie jest awarią: aplikacja ma wtedy po prostu nie
         // pokazywać kalendarza. Mówimy to danymi, a nie kodem wyjścia.
-        print("{\"access\":\"denied\",\"events\":[]}")
+        print("{\"access\":\"" + state + "\",\"events\":[]}")
         return
     }
 
