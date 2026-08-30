@@ -149,8 +149,15 @@ const EN = {
   "macOS nie pytał jeszcze o kalendarz. Kliknij — zapyta teraz, raz.":
     "macOS has not asked about your calendar yet. Click and it will ask, once.",
   "Poproś o dostęp": "Ask for access",
-  "Dostęp do kalendarza jest wyłączony. Włącza się go w Ustawieniach systemowych, w sekcji Kalendarz — przy pozycji „Cribro Sift”.":
-    "Calendar access is switched off. Turn it on in System Settings, under Calendars, next to “Cribro Sift”.",
+  "Cribro nie ma zgody na czytanie Kalendarza. Włącza się ją w Ustawieniach systemowych → Prywatność i ochrona → Automatyzacja: przy „Cribro Sift” zaznacz „Kalendarz”.":
+    "Cribro is not allowed to read Calendar. Turn it on in System Settings → Privacy & Security → Automation: under “Cribro Sift”, tick “Calendar”.",
+  "Kalendarz nie odpowiedział na czas. Jeśli na ekranie stoi okno z pytaniem o zgodę — odpowiedz na nie i spróbuj jeszcze raz.":
+    "Calendar did not answer in time. If a permission dialog is on screen, answer it and try again.",
+  "Nie udało się zapytać Kalendarza. Spróbuj jeszcze raz za chwilę.":
+    "Calendar could not be asked. Try again in a moment.",
+  "Kalendarz nie jest uruchomiony. Cribro nie budzi go samo — kliknij, a zajrzy do niego raz.":
+    "Calendar is not running. Cribro will not wake it on its own — click and it will look once.",
+  "Zajrzyj do kalendarza": "Look at the calendar",
   "Otwórz Ustawienia systemowe": "Open System Settings",
   "Cribro ma zgodę tylko na dopisywanie do kalendarza, a chce wyłącznie CZYTAĆ nadchodzące spotkania. W Ustawieniach systemowych zmień to na pełny dostęp.":
     "Cribro may only add to your calendar, but it wants to READ upcoming meetings and nothing else. Change it to full access in System Settings.",

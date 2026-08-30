@@ -2,6 +2,7 @@
 
 const { execFile } = require("child_process");
 const { helperPath } = require("./tap");
+const osascriptCalendar = require("./calendar-osa");
 
 /**
  * Kalendarz — co jest w planie i co właśnie się zaczyna.
@@ -135,13 +136,13 @@ function justStarted(events, now, { since = null, grace = GRACE } = {}) {
  *                                 dzień, reszta aplikacji o godzinę wstecz
  *                                 (tyle, żeby złapać trwające spotkanie)
  */
-function read({ hours = HOURS, back = 1, helper = helperPath() } = {}) {
+function readHelper({ hours = HOURS, back = 1, helper = helperPath(), patience = PATIENCE } = {}) {
   return new Promise((resolve) => {
     if (!helper) return resolve({ access: "missing", events: [] });
     execFile(
       helper,
       ["--agenda", "--hours", String(hours), "--back", String(back)],
-      { timeout: PATIENCE, encoding: "utf8" },
+      { timeout: patience, encoding: "utf8" },
       (problem, stdout) => {
         if (problem && !stdout) return resolve({ access: "error", events: [] });
         resolve(parse(stdout));
@@ -150,4 +151,61 @@ function read({ hours = HOURS, back = 1, helper = helperPath() } = {}) {
   });
 }
 
-module.exports = { read, parse, isMeeting, upcoming, running, justStarted, HOURS, GRACE };
+/**
+ * DWIE DROGI DO TEGO SAMEGO KALENDARZA — i wyraźne pierwszeństwo.
+ *
+ * Pierwsza to EventKit w programie pomocniczym: szybka, nie budzi cudzej
+ * aplikacji, czyta wszystkie kalendarze dodane w systemie. Druga to pytanie
+ * zadane Kalendarzowi.app przez Apple Events (main/calendar-osa.js).
+ *
+ * Druga istnieje, bo pierwsza NA macOS 26 NIE DZIAŁA — i nie jest to
+ * przypuszczenie: `requestFullAccessToEvents()` wraca fałszem natychmiast,
+ * stan zgody zostaje „notDetermined", a w dzienniku systemowym nie ma ani
+ * jednego wpisu od tccd. System nie odmawia; system nie jest nawet pytany,
+ * bo EventKit odmawia wcześniej u siebie. Proces potomny proszący
+ * o kalendarz nie ma jak zostać przedstawiony człowiekowi.
+ *
+ * Kolejność jest więc taka, a nie odwrotna, z jednego powodu: gdy tamta
+ * droga kiedyś ruszy — na innym systemie albo po poprawce Apple — wygra
+ * sama, bez zmiany w kodzie. Do zapasowej schodzimy wtedy i tylko wtedy,
+ * gdy pierwsza nie oddała zgody.
+ *
+ * `patience` bywa liczone w minutach, nie w sekundach: przy pierwszym
+ * pytaniu na ekranie staje okno zgody, a człowiek musi mieć czas sięgnąć
+ * po mysz. Osiem sekund, które tu stało, zabijało program pomocniczy
+ * w połowie czytania tego okna.
+ */
+async function read(options = {}) {
+  const first = await readHelper(options);
+  if (first.access === "granted") return first;
+
+  const second = await osascriptCalendar.read({
+    hours: options.hours ?? HOURS,
+    back: options.back ?? 1,
+    patience: options.patience,
+    /* Kalendarz.app budzimy TYLKO wtedy, gdy człowiek właśnie o to
+       poprosił. Zaglądanie co minutę nie ma prawa stawiać cudzej
+       aplikacji w Docku i uruchamiać jej synchronizacji. */
+    launch: !!options.launch,
+    run: options.run,
+  });
+  /* Gdy i druga droga nie oddaje zgody, mówimy o TEJ, którą człowiek ma
+     jak naprawić — czyli o drugiej. Odsyłanie do Ustawień systemowych po
+     przełącznik EventKitu, którego tam nie ma, było dokładnie tym błędem,
+     przez który kalendarz milczał. */
+  if (second.access === "granted") return second;
+  return { ...second, first: first.access };
+}
+
+module.exports = {
+  read,
+  readHelper,
+  parse,
+  isMeeting,
+  upcoming,
+  running,
+  justStarted,
+  HOURS,
+  GRACE,
+  PATIENCE,
+};

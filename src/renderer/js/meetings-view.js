@@ -479,47 +479,56 @@
     const plan = state.agenda;
     if (!state.settings?.meetings?.calendar) return "";
 
-    /* ══ BRAK ZGODY MA CZTERY POWODY I CZTERY RÓŻNE ODPOWIEDZI ══
+    /* ══ BRAK ZGODY: KAŻDY POWÓD MA SWOJE WYJŚCIE ══
 
        Wcześniej stało tu jedno zdanie na wszystkie: „przyznaj ją
-       w Ustawieniach systemowych, w sekcji Kalendarz". Dla kogoś, kogo
-       system NIGDY nie zapytał, była to rada nie do wykonania — wpisu
-       w tamtej sekcji jeszcze nie ma, bo powstaje dopiero po pierwszym
-       pytaniu. Człowiek szukał tam przełącznika, którego nie było, i miał
-       prawo uznać, że aplikacja kłamie.
+       w Ustawieniach systemowych, w sekcji Kalendarz". Było ono podwójnie
+       nietrafione. Po pierwsze — dla kogoś, kogo system nigdy nie zapytał,
+       była to rada nie do wykonania, bo wpis w tamtej sekcji powstaje
+       dopiero po pierwszym pytaniu. Po drugie — kalendarz czytamy dziś
+       przez Kalendarz.app, więc zgoda nazywa się AUTOMATYZACJA i leży
+       w zupełnie innej sekcji Ustawień (patrz main/calendar-osa.js).
 
-       Teraz każdy stan mówi, CO SIĘ STAŁO, i daje przycisk robiący
+       Każdy stan mówi teraz, co się stało, i daje przycisk robiący
        dokładnie tę jedną rzecz, która pomaga. */
     const blocked = {
-      notDetermined: {
-        say: "macOS nie pytał jeszcze o kalendarz. Kliknij — zapyta teraz, raz.",
-        act: "Poproś o dostęp",
-        how: "ask",
-      },
       denied: {
-        say: "Dostęp do kalendarza jest wyłączony. Włącza się go w Ustawieniach systemowych, w sekcji Kalendarz — przy pozycji „Cribro Sift”.",
+        say: "Cribro nie ma zgody na czytanie Kalendarza. Włącza się ją w Ustawieniach systemowych → Prywatność i ochrona → Automatyzacja: przy „Cribro Sift” zaznacz „Kalendarz”.",
         act: "Otwórz Ustawienia systemowe",
         how: "open",
       },
-      writeOnly: {
-        say: "Cribro ma zgodę tylko na dopisywanie do kalendarza, a chce wyłącznie CZYTAĆ nadchodzące spotkania. W Ustawieniach systemowych zmień to na pełny dostęp.",
-        act: "Otwórz Ustawienia systemowe",
-        how: "open",
+      timeout: {
+        say: "Kalendarz nie odpowiedział na czas. Jeśli na ekranie stoi okno z pytaniem o zgodę — odpowiedz na nie i spróbuj jeszcze raz.",
+        act: "Spróbuj jeszcze raz",
+        how: "retry",
+      },
+      error: {
+        say: "Nie udało się zapytać Kalendarza. Spróbuj jeszcze raz za chwilę.",
+        act: "Spróbuj jeszcze raz",
+        how: "retry",
       },
       restricted: {
         say: "Dostęp do kalendarza jest zablokowany zasadami tego komputera — tego nie zmieni ani Cribro, ani Ustawienia systemowe.",
         act: null,
         how: null,
       },
+      notDetermined: {
+        say: "macOS nie pytał jeszcze o kalendarz. Kliknij — zapyta teraz, raz.",
+        act: "Poproś o dostęp",
+        how: "ask",
+      },
+      /* Kalendarz.app nie chodzi, a Cribro go nie budzi samo: cudza
+         aplikacja nie ma stawać w Docku dlatego, że ktoś zerknął na
+         zakładkę. Kliknięcie jest tu zgodą na to jedno obudzenie. */
+      asleep: {
+        say: "Kalendarz nie jest uruchomiony. Cribro nie budzi go samo — kliknij, a zajrzy do niego raz.",
+        act: "Zajrzyj do kalendarza",
+        how: "ask",
+      },
       missing: {
         say: "Brakuje programu pomocniczego, który czyta kalendarz. Zbuduj aplikację jeszcze raz (npm run app).",
         act: null,
         how: null,
-      },
-      error: {
-        say: "Kalendarz nie odpowiedział. Spróbuj jeszcze raz za chwilę.",
-        act: "Spróbuj jeszcze raz",
-        how: "retry",
       },
     }[plan?.access];
 
@@ -536,6 +545,7 @@
           }
         </div>`;
     }
+
     if (!plan?.events?.length) {
       return `<div class="meet__plan">
           <p class="meet__legend">${t("Nadchodzące")}</p>

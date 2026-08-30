@@ -1266,29 +1266,55 @@ postawiono, do końca tej rozmowy.
 
 #### Kalendarz i zgoda na niego
 
-Kalendarz czyta **program pomocniczy** `cribro-tap` przez EventKit, a nie
-aplikacja — więc dla macOS jest to OSOBNY klient uprawnień, podpisany własną
-tożsamością. Program bez `NSCalendarsFullAccessUsageDescription` dostaje
-odmowę **natychmiast i bez pytania**: nie pada żadne okno, nie ma czego
-kliknąć, a odpowiedź brzmi „denied" — dokładnie tak, jakby ktoś zgody
-odmówił. Opis jedzie więc wklejony w binarkę, do sekcji
-`__TEXT,__info_plist` (patrz `build/tap-info.plist` i `scripts/build-tap.sh`).
+Kalendarz ma **dwie drogi** i wyraźne pierwszeństwo.
 
-Program mówi teraz, JAKI dokładnie jest stan zgody, bo „nie pytano" i
-„odmówiono" mają dwa różne wyjścia:
+**Pierwsza: EventKit w programie pomocniczym** (`cribro-tap --agenda`).
+Szybka, nie budzi cudzej aplikacji, czyta wszystkie kalendarze dodane
+w systemie. Wymaga opisu zgody — a `cribro-tap` jest podpisany własną
+tożsamością, więc dla TCC jest OSOBNYM klientem i Info.plist aplikacji obok
+go nie dotyczy. Opis jedzie więc wklejony w binarkę, do sekcji
+`__TEXT,__info_plist` (`build/tap-info.plist`, `scripts/build-tap.sh`).
+Bez niego EventKit odmawia **natychmiast i bez pytania** — i to był pierwszy
+powód, dla którego kalendarz milczał.
+
+**Druga: pytanie zadane Kalendarzowi.app** przez Apple Events
+(`src/main/calendar-osa.js`) — tym samym mechanizmem, którym aplikacja
+wysyła notatkę do Notatek Apple i wkleja tekst pod kursor. Zgoda nazywa się
+wtedy **Automatyzacja**, leży w *Prywatność i ochrona → Automatyzacja* i jest
+przypisana do Cribro. Aplikacja ma już wszystko, czego ta droga potrzebuje:
+`NSAppleEventsUsageDescription` i uprawnienie
+`com.apple.security.automation.apple-events`.
+
+Druga jest DRUGA, a nie pierwsza, celowo: gdy EventKit ruszy — na innym
+systemie albo po poprawce Apple — wygra sam, bez zmiany w kodzie.
+
+**Kalendarza.app nie budzimy sami.** Zaglądanie do kalendarza co minutę nie
+ma prawa stawiać cudzej aplikacji w Docku i uruchamiać jej synchronizacji.
+W tle pytamy tylko wtedy, gdy Kalendarz i tak chodzi; obudzić go wolno
+wyłącznie po kliknięciu w przycisk.
 
 | Stan | Co widać w zakładce | Co robi przycisk |
 | --- | --- | --- |
-| `notDetermined` | „macOS nie pytał jeszcze o kalendarz" | prosi — system stawia swoje okno |
-| `denied` | „dostęp jest wyłączony" | otwiera *Prywatność → Kalendarze* |
-| `writeOnly` | „zgoda tylko na dopisywanie" | otwiera ten sam panel |
+| `asleep` | „Kalendarz nie jest uruchomiony" | zagląda raz, budząc go |
+| `notDetermined` | „macOS nie pytał jeszcze o kalendarz" | prosi — system stawia okno |
+| `denied` | „Cribro nie ma zgody na czytanie Kalendarza" | otwiera *Automatyzację* |
+| `timeout` | „Kalendarz nie odpowiedział na czas" | ponawia |
 | `restricted` | zablokowane zasadami urządzenia | nic — i mówi o tym wprost |
 
-Wpis Cribro pojawia się w *Ustawieniach systemowych* **dopiero po pierwszym
-pytaniu**. Odsyłanie tam kogoś, kogo system nigdy nie zapytał, było radą nie
-do wykonania — i tak właśnie wyglądało to wcześniej.
+Pytanie o zgodę czeka **trzy minuty**, nie osiem sekund: przy pierwszym
+pytaniu na ekranie staje okno systemowe, a człowiek musi zdążyć po nie
+sięgnąć. Zabicie programu pomocniczego w połowie czytania tego okna
+wyglądało dotąd jak awaria kalendarza. Okno aplikacji wychodzi przy tym na
+wierzch, bo pytanie systemu potrafi stanąć za nim.
 
-#### Nazwa rozmowy
+> **Uwaga przy diagnozowaniu.** Przy **zablokowanym ekranie** nie działa ani
+> jedna z tych dróg i obie milczą tak samo, jak przy braku zgody: TCC nie ma
+> jak pokazać okna, a Kalendarz.app nie odpowiada na Apple Events i kończy
+> się to błędem −1712 po dwóch minutach. Zanim uznasz, że coś jest zepsute,
+> sprawdź, czy Mac nie zdążył się zablokować — pomiary zrobione „na
+> zablokowanym" nie znaczą nic.
+
+#### Nazwa rozmowy#### Nazwa rozmowy
 
 Karta Google Meet nazywa się tak, jak nazwano pokój — „Meet – Przegląd
 tygodnia" — i **ta nazwa wygrywa**: to pod nią ludzie do rozmowy przyszli,
@@ -1671,6 +1697,8 @@ src/main/
   merge.js       splot dwóch torów w jeden zapis, przesłuch, kto mówił
   segments.js    krajalnica: tor na odcinki, cisza nie jedzie do modelu
   agenda.js      kalendarz systemowy: co trwa, co się zaczyna, kto zaproszony
+  calendar-osa.js  druga droga do kalendarza — pytanie do Kalendarza.app,
+                 gdy EventKit nie dostaje zgody (macOS 26)
   store.js       ustawienia i historia w JSON, migracja, statystyki
   supabase.js    konta i baza: GoTrue + PostgREST na samym fetch, sesja
   oauth.js       logowanie przez Google: przeglądarka, PKCE, pętla zwrotna

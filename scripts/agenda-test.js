@@ -112,4 +112,109 @@ check(
   justStarted(plan, teraz).some((e) => e.id === "teraz"),
 );
 
-console.log(`\n${passed} sprawdzeń przeszło.`);
+/* ── Druga droga do kalendarza ─────────────────────────────────
+   EventKit w programie pomocniczym na macOS 26 nie dostaje zgody i nie da
+   się go o nią poprosić — mierzone, patrz nagłówek main/calendar-osa.js.
+   Kalendarz czyta więc Kalendarz.app przez Apple Events. Sprawdzamy to,
+   co rozstrzygamy sami: kształt odpowiedzi i czytanie awarii. */
+
+const osa = require("../src/main/calendar-osa");
+
+const surowe = JSON.stringify([
+  {
+    id: "u1",
+    title: "  Przegląd tygodnia  ",
+    from: 1_800_000_000_000,
+    to: 1_800_003_600_000,
+    guests: 2,
+    people: ["Ania Kowalska", " ", "Maciej"],
+    emails: ["Ania@Firma.PL", ""],
+    location: "https://meet.google.com/jrx-kfoz-hys",
+    notes: "",
+    url: "",
+  },
+  { id: "", title: "bez identyfikatora", from: 1, to: 2 },
+  /* JSON nie zna NaN — pole bez godziny przychodzi z Kalendarza.app jako
+     napis albo jako nic, i tak też je tu podstawiamy. */
+  { id: "u2", title: "bez godzin", from: "nie-data", to: 2 },
+]);
+
+const wzięte = osa.readEvents(surowe);
+check("Kalendarz.app oddaje wpisy jako zgodę", wzięte.access === "granted");
+check("Wpis bez identyfikatora i bez godzin odpada", wzięte.events.length === 1);
+check("Nazwa jest przycięta z białych znaków", wzięte.events[0].title === "Przegląd tygodnia");
+check("Puste imiona odpadają", wzięte.events[0].people.join(",") === "Ania Kowalska,Maciej");
+check("Adresy są porównywalne bez względu na wielkość liter",
+  wzięte.events[0].emails.join(",") === "ania@firma.pl");
+check("Adres pokoju wychodzi z pola miejsca",
+  wzięte.events[0].link === "https://meet.google.com/jrx-kfoz-hys");
+
+/* Adres rozmowy bywa w opisie, a nie w miejscu — Google wpisuje go gdzie
+   popadnie. Wpis Z ADRESEM jest rozmową, choćby nie miał zaproszonych. */
+check("Adres z opisu też się liczy",
+  osa.meetingLink("", "", "Dołącz: https://zoom.us/j/12345 hasło 111") ===
+    "https://zoom.us/j/12345");
+check("Zwykły odsyłacz rozmową nie jest",
+  osa.meetingLink("https://example.com/spotkanie", "", "") === null);
+
+check("Odmowa automatyzacji ma własne wyjście",
+  osa.readFailure("execution error: Not authorized to send Apple events to Calendar. (-1743)") ===
+    "denied");
+check("Przekroczony czas to nie odmowa",
+  osa.readFailure("AppleEvent timed out. (-1712)") === "timeout");
+check("Nieznana awaria zostaje awarią", osa.readFailure("coś poszło nie tak") === "error");
+check("Śmieci zamiast JSON-a nie wywracają odczytu",
+  osa.readEvents("nie-json").access === "error");
+check("Śpiący Kalendarz.app to nie awaria i nie odmowa",
+  osa.readEvents("ASLEEP").access === "asleep");
+check("Pusty kalendarz to zgoda i zero wpisów",
+  osa.readEvents("[]").access === "granted" && osa.readEvents("[]").events.length === 0);
+
+/* Kolejność dróg. Zapasowa rusza WYŁĄCZNIE wtedy, gdy pierwsza nie oddała
+   zgody — inaczej budzilibyśmy Kalendarz.app przy każdym spojrzeniu. */
+const { read } = require("../src/main/agenda");
+
+(async () => {
+  let wołane = 0;
+  const udana = await read({
+    helper: null, // pierwsza droga nie ma czym zadziałać
+    run: (_args, done) => {
+      wołane += 1;
+      done(null, "[]", "");
+    },
+  });
+  check("Gdy EventKit milczy, pytamy Kalendarz.app", wołane === 1);
+  check("…i to jego odpowiedź wraca", udana.access === "granted");
+
+  /* W tle Kalendarza.app nie budzimy — cudza aplikacja nie ma wstawać
+     dlatego, że ktoś zerknął na zakładkę. */
+  let flaga = null;
+  await read({
+    helper: null,
+    run: (args, done) => {
+      flaga = args[args.length - 1];
+      done(null, "ASLEEP", "");
+    },
+  });
+  check("Zaglądanie w tle nie budzi Kalendarza", flaga === "0");
+
+  await read({
+    helper: null,
+    launch: true,
+    run: (args, done) => {
+      flaga = args[args.length - 1];
+      done(null, "[]", "");
+    },
+  });
+  check("…ale kliknięcie człowieka już tak", flaga === "1");
+
+  const odmowa = await read({
+    helper: null,
+    run: (_args, done) =>
+      done(new Error("execution error: Not authorized (-1743)"), "", "(-1743)"),
+  });
+  check("Odmowa drugiej drogi wraca jako odmowa", odmowa.access === "denied");
+  check("…i niesie ślad po pierwszej", odmowa.first === "missing");
+
+  console.log(`\n${passed} sprawdzeń przeszło.`);
+})();

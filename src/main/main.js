@@ -2387,13 +2387,17 @@ let agendaSeenAt = null;
     kwadransach, a nie w losowych sekundach. */
 const AGENDA_EVERY = 60_000;
 
-async function lookAtAgenda({ force = false } = {}) {
+async function lookAtAgenda({ force = false, patience } = {}) {
   const settings = store.getSettings();
   /* `force` znaczy: pytam, bo człowiek właśnie kliknął. Wtedy ustawienie
      „Pokaż kalendarz" nie ma nic do rzeczy — kliknięcie JEST włączeniem. */
   if (!force && !settings.meetings?.calendar) return;
 
-  const fresh = await agendaSource.read();
+  /* `force` znaczy „człowiek kliknął" — i tylko wtedy wolno obudzić
+     Kalendarz.app oraz czekać minutami na okno zgody. */
+  const fresh = await agendaSource.read(
+    force ? { patience: patience ?? undefined, launch: true } : {},
+  );
   agenda = fresh;
   const now = Date.now();
   const started = agendaSource.justStarted(fresh.events, now, { since: agendaSeenAt });
@@ -2758,12 +2762,14 @@ async function gatherBriefing() {
        jednym kliknięciem w zakładce Spotkania, „odmówiono" wymaga wizyty
        w Ustawieniach systemowych. Wcześniej stan „nie pytano" nie mówił tu
        nic i poranek milczał o brakującym planie dnia. */
-    else if (read.access === "notDetermined") {
+    else if (read.access === "denied") {
+      problems.push("Brak zgody na czytanie Kalendarza — przyznaj ją w zakładce Spotkania.");
+    } else if (read.access === "notDetermined") {
       problems.push("Kalendarz nie był jeszcze pytany o zgodę — poproś o nią w zakładce Spotkania.");
-    } else if (read.access === "denied" || read.access === "writeOnly") {
-      problems.push("Brak zgody na kalendarz.");
     } else if (read.access === "restricted") {
       problems.push("Kalendarz jest zablokowany zasadami tego komputera.");
+    } else if (read.access === "timeout") {
+      problems.push("Kalendarz nie odpowiedział na czas.");
     }
   } catch (error) {
     problems.push(`Kalendarz: ${error.message}`);
@@ -4361,18 +4367,29 @@ function registerIpc() {
      (patrz agendaCard w renderer/js/meetings-view.js). */
   ipcMain.handle("meetings:calendar", async (_e, how) => {
     if (how === "open") {
-      /* Sekcja „Kalendarze" w Prywatności. Wpis Cribro pojawia się tam
-         DOPIERO po pierwszym pytaniu — dlatego przycisk „otwórz” dostaje
-         tylko ten, komu system już raz odmówił. */
+      /* AUTOMATYZACJA, nie „Kalendarze”. Kalendarz czytamy przez
+         Kalendarz.app (patrz main/calendar-osa.js), więc zgoda leży pod
+         „Cribro Sift → Kalendarz" w sekcji Automatyzacja. Odsyłanie do
+         sekcji Kalendarze było odsyłaniem po przełącznik, którego tam nie
+         ma — i to był jeden z powodów, dla których ta funkcja nie dawała
+         się włączyć. */
       await shell.openExternal(
-        "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars",
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
       );
       return meetingState().agenda;
     }
 
-    // "ask" i "retry" to ta sama czynność: spytać kalendarz jeszcze raz.
-    // Przy stanie „nie pytano" system pokaże przy okazji swoje okno.
-    await lookAtAgenda({ force: true });
+    /* „ask" i „retry" to ta sama czynność: spytać kalendarz jeszcze raz.
+       Przy pierwszym pytaniu system stawia przy okazji swoje okno zgody —
+       i dlatego czekamy TRZY MINUTY, a nie osiem sekund. Człowiek musi
+       zdążyć przeczytać okno i sięgnąć po mysz; zabicie programu w połowie
+       tego wyglądało dotąd jak awaria kalendarza.
+
+       Okno aplikacji idzie przy tym na wierzch: pytanie systemu potrafi
+       stanąć za nim, a wtedy nie widać ani go, ani powodu, dla którego nic
+       się nie dzieje. */
+    createMainWindow().show();
+    await lookAtAgenda({ force: true, patience: 180_000 });
     return meetingState().agenda;
   });
 

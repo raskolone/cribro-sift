@@ -191,10 +191,24 @@ check("Gotowa lista do odhaczenia nie jest przepisywana od nowa",
 check("„nie pytano” dostaje przycisk, który pyta",
   /notDetermined: \{[\s\S]{0,200}how: "ask"/.test(widok));
 check("„odmówiono” dostaje drogę do Ustawień systemowych",
-  /denied: \{[\s\S]{0,300}how: "open"/.test(widok));
+  /denied: \{[\s\S]{0,400}how: "open"/.test(widok));
+check("Przekroczony czas dostaje ponowienie, a nie wycieczkę do Ustawień",
+  /timeout: \{[\s\S]{0,300}how: "retry"/.test(widok));
 check("Program pomocniczy niesie opis zgody na kalendarz",
   /NSCalendarsFullAccessUsageDescription/.test(read("build", "tap-info.plist")));
 check("…i jest on wklejany w binarkę przy budowaniu",
   /-sectcreate -Xlinker __TEXT -Xlinker __info_plist/.test(read("scripts", "build-tap.sh")));
+
+/* Kalendarz czytamy dziś przez Kalendarz.app, więc zgoda nazywa się
+   AUTOMATYZACJA i leży w innej sekcji Ustawień niż „Kalendarze".
+   Odsyłanie do tamtej było odsyłaniem po przełącznik, którego tam nie ma. */
+check("Przycisk prowadzi do sekcji Automatyzacja, nie Kalendarze",
+  /Privacy_Automation/.test(main) && !/Privacy_Calendars/.test(main));
+check("Pytanie o zgodę czeka minutami, nie sekundami",
+  /patience: 180_000/.test(main));
+check("…a okno aplikacji wychodzi przy tym na wierzch",
+  /createMainWindow\(\)\.show\(\);\n\s*await lookAtAgenda/.test(main));
+check("Aplikacja tłumaczy się z dostępu do Kalendarza w opisie zdarzeń systemowych",
+  /czyta z Kalendarza nadchodzące spotkania/.test(read("package.json")));
 
 console.log(`\nSpotkania: ${passed} sprawdzeń przeszło. Ustawienia pod kołem, zapis na wierzchu, notatka sama.`);
