@@ -104,6 +104,20 @@ check("Odpowiedź bez tytułu zostaje samą treścią", readAnswer("Po prostu tr
 check("…i nie gubi pierwszej linii", readAnswer("Po prostu treść.").summary === "Po prostu treść.");
 check("Pusta odpowiedź nie wymyśla tytułu", readAnswer("").title === null);
 
+/* ── Pamięć serii ──────────────────────────────────────────
+   Cotygodniowy przegląd jest ciągiem dalszym, a nie osobną rozmową.
+   Ale poprzednie ustalenia są TŁEM: wciągnięte do dzisiejszych byłyby
+   ustaleniami, których dziś nikt nie podjął. */
+
+const zTlem = buildPrompt(rozmowa, { previous: "Ustalono, że raport idzie w środy." });
+check("Poprzednie podsumowanie trafia do materiału", zTlem.user.includes("raport idzie w środy"));
+check("…nazwane wprost tłem, a nie treścią", zTlem.user.includes("To jest TŁO"));
+check("…i z zakazem wciągania do ustaleń", zTlem.user.includes("Nie przepisuj go"));
+check(
+  "Bez poprzedniego spotkania nie ma pustego nagłówka",
+  !buildPrompt(rozmowa, {}).user.includes("POPRZEDNIE SPOTKANIE"),
+);
+
 /* ── Zadania i droga wyjścia ────────────────────────────────
    Podsumowanie ma wyjść z aplikacji jako notatka — bo notatka umie już
    PDF, Notion, Apple Notes i chmurę. Zadania stają się przy tym listą do

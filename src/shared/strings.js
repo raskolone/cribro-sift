@@ -51,6 +51,9 @@ const EN = {
   wczoraj: "yesterday",
   "nagrywa się": "recording",
   przerwane: "interrupted",
+  "Szukaj w rozmowach": "Search the conversations",
+  "Nic takiego nie padło w żadnej z nagranych rozmów.":
+    "Nothing like that came up in any recorded conversation.",
   "Nagrane spotkania pojawią się tutaj.": "Recorded meetings will show up here.",
   "Wybierz spotkanie z listy albo nagraj nowe.": "Pick a meeting from the list, or record a new one.",
   Podsumowanie: "Summary",
@@ -108,6 +111,11 @@ const EN = {
     "The recording was deleted and no text came out of it — there is nothing left to show.",
   "Piszę podsumowanie…": "Writing the summary…",
   "Podsumowanie się nie udało": "The summary did not work out",
+  "Skopiuj zdanie do wklejenia": "Copy a line to paste",
+  "Nagrywam to spotkanie, żeby zrobić z niego notatki — nagranie i zapis zostają na moim komputerze. Powiedzcie, proszę, jeśli wolicie, żebym tego nie robił.":
+    "I am recording this meeting to take notes — the recording and the transcript stay on my computer. Please say so if you would rather I did not.",
+  "Posłuchaj tego fragmentu": "Listen to this bit",
+  "Znacznik chwili": "Mark the moment",
   "Zapisz jako notatkę": "Save as a note",
   Kopiuj: "Copy",
   Skopiowane: "Copied",

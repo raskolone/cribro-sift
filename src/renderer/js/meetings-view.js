@@ -43,6 +43,8 @@
     settings: null,
     // Notatka napisana, a jeszcze niezapisana — patrz flushNotes.
     notes: null,
+    // Czego szukamy w spisie — patrz matches niżej.
+    query: "",
     // Co widać w kalendarzu — przychodzi tą samą wiadomością co stan
     // nagrywania (patrz meetingState w main/main.js).
     agenda: null,
@@ -126,6 +128,52 @@
         return;
       }
 
+      /* Zdanie do wklejenia na czat. Uprzedzenie o nagrywaniu jest w wielu
+         miejscach wymagane, a wszędzie jest zwyczajną uczciwością — i nie
+         powinno wymagać układania go od nowa za każdym razem. */
+      const say = event.target.closest("[data-meet-say]");
+      if (say) {
+        await api.system.copy(
+          t(
+            "Nagrywam to spotkanie, żeby zrobić z niego notatki — nagranie i zapis zostają na moim komputerze. Powiedzcie, proszę, jeśli wolicie, żebym tego nie robił.",
+          ),
+        );
+        say.textContent = t("Skopiowane");
+        setTimeout(() => paint(), 1600);
+        return;
+      }
+
+      /* Odsłuch fragmentu. Element audio żyje POZA przerysowywanym HTML-em,
+         bo inaczej każde odświeżenie zapisu przerywałoby granie w połowie
+         zdania — czyli dokładnie wtedy, gdy się słucha. */
+      const play = event.target.closest("[data-meet-play]");
+      if (play) {
+        const sound = ear();
+        const url = `file://${encodeURI(play.dataset.meetPlay)}`;
+        if (sound.dataset.src !== url) {
+          sound.src = url;
+          sound.dataset.src = url;
+        }
+        sound.currentTime = Number(play.dataset.meetFrom) || 0;
+        sound.play().catch(() => {
+          /* nagrania już nie ma albo system nie umie go otworzyć */
+        });
+        return;
+      }
+
+      const mark = event.target.closest("[data-meet-mark]");
+      if (mark) {
+        const sheet = root.querySelector("[data-meet-notes]");
+        if (sheet) {
+          sheet.focus();
+          document.execCommand("insertText", false, `[${duration(state.seconds)}] `);
+          state.notes = { id: sheet.dataset.meetNotes, text: sheet.innerText };
+          sheet.dataset.empty = "false";
+          void flushNotes();
+        }
+        return;
+      }
+
       const sift = event.target.closest("[data-meet-sift]");
       if (sift) {
         await api.meetings.polish(sift.dataset.meetSift);
@@ -182,6 +230,20 @@
        jak kartka w widgecie. Nie ma tu przycisku „Zapisz" i nie ma go
        nigdzie w tej aplikacji. */
     root.addEventListener("input", (event) => {
+      const find = event.target.closest?.("[data-meet-find]");
+      if (find) {
+        state.query = find.value;
+        // Sam spis, nie całe spotkanie: przerysowanie prawej strony
+        // zabrałoby kursor z pola, w którym się właśnie pisze.
+        paintList();
+        const fresh = root.querySelector("[data-meet-find]");
+        if (fresh) {
+          fresh.focus();
+          fresh.setSelectionRange(fresh.value.length, fresh.value.length);
+        }
+        return;
+      }
+
       const sheet = event.target.closest?.("[data-meet-notes]");
       if (!sheet) return;
       state.notes = { id: sheet.dataset.meetNotes, text: sheet.innerText };
@@ -215,11 +277,36 @@
     });
   }
 
+  /**
+   * Czy to spotkanie odpowiada temu, czego szukamy.
+   *
+   * Szukamy w tytule, w podsumowaniu I W ZAPISIE ROZMOWY — bo pytanie, po
+   * które sięga się do archiwum, brzmi „kiedy ustaliliśmy termin raportu",
+   * a nie „jak nazwałem tamto spotkanie". Słowa muszą wystąpić wszystkie,
+   * ale w dowolnym miejscu i w dowolnej kolejności.
+   */
+  function matches(meeting, query) {
+    const words = String(query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return true;
+    const hay = [
+      meeting.title ?? "",
+      meeting.where ?? "",
+      meeting.summary ?? "",
+      meeting.notes ?? "",
+      ...(meeting.people ?? []),
+      ...(meeting.transcript ?? []).map((line) => line.text ?? ""),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return words.every((word) => hay.includes(word));
+  }
+
   /* ── Spis ──────────────────────────────────────────────────── */
 
   function paintList() {
     const live = state.recording;
-    const rows = state.meetings
+    const found = state.meetings.filter((meeting) => matches(meeting, state.query));
+    const rows = found
       .map((meeting) => {
         const chosen = meeting.id === state.selected;
         const failed = meeting.state === "failed";
@@ -246,8 +333,23 @@
         </button>
       </div>
       ${agendaCard()}
+      ${
+        state.meetings.length > 3 || state.query
+          ? `<label class="meet__find">
+               <input type="search" data-meet-find value="${escape(state.query)}"
+                      placeholder="${t("Szukaj w rozmowach")}" />
+             </label>`
+          : ""
+      }
       <div class="meet__rows">
-        ${rows || `<p class="meet__empty">${t("Nagrane spotkania pojawią się tutaj.")}</p>`}
+        ${
+          rows ||
+          `<p class="meet__empty">${
+            state.query
+              ? t("Nic takiego nie padło w żadnej z nagranych rozmów.")
+              : t("Nagrane spotkania pojawią się tutaj.")
+          }</p>`
+        }
       </div>
       ${settingsCard()}
     `;
@@ -391,6 +493,9 @@
         <p class="meet__note">
           ${t("Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek świeci przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.")}
         </p>
+        <div class="meet__act meet__act--tight">
+          <button class="btn btn--ghost btn--sm" data-meet-say>${t("Skopiuj zdanie do wklejenia")}</button>
+        </div>
       </div>`;
   }
 
@@ -585,15 +690,28 @@
 
   /** Zapis rozmowy: kto, kiedy, co. */
   function transcript(meeting, live) {
+    /* ZNACZNIK CZASU JEST PRZYCISKIEM, o ile nagranie jeszcze leży na
+       dysku. Zapis bywa niedokładny i wtedy jedyną odpowiedzią na pytanie
+       „co on właściwie powiedział" jest posłuchanie tego. Gramy TEN tor,
+       do którego należy wypowiedź: dwóch naraz i tak nie dałoby się
+       zsynchronizować, a każda wypowiedź ma swoją stronę rozmowy. */
+    const tracks = meeting.tracks ?? null;
     const lines = meeting.transcript
-      .map(
-        (line) => `
+      .map((line) => {
+        const track = tracks?.[line.lane ?? ""] ?? null;
+        const at = duration(line.at ?? 0);
+        const stamp = track
+          ? `<button class="meet__at meet__at--play" data-meet-play="${escape(track)}"
+                     data-meet-from="${Math.round(line.at ?? 0)}"
+                     title="${t("Posłuchaj tego fragmentu")}">${at}</button>`
+          : `<span class="meet__at">${at}</span>`;
+        return `
         <p class="meet__line" data-speaker="${escape(line.speaker ?? "")}">
           <span class="meet__who">${escape(line.speaker ?? t("Nieznany"))}</span>
-          <span class="meet__at">${duration(line.at ?? 0)}</span>
+          ${stamp}
           <span class="meet__said">${escape(line.text ?? "")}</span>
-        </p>`,
-      )
+        </p>`;
+      })
       .join("");
     /* Ogon mówi, że to jeszcze nie koniec. Bez niego zapis urwany
        w połowie zdania wygląda jak zapis, który się zepsuł. */
@@ -613,7 +731,17 @@
    * a tego nie da się już z niczego.
    */
   function notepad(meeting) {
-    return `
+    /* Znacznik chwili. Notatka „sprawdzić budżet" znaczy dwa razy więcej,
+       gdy wiadomo, w której minucie padła — podsumowanie zestawia ją wtedy
+       z tym, co wtedy mówiono. Wstawia się go ręką i tylko w trakcie
+       rozmowy, bo tylko wtedy jest co znaczyć. */
+    const mark =
+      meeting.state === "recording"
+        ? `<div class="meet__act meet__act--tight">
+             <button class="btn btn--ghost btn--sm" data-meet-mark>${t("Znacznik chwili")}</button>
+           </div>`
+        : "";
+    return mark + `
       <div
         class="meet__pad"
         contenteditable="plaintext-only"
@@ -639,6 +767,22 @@
    *
    * @returns {Element|null} pole z kursorem
    */
+  /**
+   * Głośnik do odsłuchu fragmentów — jeden na cały widok.
+   *
+   * Stoi poza tym, co się przerysowuje: zapis odświeża się co odcinek,
+   * a element audio zbudowany od nowa przerywa granie w pół słowa.
+   */
+  let sound = null;
+  function ear() {
+    if (sound?.isConnected) return sound;
+    sound = document.createElement("audio");
+    sound.id = "meetSound";
+    sound.preload = "none";
+    document.body.appendChild(sound);
+    return sound;
+  }
+
   function busyField() {
     const spot = document.activeElement;
     if (!spot || !root?.contains(spot)) return null;
@@ -721,6 +865,8 @@
 
     hide() {
       tick(false);
+      // Zakładka schodzi z ekranu — dźwięk razem z nią.
+      if (sound) sound.pause();
       // Zakładka znika razem z notatnikiem — to, co w nim napisano,
       // ma zostać na dysku, a nie w pamięci widoku.
       void flushNotes();

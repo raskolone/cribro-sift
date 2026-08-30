@@ -1963,7 +1963,22 @@ async function summarizeMeeting(id) {
   broadcast("meeting:changed", meetingState());
 
   try {
-    const { title, summary } = await digest(meeting, settings);
+    /* Poprzednie spotkanie z tej samej serii. Cotygodniowy przegląd jest
+       ciągiem dalszym, a nie osobną rozmową — „wracamy do budżetu" znaczy
+       coś tylko wtedy, gdy wiadomo, na czym stanęło. Serię poznajemy po
+       nazwie, bo tak ją widzi kalendarz. */
+    const previousSummary = meeting.title
+      ? (store
+          .getMeetings()
+          .find(
+            (item) =>
+              item.id !== id &&
+              item.summary &&
+              item.title &&
+              item.title.trim().toLowerCase() === meeting.title.trim().toLowerCase(),
+          )?.summary ?? null)
+      : null;
+    const { title, summary } = await digest({ ...meeting, previousSummary }, settings);
     const patch = { summary, summarizing: false, summaryError: null };
     /* Kod pokoju z okna przeglądarki („jxg-hfsa-qvb") nazwą nie jest —
        i to jest cały powód, dla którego ten krok w ogóle istnieje. */

@@ -131,8 +131,19 @@ function transcriptText(lines, { cap = MAX_CHARS } = {}) {
  * @param {object} meeting  wpis spotkania ze sklepu
  * @returns {string}
  */
-function material(meeting) {
+function material(meeting, { previous } = {}) {
   const parts = [];
+  /* CO BYŁO POPRZEDNIM RAZEM. Spotkanie cotygodniowe jest ciągiem dalszym,
+     a nie osobną rozmową: „wracamy do budżetu" znaczy coś tylko wtedy, gdy
+     wiadomo, na czym stanęło. Podajemy sam wniosek z poprzedniego, nigdy
+     jego zapis — i wyraźnie oddzielony, żeby nie wsiąkł w to podsumowanie
+     jako ustalenie z dzisiaj. */
+  const before = String(previous ?? "").trim();
+  if (before) {
+    parts.push(
+      `POPRZEDNIE SPOTKANIE Z TEJ SERII — jego podsumowanie. To jest TŁO, nie treść dzisiejszej rozmowy. Nie przepisuj go i nie wciągaj do ustaleń; użyj tylko po to, żeby zrozumieć skróty i nawiązania.\n${before}`,
+    );
+  }
   /* Kto był w pokoju — z kalendarza. Bez tej listy model nie ma jak
      przypisać ustalenia do osoby i pisze bezosobowo („ustalono, że…"),
      a to jest dokładnie ta informacja, po którą sięga się do notatek. */
@@ -158,7 +169,7 @@ function material(meeting) {
  * @param {string} [options.instructions]  własne wytyczne
  * @returns {{system: string, user: string}}
  */
-function buildPrompt(meeting, { template = "generic", instructions = "" } = {}) {
+function buildPrompt(meeting, { template = "generic", instructions = "", previous = "" } = {}) {
   const own = String(instructions ?? "").trim();
   /* Własne wytyczne bez treści nie mogą znaczyć „bez wytycznych": wynikiem
      byłby wtedy zlepek zdań bez żadnego układu. Wracamy do gotowego. */
@@ -170,7 +181,7 @@ function buildPrompt(meeting, { template = "generic", instructions = "" } = {}) 
 
   return {
     system: `${CONTRACT}\n\n${rules}`,
-    user: material(meeting),
+    user: material(meeting, { previous }),
     template: chosen,
   };
 }
@@ -219,6 +230,7 @@ async function digest(meeting, settings, { ask } = {}) {
   const { system, user, template } = buildPrompt(meeting, {
     template: meet.template,
     instructions: meet.instructions,
+    previous: meeting?.previousSummary,
   });
 
   /* Podsumowanie robi ten sam dostawca, co sito — bo to to samo zadanie:

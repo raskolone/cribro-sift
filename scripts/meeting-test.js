@@ -213,6 +213,10 @@ app.whenReady().then(async () => {
     const po = store.getMeetings().find((item) => item.id === zapis.meeting.id);
     say("zapis wylądował we wpisie", po?.transcript?.length ?? 0);
     say("po przepisaniu nic już nie chodzi", !!po && po.transcribing !== true);
+    /* Dopiero po udanym przepisaniu wolno ścisnąć nagranie: wcześniej było
+       jedynym egzemplarzem rozmowy. AAC 32 kb/s to jedna dziewiąta WAV-a. */
+    say("nagranie zostało ściśnięte", /\.m4a$/.test(po?.tracks?.mic ?? ""));
+    say("skompresowany plik istnieje", fs.existsSync(po?.tracks?.mic ?? ""));
   }
 
   /* ── Podnoszenie się po ubiciu aplikacji ──
@@ -361,6 +365,11 @@ if (out.skip) {
     );
     check("…który ląduje we wpisie", step("zapis wylądował we wpisie") >= 1);
     check("…i nie zostawia stanu „przepisuję”", step("po przepisaniu nic już nie chodzi") === true);
+    check(
+      "Po udanym przepisaniu nagranie zostaje ŚCIŚNIĘTE, nie skasowane",
+      step("nagranie zostało ściśnięte") === true,
+    );
+    check("…i skompresowany plik naprawdę leży na dysku", step("skompresowany plik istnieje") === true);
   }
 
   check(

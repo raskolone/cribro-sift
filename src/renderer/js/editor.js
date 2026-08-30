@@ -566,11 +566,18 @@
          zawisnąć nad cudzym zdaniem. */
       doc.addEventListener("scroll", () => this.#gripHide(), true);
       doc.defaultView?.addEventListener("resize", () => this.#gripHide());
-      /* Okno przestało być tym, w którym się pracuje — uchwyt nie ma przy
-         czym stać. Bez tego zostawał namalowany na oknie, które właśnie
-         zeszło pod spód: przy widgecie widać go było wtedy jako sześć
-         kropek obok znaczka, bo okno widgetu jest przezroczyste. */
-      doc.defaultView?.addEventListener("blur", () => this.parkGrip());
+      /* UTRATY FOKUSU TU NIE MA i to jest decyzja po próbie.
+
+         Kusi, żeby chować uchwyt razem z aktywnością okna — okno, które
+         zeszło pod spód, nie potrzebuje uchwytu. Ale „blur" przychodzi
+         także wtedy, gdy fokus zabiera cudze okno POJAWIAJĄCE SIĘ obok,
+         a kursor zostaje nad notatką: uchwyt znikał wtedy spod ręki
+         w połowie sięgania po niego. Widać to było jako migotanie
+         w testach uruchamianych razem z innymi oknami.
+
+         Miejsca, w których uchwyt naprawdę trzeba zdjąć, są dwa i oba są
+         wyraźne: zwinięcie kartki i chwycenie znaczka. Robi to widget
+         wprost, przez parkGrip. */
 
       /* Uchwyt leży w <body>, więc nie ma jak zniknąć razem z tym, przy
          czym stał. Przejście na inną zakładkę podmienia cały szkielet

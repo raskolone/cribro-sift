@@ -5,6 +5,7 @@ const path = require("path");
 const { record, wavHeader } = require("./tap");
 const { cutter } = require("./segments");
 const { splice } = require("./merge");
+const { shrink, expand } = require("./audio");
 
 /**
  * Przebieg spotkania — start, koniec i to, co zostaje.
@@ -326,7 +327,25 @@ class Meetings {
        zawiodło (brak klucza, brak sieci), pliki zostają niezależnie od
        ustawienia. Kasuje się to, co da się odtworzyć. */
     const keepAudio = settings.meetings?.keepAudio === true || transcript.length === 0;
-    if (!keepAudio) {
+    let tracks = null;
+    if (keepAudio) {
+      /* ══ CO ŚCISKAMY, A CZEGO NIE ══
+
+         Nagranie zachowane NA ŻYCZENIE ściskamy: godzina surowego WAV-a to
+         sto piętnaście megabajtów na tor, ta sama godzina w AAC —
+         czternaście, a mowa przy szesnastu kilohercach nie ma czego na tym
+         stracić. Dopiero to sprawia, że zachowywanie nagrań przestaje być
+         kosztowne (patrz main/audio.js).
+
+         Nagranie zachowane DLATEGO, ŻE PRZEPISYWANIE ZAWIODŁO, zostaje
+         surowe. Trzymamy je po to, żeby przepisać je jeszcze raz — i ten
+         jeden raz zasługuje na materiał bez strat. Ściśniemy je, kiedy
+         przepisywanie się uda. */
+      const forKeeps = settings.meetings?.keepAudio === true;
+      tracks = forKeeps
+        ? { mic: await shrink(result.files.mic), system: await shrink(result.files.system) }
+        : result.files;
+    } else {
       for (const file of Object.values(result.files)) fs.rmSync(file, { force: true });
     }
 
@@ -334,7 +353,7 @@ class Meetings {
       endedAt: new Date().toISOString(),
       seconds,
       state: "done",
-      tracks: keepAudio ? result.files : null,
+      tracks,
       transcript,
     });
     this.onChange();
@@ -404,8 +423,13 @@ class Meetings {
     const settings = this.store.getSettings();
 
     try {
-      for (const [lane, file] of Object.entries(files)) {
-        if (!file || !fs.existsSync(file)) continue;
+      for (const [lane, kept] of Object.entries(files)) {
+        if (!kept || !fs.existsSync(kept)) continue;
+        /* Krajalnica tnie surowe próbki i nie umie czytać skompresowanego
+           strumienia. Rozpakowujemy więc na czas przepisywania — i tylko
+           na ten czas. */
+        const opened = await expand(kept);
+        const file = opened.file;
         const cut = cutter({ lane, ...this.slice });
         const chew = async (segments) => {
           for (const piece of segments) {
@@ -434,23 +458,45 @@ class Meetings {
 
         // 4 MB na porcję: dwie minuty dźwięku, czyli mniej więcej jeden
         // odcinek — krajalnica nie czeka dłużej, niż musi.
-        await new Promise((resolve, reject) => {
-          const stream = fs.createReadStream(file, { start: 44, highWaterMark: 4 << 20 });
-          let queue = Promise.resolve();
-          stream.on("data", (chunk) => {
-            stream.pause();
-            queue = queue
-              .then(() => chew(cut.push(chunk)))
-              .then(() => stream.resume())
-              .catch(reject);
+        try {
+          await new Promise((resolve, reject) => {
+            const stream = fs.createReadStream(file, { start: 44, highWaterMark: 4 << 20 });
+            let queue = Promise.resolve();
+            stream.on("data", (chunk) => {
+              stream.pause();
+              queue = queue
+                .then(() => chew(cut.push(chunk)))
+                .then(() => stream.resume())
+                .catch(reject);
+            });
+            stream.on("end", () => queue.then(() => chew(cut.flush())).then(resolve, reject));
+            stream.on("error", reject);
           });
-          stream.on("end", () => queue.then(() => chew(cut.flush())).then(resolve, reject));
-          stream.on("error", reject);
-        });
+        } finally {
+          if (opened.temporary) fs.rmSync(path.dirname(file), { recursive: true, force: true });
+        }
       }
 
       const transcript = splice(pieces, { speakers: meeting.speakers });
-      this.store.updateMeeting(id, { transcript, transcribing: false, transcriptError: null });
+      /* Teraz, gdy tekst jest, nagranie przestaje być jedynym egzemplarzem
+         rozmowy — i dopiero teraz wolno je ścisnąć albo skasować, zgodnie
+         z ustawieniem. Wcześniej byłoby to niszczeniem czegoś, czego nie
+         było czym zastąpić. */
+      let tracks = meeting.tracks;
+      if (transcript.length) {
+        if (settings.meetings?.keepAudio === true) {
+          tracks = { mic: await shrink(files.mic), system: await shrink(files.system) };
+        } else {
+          for (const file of Object.values(files)) fs.rmSync(file, { force: true });
+          tracks = null;
+        }
+      }
+      this.store.updateMeeting(id, {
+        transcript,
+        tracks,
+        transcribing: false,
+        transcriptError: null,
+      });
       this.onChange();
       return transcript;
     } catch (problem) {
@@ -476,6 +522,8 @@ class Meetings {
       .filter((item) => item.state === "recording" && item.id !== this.id);
     for (const meeting of stuck) {
       const dir = this.store.meetingDir(meeting.id);
+      // Po ubiciu aplikacji pliki są zawsze surowe: kompresja dzieje się
+      // dopiero po udanym zakończeniu nagrania.
       const files = {
         mic: path.join(dir, "tor-a-mikrofon.wav"),
         system: path.join(dir, "tor-b-system.wav"),

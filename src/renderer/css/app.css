@@ -2181,6 +2181,27 @@ input.tag-input:focus {
 }
 .btn--air:hover { background: color-mix(in srgb, var(--air) 82%, white); }
 
+/* Szukanie po rozmowach. Pojawia się dopiero wtedy, gdy jest w czym
+   szukać — pole nad trzema wpisami byłoby ozdobą. */
+.meet__find {
+  display: block;
+}
+.meet__find input {
+  min-width: 0;
+  width: 100%;
+  padding: 8px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: var(--text);
+  font: 400 var(--fs-xs) / 1.4 var(--font-body);
+}
+.meet__find input:focus {
+  outline: none;
+  border-color: var(--accent-55);
+  box-shadow: var(--glow);
+}
+
 .meet__rows {
   display: flex;
   flex-direction: column;
@@ -2629,10 +2650,18 @@ input.tag-input:focus {
    w nieskończoność, ale nie jest to czynność, po którą się tu przychodzi. */
 .meet__act {
   display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
   justify-content: flex-start;
   margin-top: var(--s-5);
   padding-top: var(--s-4);
   border-top: 1px solid var(--line);
+}
+/* Rząd przycisków, który nie kończy sekcji, tylko do niej należy. */
+.meet__act--tight {
+  margin-top: var(--s-2);
+  padding-top: 0;
+  border-top: none;
 }
 
 /* Zapis rozmowy. Kto i kiedy stoją w kolumnie po lewej, żeby oko biegło
@@ -2657,6 +2686,27 @@ input.tag-input:focus {
   font-variant-numeric: tabular-nums;
 }
 .meet__said { color: var(--text); }
+
+/* Znacznik czasu jako przycisk — o ile jest czego słuchać. Wygląda jak
+   znacznik, dopóki się w niego nie celuje: zapis czyta się wzrokiem,
+   a odsłuch jest wyjściem awaryjnym, nie główną drogą. */
+.meet__at--play {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.meet__at--play:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.meet__at--play:focus-visible {
+  outline: 2px solid var(--accent-55);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
 /* Ogon rosnącego zapisu. Zapis urwany w połowie zdania wygląda jak zapis,
    który się zepsuł — dopóki nie stoi pod nim, że to jeszcze nie koniec. */
