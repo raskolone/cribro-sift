@@ -435,6 +435,154 @@ const stampDate = (iso) => {
   return Number.isNaN(at.getTime()) ? "" : at.toLocaleString("pl-PL", { dateStyle: "long", timeStyle: "short" });
 };
 
+/* ── Nazwa notatki ze spotkania ─────────────────────────────────
+
+   Notatka ze spotkania powstaje SAMA i sama musi się nazwać — nikt nie
+   siada po rozmowie do wymyślania nagłówka. A nazwa jest tu jedyną rzeczą,
+   po której się ją potem znajdzie: w Notatniku leży obok trzydziestu
+   innych i widać z niej dokładnie jedną linijkę.
+
+   Nazwa składa się z DWÓCH rzeczy, bo tak brzmi pytanie, które się sobie
+   zadaje tydzień później: „o czym to było" ORAZ „z kim". Ani samo
+   „Budżet na trzeci kwartał", ani samo „Ania Kowalska" nie odpowiada na
+   nie w całości — a cotygodniowy przegląd nazwany co tydzień tak samo
+   nie odróżnia się od poprzedniego niczym poza datą.
+
+   O CZYM bierzemy z tego, co o rozmowie już wiadomo: z nazwy spotkania
+   (napisanej przez model z treści, przepisanej z okna rozmowy albo wziętej
+   z kalendarza), a gdy jej nie ma — z pierwszego zdania podsumowania.
+   Z KIM liczymy tutaj, lokalnie, z listy zaproszonych i z mówiących
+   w zapisie. To jest wiedza, którą aplikacja ma; pytanie o nią modelu
+   byłoby drugim wywołaniem po rzecz, która leży w pliku obok. */
+
+/** Podpisy, które nie są niczyim imieniem — nie ma po co ich wymieniać. */
+const NOT_A_NAME = /^(?:ty|ja|rozm[óo]wcy?|nieznany|uczestnicy?|speaker|unknown|\?)$/i;
+
+/** Imię z adresu albo z podpisu: „Ania Kowalska <a@x.pl>" → „Ania Kowalska". */
+function humanName(entry) {
+  const raw = String(entry ?? "").trim();
+  if (!raw) return "";
+  const named = /^\s*"?([^"<]+?)"?\s*<[^>]+>\s*$/.exec(raw);
+  if (named) return named[1].trim();
+  // Sam adres: „ania.kowalska@firma.pl" → „ania.kowalska". Lepsze to niż
+  // domena cudzej firmy w nagłówku notatki.
+  if (raw.includes("@")) return raw.split("@")[0].replace(/[._-]+/g, " ").trim();
+  return raw;
+}
+
+/** Czy te dwa podpisy to ta sama osoba. Porównanie na tyle luźne, żeby
+    „Maciej Wyrozumski" z kalendarza zgadzał się z „maciej wyrozumski"
+    z konta systemowego, i na tyle ciasne, żeby nie zlepiać dwóch Ań. */
+const samePerson = (a, b) =>
+  !!a && !!b && humanName(a).toLowerCase().trim() === humanName(b).toLowerCase().trim();
+
+/**
+ * Z KIM była ta rozmowa — jednym napisem.
+ *
+ * Kolejność źródeł jest kolejnością pewności: lista zaproszonych
+ * z kalendarza wie, kto miał być, zapis rozmowy wie, kto mówił. Siebie
+ * z obu odejmujemy: „spotkanie z sobą" nie jest informacją.
+ *
+ * @param {object} meeting
+ * @param {object} [options]
+ * @param {string} [options.me]  imię i nazwisko właściciela konta
+ * @returns {string}  nazwa osoby, wyliczenie dwóch albo „zespół (N osób)"
+ */
+function withWhom(meeting, { me = "" } = {}) {
+  const invited = (meeting?.people ?? [])
+    .map(humanName)
+    .filter((name) => name && !samePerson(name, me) && !NOT_A_NAME.test(name));
+
+  const said = [
+    ...new Set(
+      (meeting?.transcript ?? [])
+        .map((line) => humanName(line?.speaker))
+        .filter((name) => name && !samePerson(name, me) && !NOT_A_NAME.test(name)),
+    ),
+  ];
+
+  /* Zaproszeni są pewniejsi od mówiących: zapis bywa podpisany „Rozmówcy",
+     a kalendarz zna imię i nazwisko. Gdy zaproszonych nie ma — bo nagranie
+     ruszyło z menu, bez kalendarza — zostają ci, którzy się odezwali. */
+  const people = [...new Set(invited.length ? invited : said)];
+  if (!people.length) return "";
+  if (people.length === 1) return people[0];
+  if (people.length === 2) return `${people[0]} i ${people[1]}`;
+  /* Powyżej dwóch nazwisk wyliczanka przestaje być nazwą i staje się listą
+     — a nagłówek notatki ma się mieścić w jednej linijce. */
+  return `zespół (${people.length} ${osoby(people.length)})`;
+}
+
+/** „2 osoby", „5 osób" — polska liczba mnoga, bo napis idzie do nagłówka. */
+function osoby(count) {
+  const last = count % 10;
+  const teen = count % 100 >= 12 && count % 100 <= 14;
+  return !teen && last >= 2 && last <= 4 ? "osoby" : "osób";
+}
+
+/** Pierwsze zdanie podsumowania — nazwa awaryjna, gdy rozmowa nie ma żadnej. */
+function firstSentence(summary, limit = 48) {
+  const line = String(summary ?? "")
+    .split("\n")
+    .map((row) => row.replace(/^\s*(?:#{1,6}\s+|[-*]\s+|>\s?)/, "").replace(/\*\*/g, "").trim())
+    .find(Boolean);
+  if (!line) return "";
+  const sentence = /^(.{10,}?[.!?])(?:\s|$)/.exec(line);
+  const out = (sentence ? sentence[1] : line).replace(/[.\s]+$/, "");
+  return out.length > limit ? `${out.slice(0, limit - 1).trimEnd()}…` : out;
+}
+
+/**
+ * Nazwa notatki ze spotkania: o czym i z kim.
+ *
+ * @param {object} meeting
+ * @param {object} [options]
+ * @param {string} [options.me]
+ * @returns {string}
+ */
+function noteTitle(meeting, { me = "", limit = 72 } = {}) {
+  const about = String(meeting?.title ?? "").trim() || firstSentence(meeting?.summary) || "Spotkanie";
+  const whom = withWhom(meeting, { me });
+  // Nazwa, w której to imię już stoi („Rozmowa z Anią Kowalską"), nie
+  // potrzebuje go po kropce drugi raz.
+  if (!whom || mentions(about, whom)) return trimTitle(about, limit);
+  return trimTitle(`${about} · ${whom}`, limit);
+}
+
+/**
+ * Czy w tej nazwie już o tej osobie mowa.
+ *
+ * Po rdzeniach, nie po całych słowach, bo polszczyzna odmienia: „Ania
+ * Kowalska" stoi w nazwie spotkania jako „z Anią Kowalską" i porównanie
+ * dosłowne nie znalazłoby tam nikogo. Ucinamy więc końcówkę i pytamy
+ * o początek słowa — dopasowanie w środku wyrazu („mania" dla „Ani")
+ * byłoby przypadkiem, a nie wzmianką.
+ *
+ * Pomyłka kosztuje tu jedno: imię nie dopisze się po kropce, choć mogło.
+ * Pomyłka w drugą stronę kosztowałaby „Rozmowa z Anią · Ania".
+ */
+function mentions(about, whom) {
+  const hay = String(about ?? "").toLowerCase();
+  const words = String(whom ?? "")
+    .toLowerCase()
+    .split(/[^\p{L}]+/u)
+    .filter((word) => word.length >= 3);
+  if (!words.length) return false;
+  return words.every((word) => {
+    const stem = word.slice(0, Math.max(3, word.length - 2));
+    return new RegExp(`(?:^|[^\\p{L}])${stem}`, "u").test(hay);
+  });
+}
+
+/** Nazwa przycięta tak, żeby nie urwała się w połowie słowa. */
+function trimTitle(text, limit) {
+  const clean = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (clean.length <= limit) return clean;
+  const cut = clean.slice(0, limit - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > limit * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 /**
  * Spotkanie jako notatka — czyli jako coś, co da się WYSŁAĆ.
  *
@@ -447,9 +595,13 @@ const stampDate = (iso) => {
  * rozmowy — na końcu i pod nagłówkiem, bo czyta się go rzadko i wtedy,
  * gdy podsumowanie czegoś nie mówi.
  */
-function asNote(meeting, { transcript = true } = {}) {
+function asNote(meeting, { transcript = true, me = "" } = {}) {
   const out = [];
-  const title = meeting?.title || "Spotkanie";
+  /* Nagłówek notatki NIE JEST nazwą spotkania: mówi też, z kim ta rozmowa
+     była (patrz noteTitle wyżej). Nazwa spotkania zostaje nazwą spotkania
+     i widać ją w zakładce Spotkania; notatka leży obok trzydziestu innych
+     i musi bronić się jedną linijką. */
+  const title = noteTitle(meeting, { me });
   out.push(`# ${title}`, "");
 
   const meta = [stampDate(meeting?.at), meeting?.where].filter(Boolean);
@@ -507,6 +659,11 @@ function stripTasks(summary) {
 module.exports = {
   digest,
   polish,
+  /* Samo wywołanie modelu, bez niczego dookoła. Wychodzi stąd, bo poranne
+     podsumowanie (main/briefing.js) zadaje modelowi zupełnie inne pytanie,
+     ale zadaje je tym samym trzem dostawcom i tym samym kluczem. Druga
+     kopia tej funkcji rozjechałaby się przy pierwszej zmianie u dostawcy. */
+  send,
   readDialogue,
   buildPrompt,
   readAnswer,
@@ -514,6 +671,11 @@ module.exports = {
   material,
   tasksFrom,
   asNote,
+  noteTitle,
+  withWhom,
+  mentions,
+  humanName,
+  firstSentence,
   TEMPLATES,
   MAX_CHARS,
 };

@@ -27,6 +27,12 @@
      w marginesie, po lewej stronie notatki, i nigdy nad literami. */
   const GRIP_W = 16;
   const GRIP_H = 20;
+
+  /* Edytory otwarte w tym oknie. Spis jest tu po to, żeby dało się zdjąć
+     uchwyty przenoszenia ze WSZYSTKICH notatek naraz — patrz parkAll na
+     końcu pliku. Notatka bywa w oknie niejedna: zakładka Notatki, kartka
+     na pulpicie, spotkanie obok. */
+  const live = new Set();
   /* Szerokość strzałki przy nagłówku składanym. Tak samo jak przy liście
      zadań: rysuje ją CSS, więc kliknięcie w nią jest kliknięciem w lewy
      skraj bloku i tylko tutaj wiadomo, gdzie ten skraj przebiega. */
@@ -516,18 +522,33 @@
         if (!stale.__root?.isConnected) stale.remove();
       }
 
+      /* Uchwyt wisi POD warstwą okna, a nie nad całym dokumentem.
+
+         Stoi na współrzędnych ekranu (position: fixed), więc miejsce
+         w drzewie nie rusza go ani o piksel — rozstrzyga tylko o KOLEJNOŚCI
+         MALOWANIA. W <body> uchwyt był rodzeństwem całego okna i wygrywał
+         z nim wszystko, także z menu po lewej: gdy raz zawisł nad zakładką,
+         klik trafiał w niego zamiast w nią. Wewnątrz `#app` przegrywa
+         z pasem bocznym (z-index 60), a nadal wygrywa z treścią notatki —
+         czyli z jedynym, nad czym ma stać.
+
+         `#app` jest tylko w oknie głównym; kartka na pulpicie i Notatnik
+         nie mają nad czym górować i zostają przy <body>. */
+      const host = doc.getElementById("app") ?? doc.body;
+      live.add(this);
+
       this.grip = doc.createElement("div");
       this.grip.className = "prose-grip";
       this.grip.hidden = true;
       this.grip.title = "Przeciągnij, żeby przenieść (⌥↑ ⌥↓)";
       this.grip.__root = this.root;
-      doc.body.appendChild(this.grip);
+      host.appendChild(this.grip);
 
       this.dropMark = doc.createElement("div");
       this.dropMark.className = "prose-drop";
       this.dropMark.hidden = true;
       this.dropMark.__root = this.root;
-      doc.body.appendChild(this.dropMark);
+      host.appendChild(this.dropMark);
 
       this.drag = null;
       this.gripLine = null;
@@ -597,12 +618,42 @@
         this.#gripHide();
       };
       doc.addEventListener("pointermove", this.onOutside, true);
+
+      /* ══ NOTATKA ZNIKA, UCHWYT ZOSTAJE — I TO JEST TEN BŁĄD ══
+
+         Nasłuch wyżej chowa uchwyt, gdy wskaźnik pójdzie gdzie indziej.
+         Nie wystarcza, bo widok znika NIE spod myszy: kliknięcie w zakładkę
+         zakłada sekcji `hidden`, a kursor zostaje tam, gdzie był. Żaden ruch
+         wtedy nie pada — a nawet gdy padnie, potrafi trafić w sam uchwyt,
+         który jest wtedy elementem NA WIERZCHU (z-index 40). Wtedy warunek
+         `event.target === this.grip` każe go zostawić.
+
+         Widać to było jako sześć kropek wiszących na cudzej zakładce —
+         i, co gorsza, jako miejsce, w którym nie da się w nic kliknąć: pod
+         kropkami leży menu albo przycisk, a klik trafia w uchwyt.
+
+         Obserwator patrzy więc na to, czy notatka jest jeszcze widoczna.
+         `hidden` na sekcji, przewinięcie poza ekran, zamknięcie panelu —
+         wszystkie trzy kończą się tym samym zdarzeniem, więc i uchwyt
+         schodzi we wszystkich trzech przypadkach.
+
+         `IntersectionObserver`, a nie `MutationObserver`: pytanie brzmi
+         „czy tę notatkę widać", a nie „czy ktoś zmienił jej atrybut" —
+         a zmienić ją może każdy z pięciu przodków po drodze. */
+      this.watch = new (doc.defaultView?.IntersectionObserver ?? IntersectionObserver)(
+        ([entry]) => {
+          if (!entry?.isIntersecting) this.parkGrip();
+        },
+      );
+      this.watch.observe(this.root);
     }
 
     /** Koniec życia uchwytu: notatki, przy której stał, już nie ma. */
     #retire() {
       const doc = this.grip.ownerDocument;
+      live.delete(this);
       doc.removeEventListener("pointermove", this.onOutside, true);
+      this.watch?.disconnect();
       this.grip.remove();
       this.dropMark.remove();
     }
@@ -754,6 +805,14 @@
          Pasek czytamy ze stylu, zamiast wpisywać liczbę: kartka na pulpicie
          jest wąska i ma go węższy, a uchwyt ma się mieścić w obu. */
       const bounds = this.root.getBoundingClientRect();
+      /* Notatka bez powierzchni to notatka schowana — a jej prostokąt jest
+         wtedy zerem w lewym górnym rogu okna. Uchwyt odmierzony od takiego
+         zera lądowałby na menu, czyli na czymś, co z notatką nie ma nic
+         wspólnego. Lepiej nie pokazać go wcale. */
+      if (bounds.width < 1 || bounds.height < 1) {
+        this.#gripHide();
+        return;
+      }
       const gutter = parseFloat(view.getComputedStyle(this.root).paddingLeft) || GRIP_W + 8;
       const left = bounds.left + Math.max(2, (gutter - GRIP_W) / 2);
 
@@ -1068,5 +1127,28 @@
 
   window.CribroEditor = {
     create: (root, options) => new RichEditor(root, options),
+
+    /**
+     * Zdejmij uchwyty ze wszystkich otwartych notatek.
+     *
+     * Woła się to z jednego miejsca — z przerysowania okna po zmianie
+     * zakładki (patrz render w js/app.js) — i po to, żeby uchwyt NIE
+     * PRZEŻYŁ notatki, przy której stał.
+     *
+     * Bo notatka nie znika spod myszy, tylko razem z zakładką: sekcja
+     * dostaje `hidden`, kursor zostaje tam, gdzie był, i nie pada żaden
+     * ruch, po którym uchwyt mógłby się domyślić, że jest już nad czymś
+     * cudzym. Zostawał wtedy jako sześć kropek na obcej zakładce — i,
+     * co gorsza, jako miejsce, w które nie dało się kliknąć, bo leżał na
+     * wierzchu i to on łapał kliknięcia.
+     *
+     * Obserwator widoczności w #dragSetup pilnuje tego samego, ale nie
+     * zawsze zdąży: przeglądarka wstrzymuje go, gdy okno jest przykryte
+     * i nie rysuje klatek. Ta droga jest pewna, bo nie zależy od niczego
+     * poza wywołaniem.
+     */
+    parkAll: () => {
+      for (const editor of live) editor.parkGrip();
+    },
   };
 })();

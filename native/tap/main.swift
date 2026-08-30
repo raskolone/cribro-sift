@@ -347,9 +347,26 @@ func openStream(sink: Sink, excluding names: [String]) async throws -> SCStream 
     /* Wykluczenia. Dźwięk systemu to dźwięk wszystkich aplikacji z oknami,
        więc muzyka z tła weszłaby do transkrypcji jako czyjaś wypowiedź.
        Filtr działa po aplikacjach — i to jest tańsze wyjście niż schodzenie
-       do CoreAudio po dźwięk pojedynczego procesu. */
+       do CoreAudio po dźwięk pojedynczego procesu.
+
+       ══ CRIBRO WYKLUCZA SAMO SIEBIE, ZAWSZE ══
+
+       `excludesCurrentProcessAudio` wycina dźwięk TEGO procesu — czyli
+       tego programu, który sam nic nie gra. Aplikacja jest jednak
+       Electronem: dźwięk potwierdzenia po dyktowaniu i odsłuch fragmentu
+       zapisu wychodzą z JEJ procesów, nie z tego. Bez tej linijki własny
+       sygnał Cribro wchodziłby do nagrania cudzej rozmowy i wracał
+       w transkrypcji jako czyjaś wypowiedź.
+
+       Jest to zarazem połowa odpowiedzi na pytanie „czy to widać po
+       drugiej stronie": aplikacja niczego do rozmowy nie wpuszcza. Druga
+       połowa jest w tym, czego tu nie ma — nie ma wirtualnego mikrofonu,
+       nie ma wirtualnej kamery i nie ma nikogo, kto by do rozmowy
+       dołączył. Cribro słucha wyjścia z głośników, tak samo jak dyktafon
+       postawiony przy komputerze. */
+    let mine = ["com.cribro.sift", "Cribro Sift", "Cribro"]
     let unwanted = content.applications.filter { app in
-        names.contains { app.bundleIdentifier.localizedCaseInsensitiveContains($0)
+        (names + mine).contains { app.bundleIdentifier.localizedCaseInsensitiveContains($0)
             || app.applicationName.localizedCaseInsensitiveContains($0) }
     }
     if !unwanted.isEmpty {
@@ -471,6 +488,7 @@ var outDir = FileManager.default.temporaryDirectory.appendingPathComponent("crib
 var excluded: [String] = []
 /// Jak daleko w przód patrzymy w kalendarzu, w godzinach.
 var hours = 12.0
+var back = 1.0
 
 // ── Kalendarz ───────────────────────────────────────────────────────
 
@@ -480,7 +498,7 @@ var hours = 12.0
 /// i czy już się zaczyna": identyfikator, tytuł, godziny, liczbę zaproszonych
 /// i adres rozmowy, jeśli jest. Reszty kalendarza — notatek, załączników,
 /// nazwisk — nie czytamy i nie wynosimy z tego programu.
-func agenda(hours: Double) async {
+func agenda(hours: Double, back: Double) async {
     let store = EKEventStore()
 
     /// macOS 14 wprowadził dostęp „tylko do odczytu"; starsze chcą pełnego.
@@ -503,7 +521,11 @@ func agenda(hours: Double) async {
     let until = now.addingTimeInterval(hours * 3600)
     /// Zaczynamy godzinę wstecz, bo spotkanie, które właśnie trwa, jest
     /// najważniejsze ze wszystkich — a zaczęło się przed „teraz".
-    let from = now.addingTimeInterval(-3600)
+    ///
+    /// Poranne podsumowanie sięga dalej (--back), bo pyta o CAŁY DZIEŃ:
+    /// przy pierwszym zalogowaniu o czternastej poranek bez porannych
+    /// wpisów opisywałby dzień, którego już nie ma.
+    let from = now.addingTimeInterval(-max(1, back) * 3600)
     let query = store.predicateForEvents(withStart: from, end: until, calendars: nil)
 
     let iso = ISO8601DateFormatter()
@@ -523,14 +545,31 @@ func agenda(hours: Double) async {
         row.append("\"guests\":\(event.attendees?.count ?? 0)")
         /* Imiona zaproszonych. Wychodzą z tego programu po to, żeby zapis
            rozmowy mówił „Ania", a nie „Rozmówcy" — i nie idą nigdzie dalej
-           niż do polecenia dla modelu, który i tak dostaje całą rozmowę.
-           Adresów e-mail nie bierzemy: do nazwania mówiącego nie są
-           potrzebne, a są znacznie więcej warte niż imię. */
+           niż do polecenia dla modelu, który i tak dostaje całą rozmowę. */
         var names = (event.attendees ?? [])
             .compactMap { $0.name }
             .filter { !$0.isEmpty && !$0.contains("@") }
         if let mine = event.organizer?.name, !names.contains(mine) { names.insert(mine, at: 0) }
         row.append("\"people\":[" + names.map(quoted).joined(separator: ",") + "]")
+
+        /* Adresy zaproszonych — OSOBNO OD IMION i do jednej jedynej rzeczy:
+           poranne podsumowanie porównuje po nich nadawcę maila z listą osób,
+           z którymi mam się dziś widzieć („Magdalena pisze, a o czternastej
+           jest z nią spotkanie"). Po imieniu tego zrobić się nie da: nazwa
+           nadawcy w Gmailu i nazwa uczestnika w kalendarzu to prawie nigdy
+           nie jest ten sam napis.
+
+           Porównanie dzieje się w całości na tym komputerze (patrz
+           needsAttention w main/briefing.js) i te adresy NIE IDĄ do modelu
+           ani nigdzie indziej — w odróżnieniu od imion, które jadą do
+           polecenia po to, żeby nazwać mówiących. */
+        let mails: [String] = (event.attendees ?? []).compactMap { person in
+            let text = person.url.absoluteString
+            guard text.lowercased().hasPrefix("mailto:") else { return nil }
+            let address = String(text.dropFirst("mailto:".count)).lowercased()
+            return address.isEmpty ? nil : address
+        }
+        row.append("\"emails\":[" + mails.map(quoted).joined(separator: ",") + "]")
         row.append("\"link\":\(quoted(link ?? ""))")
         rows.append("{" + row.joined(separator: ",") + "}")
     }
@@ -587,6 +626,10 @@ while let flag = args.first {
         guard let value = args.first.flatMap(Double.init) else { die("--hours chce liczby.") }
         hours = value
         args.removeFirst()
+    case "--back":
+        guard let value = args.first.flatMap(Double.init) else { die("--back chce liczby.") }
+        back = value
+        args.removeFirst()
     case "--seconds":
         guard let value = args.first.flatMap(Double.init) else { die("--seconds chce liczby.") }
         seconds = value
@@ -610,7 +653,7 @@ let finished = DispatchSemaphore(value: 0)
 Task {
     do {
         if mode == "agenda" {
-            await agenda(hours: hours)
+            await agenda(hours: hours, back: back)
         } else if mode == "stream" {
             try await stream(excluding: excluded)
         } else {

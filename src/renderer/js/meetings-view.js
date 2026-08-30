@@ -37,7 +37,13 @@
   const state = {
     meetings: [],
     selected: null,
-    tab: "summary", // summary | talk | transcript | notes
+    /* summary | transcript | notes.
+
+       Zakładki „Rozmowa" (zapis przesiany z szumu) już nie ma: te same
+       zdania stały w niej trzeci raz, obok zapisu i obok wniosku, a wybór
+       między trzema postaciami jednej rozmowy kosztował więcej niż był
+       wart. Zostaje to, co padło, i to, co z tego wynika. */
+    tab: "summary",
     recording: false,
     seconds: 0,
     settings: null,
@@ -48,6 +54,22 @@
     // Co widać w kalendarzu — przychodzi tą samą wiadomością co stan
     // nagrywania (patrz meetingState w main/main.js).
     agenda: null,
+    /* Czy szuflada ustawień jest wyłożona. Preferencja widoku — zostaje
+       między uruchomieniami, ale nie ma po co jeździć z nią przez most do
+       procesu głównego. Domyślnie zamknięta: ustawień spotkań dotyka się
+       raz, a spisu rozmów codziennie. */
+    settingsOpen: localStorage.getItem("cribro:meet-settings") === "1",
+    /* Czy zakładkę wybrała ręka. Dopóki nie, w trakcie nagrywania stoi
+       transkrypcja — to jedyna rzecz, która wtedy rośnie. */
+    tabByHand: false,
+    /* JEDNO SPOTKANIE WE WŁASNYM OKNIE.
+
+       Ten sam widok w drugiej postaci: bez spisu, bez wybierania, za to
+       obok rozmowy. Spotkanie ogląda się przecież w trakcie następnego
+       albo pisząc z niego maila — a wtedy okno główne jest w drodze.
+       Druga postać, nie drugi widok: gdyby to był osobny plik, notatnik
+       i zakładki rozjechałyby się przy pierwszej zmianie w tamtym. */
+    solo: null,
   };
 
   let ticker = null;
@@ -103,6 +125,7 @@
 
   function build() {
     root.innerHTML = SKELETON;
+    if (state.solo) root.querySelector(".meet").classList.add("is-solo");
 
     root.addEventListener("click", async (event) => {
       const record = event.target.closest("[data-meet-record]");
@@ -124,7 +147,31 @@
         // ZANIM zniknie z ekranu.
         await flushNotes();
         state.tab = tab.dataset.meetTab;
+        // Ręka ma pierwszeństwo przed domyślną transkrypcją: kto w trakcie
+        // rozmowy przeszedł do notatnika, ma w nim zostać.
+        state.tabByHand = true;
         paint();
+        return;
+      }
+
+      /* Koło zębate. Ustawienia spotkań leżały dotąd rozwinięte pod spisem
+         i były najdłuższą rzeczą w tej zakładce — trzy ekrany przełączników
+         pod trzema rozmowami. Dotyka się ich raz, a spisu codziennie, więc
+         teraz są tam, gdzie się ich szuka: pod znakiem ustawień. */
+      const cog = event.target.closest("[data-meet-cog]");
+      if (cog) {
+        state.settingsOpen = !state.settingsOpen;
+        localStorage.setItem("cribro:meet-settings", state.settingsOpen ? "1" : "0");
+        paintList();
+        window.translateTree(root);
+        /* Wyłożona szuflada wjeżdża GÓRĄ, nie środkiem: pierwszą rzeczą
+           po kliknięciu w koło ma być nagłówek „Jak działają spotkania",
+           a nie połowa listy przełączników bez wiadomo czego. */
+        if (state.settingsOpen) {
+          root
+            .querySelector(".meet__settings")
+            ?.scrollIntoView({ block: "start", behavior: "smooth" });
+        }
         return;
       }
 
@@ -174,18 +221,13 @@
         return;
       }
 
-      const sift = event.target.closest("[data-meet-sift]");
-      if (sift) {
-        await api.meetings.polish(sift.dataset.meetSift);
-        return;
-      }
-
       const toNote = event.target.closest("[data-meet-note]");
       if (toNote) {
         await flushNotes();
-        const note = await api.meetings.toNote(toNote.dataset.meetNote, true);
-        // Notatka jest po to, żeby z nią coś zrobić — otwieramy ją od razu
-        // w Notatniku, zamiast mówić „zapisano" i zostawiać szukanie.
+        // Notatka ze spotkania już istnieje — powstaje sama po każdej
+        // rozmowie. To jest prośba „pokaż mi ją", więc otwieramy ją od razu
+        // w osobnym okienku, zamiast mówić „zapisano" i zostawiać szukanie.
+        const note = await api.meetings.toNote(toNote.dataset.meetNote);
         if (note?.id) await api.notes.openWindow(note.id);
         return;
       }
@@ -214,6 +256,15 @@
         return;
       }
 
+      const open = event.target.closest("[data-meet-open]");
+      if (open) {
+        // Notatnik najpierw na dysk: okno obok ma pokazać to, co napisane,
+        // a nie to, co było przed chwilą.
+        await flushNotes();
+        await api.meetings.openWindow(open.dataset.meetOpen);
+        return;
+      }
+
       const remove = event.target.closest("[data-meet-remove]");
       if (remove) {
         const id = remove.dataset.meetRemove;
@@ -221,6 +272,9 @@
         // odtworzyć — pytamy, zamiast kasować po cichu.
         if (!window.confirm(t("Skasować to spotkanie razem z nagraniem?"))) return;
         await api.meetings.remove(id);
+        // Okno jednego spotkania po skasowaniu tego spotkania nie ma czego
+        // pokazywać — zamyka się razem z nim.
+        if (state.solo === id) return void window.close();
         if (state.selected === id) state.selected = null;
         await reload();
       }
@@ -331,6 +385,11 @@
         <button class="btn ${live ? "btn--air" : "btn--primary"} meet__record" data-meet-record>
           ${live ? `${t("Zakończ")} · ${duration(state.seconds)}` : t("Nagraj spotkanie")}
         </button>
+        <button class="meet__cog${state.settingsOpen ? " is-open" : ""}" data-meet-cog
+                aria-expanded="${state.settingsOpen}"
+                title="${t("Jak działają spotkania")}" aria-label="${t("Jak działają spotkania")}">
+          <svg><use href="#i-gear" /></svg>
+        </button>
       </div>
       ${agendaCard()}
       ${
@@ -351,7 +410,7 @@
           }</p>`
         }
       </div>
-      ${settingsCard()}
+      ${state.settingsOpen ? settingsCard() : ""}
     `;
   }
 
@@ -443,7 +502,7 @@
           ${flip(
             "keepAudio",
             "Zachowaj nagranie",
-            "Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu.",
+            "Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu. Zapis rozmowy i podsumowanie zostają w notatce, więc nie ma czego stracić.",
             !!meet.keepAudio,
           )}
         </div>
@@ -459,6 +518,7 @@
 
         <div class="meet__group">
           <p class="meet__legend">${t("Po rozmowie")}</p>
+          <p class="meet__note meet__note--tight">${t("Każda nagrana rozmowa dostaje notatkę sama — z podsumowaniem, zadaniami i całym zapisem. Leży w Notatniku, w przegródce „Notatki ze spotkań”.")}</p>
           ${flip("summarize", "Podsumuj samo", "Zaraz po zakończeniu, z zapisu i z notatek.", meet.summarize !== false)}
           ${flip("rename", "Nazwij spotkanie z treści", "Zamiast kodu pokoju z okna przeglądarki.", meet.rename !== false)}
           ${flip("stopWithMeeting", "Kończ razem ze spotkaniem", "Gdy okno rozmowy zniknie, nagranie też.", meet.stopWithMeeting !== false)}
@@ -485,7 +545,7 @@
           </label>
 
           <label class="meet__field">
-            <span class="meet__field-name">${t("Szuflada na podsumowania")}</span>
+            <span class="meet__field-name">${t("Szuflada na notatki ze spotkań")}</span>
             <input type="text" value="${escape(meet.folder ?? "")}" data-meet-set="folder" />
           </label>
         </div>
@@ -531,11 +591,24 @@
         </div>
         <div class="meet__tabs">
           ${tab("summary", "Podsumowanie")}
-          ${tab("talk", "Rozmowa")}
           ${tab("transcript", "Transkrypcja")}
           ${tab("notes", "Notatki")}
         </div>
-        <button class="btn btn--ghost btn--sm" data-meet-remove="${meeting.id}">${t("Usuń")}</button>
+        <div class="meet__acts">
+          ${
+            state.solo
+              ? ""
+              : `<button class="meet__ico" data-meet-open="${meeting.id}"
+                         title="${t("Pokaż w osobnym oknie")}"
+                         aria-label="${t("Pokaż w osobnym oknie")}">
+                   <svg><use href="#i-window" /></svg>
+                 </button>`
+          }
+          <button class="meet__ico meet__ico--danger" data-meet-remove="${meeting.id}"
+                  title="${t("Skasuj spotkanie")}" aria-label="${t("Skasuj spotkanie")}">
+            <svg><use href="#i-trash" /></svg>
+          </button>
+        </div>
       </header>
       <div class="meet__body">${body(meeting)}</div>
     `;
@@ -562,38 +635,6 @@
         ${t("Nagranie zostało przerwane")}${meeting.error ? `: ${escape(meeting.error)}` : "."}
         ${t("To, co zdążyło wejść na dysk, zostało — bywa całą rozmową bez ostatniej minuty.")}
       </p>`;
-    }
-
-    /* ROZMOWA PRZESIANA — trzecia postać tej samej rozmowy. Zapis mówi,
-       co padło; podsumowanie, co z tego wynika; to jest pomiędzy. */
-    if (state.tab === "talk") {
-      if (meeting.sifting) {
-        return `<p class="meet__blank meet__blank--work">${t("Przesiewam rozmowę…")}</p>`;
-      }
-      const sift = meeting.transcript?.length
-        ? `<div class="meet__act">
-             <button class="btn btn--sm" data-meet-sift="${meeting.id}">
-               ${t(meeting.talk?.length ? "Przesiej jeszcze raz" : "Przesiej rozmowę")}
-             </button>
-           </div>`
-        : "";
-      if (meeting.talkError) {
-        return `<p class="meet__blank meet__blank--warn">
-            ${t("Przesiewanie się nie udało")}: ${escape(meeting.talkError)}
-          </p>${sift}`;
-      }
-      if (meeting.talk?.length) {
-        return `${transcript({ transcript: meeting.talk }, false)}${sift}`;
-      }
-      return `<p class="meet__blank">
-          ${
-            live
-              ? t("Rozmowę przesiejemy po jej zakończeniu.")
-              : meeting.transcript?.length
-                ? t("Ten sam zapis bez szumu: bez „yyy”, bez „słychać mnie?”, bez trzech minut o pogodzie — a wciąż jako rozmowa.")
-                : t("Najpierw musi powstać zapis rozmowy.")
-          }
-        </p>${sift}`;
     }
 
     if (state.tab === "transcript") {
@@ -653,9 +694,13 @@
     const again = meeting.summary ? "Napisz jeszcze raz" : "Napisz podsumowanie";
     /* Wyjście z aplikacji prowadzi przez Notatnik — i tylko tamtędy.
        Notatka umie już PDF, Notion, Apple Notes i chmurę; drugi zestaw
-       tych samych przycisków tutaj byłby drugim miejscem do poprawiania. */
+       tych samych przycisków tutaj byłby drugim miejscem do poprawiania.
+
+       Notatka jest już zrobiona, zanim ktokolwiek tu spojrzy: każda rozmowa
+       dostaje ją sama, razem z zapisem (patrz keepMeetingNote w main.js).
+       Ten przycisk tylko do niej prowadzi. */
     const out = meeting.summary
-      ? `<button class="btn btn--sm" data-meet-note="${meeting.id}">${t("Zapisz jako notatkę")}</button>
+      ? `<button class="btn btn--sm" data-meet-note="${meeting.id}">${t("Pokaż notatkę")}</button>
          <button class="btn btn--ghost btn--sm" data-meet-copy="${meeting.id}">${t("Kopiuj")}</button>`
       : "";
     const button = nothing
@@ -808,13 +853,18 @@
   function paint() {
     if (!root) return;
     const busy = busyField();
-    if (!busy?.closest(".meet__list")) paintList();
+    if (!state.solo && !busy?.closest(".meet__list")) paintList();
     if (!busy?.closest(".meet__detail")) paintDetail();
     window.translateTree(root);
   }
 
   async function reload() {
     state.meetings = await api.meetings.list();
+    if (state.solo) {
+      // Wybór w tym oknie jest z góry ustalony: to jest TO spotkanie.
+      state.selected = state.solo;
+      return void paint();
+    }
     if (state.selected && !state.meetings.some((item) => item.id === state.selected)) {
       state.selected = null;
     }
@@ -839,26 +889,44 @@
    * Trwające spotkanie wychodzi na wierzch.
    *
    * Wejście w zakładkę w trakcie rozmowy ma pokazać TĘ rozmowę, a nie spis,
-   * w którym trzeba jej szukać — a przy samym rozpoczęciu otwiera się od
-   * razu na transkrypcji, bo to jedyna rzecz, która w trakcie rośnie.
-   * Podsumowania jeszcze nie ma i długo nie będzie.
+   * w którym trzeba jej szukać.
+   *
+   * W TRAKCIE NAGRYWANIA DOMYŚLNA JEST TRANSKRYPCJA, i to nie tylko przy
+   * samym rozpoczęciu. Zapis jest jedyną rzeczą, która wtedy rośnie:
+   * podsumowania nie ma i długo nie będzie, a notatnik jest pustą kartką.
+   * Wejście w zakładkę w połowie rozmowy pokazywało dotąd napis
+   * „Podsumowanie powstanie po zakończeniu rozmowy" — czyli zdanie
+   * o tym, że nie ma nic do oglądania, w chwili gdy obok rosło zdanie
+   * po zdaniu.
+   *
+   * Ręka ma jednak pierwszeństwo: kto przeszedł do notatnika, zostaje
+   * w notatniku do końca tej rozmowy (state.tabByHand). Następne nagranie
+   * zaczyna liczenie od nowa.
    */
-  function follow(live, opened) {
+  function follow(live, started) {
+    // Okno jednego spotkania pokazuje swoje spotkanie i tylko je — nawet
+    // gdy obok zaczyna się następne.
+    if (state.solo) return;
     if (!live?.recording || !live.id) return;
     state.selected = live.id;
-    if (opened) state.tab = "transcript";
+    if (started) state.tabByHand = false;
+    if (!state.tabByHand) state.tab = "transcript";
   }
 
   const MeetingsView = {
-    async show(host, settings) {
+    async show(host, settings, { solo = null } = {}) {
       root = host;
       state.settings = settings;
+      if (solo) {
+        state.solo = solo;
+        state.selected = solo;
+      }
       if (!root.querySelector(".meet")) build();
       const live = await api.meetings.state();
       state.recording = live.recording;
       state.seconds = live.seconds;
       state.agenda = live.agenda ?? null;
-      follow(live, state.tab === "summary");
+      follow(live, false);
       await reload();
       tick(state.recording);
     },
@@ -881,10 +949,15 @@
         odcinka zapisu. */
     changed(live) {
       const started = !!live?.recording && !state.recording;
+      const ended = !live?.recording && state.recording;
       state.recording = !!live?.recording;
       state.seconds = live?.seconds ?? 0;
       if (live?.agenda) state.agenda = live.agenda;
       follow(live, started);
+      /* Koniec rozmowy odwraca domyślność: rósł zapis, teraz powstaje
+         wniosek — i to on jest powodem, dla którego się nagrywało.
+         Zakładka wybrana ręką zostaje tam, gdzie ją postawiono. */
+      if (ended && !state.tabByHand) state.tab = "summary";
       tick(state.recording);
       if (root?.querySelector(".meet")) reload();
     },

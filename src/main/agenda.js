@@ -62,6 +62,10 @@ function parse(line) {
       /* Imiona zaproszonych. Po nich zapis rozmowy potrafi powiedzieć
          „Ania" zamiast „Rozmówcy" — patrz main/merge.js i main/digest.js. */
       people: (event.people ?? []).map((name) => String(name).trim()).filter(Boolean),
+      /* Adresy zaproszonych — do jednej rzeczy: poranek porównuje po nich
+         nadawcę maila z listą osób, z którymi mam się dziś widzieć.
+         Zostają na tym komputerze, patrz main/briefing.js. */
+      emails: (event.emails ?? []).map((mail) => String(mail).trim().toLowerCase()).filter(Boolean),
       link: String(event.link ?? "").trim() || null,
     }))
     .filter((event) => event.id && Number.isFinite(event.from) && Number.isFinite(event.to));
@@ -124,12 +128,19 @@ function justStarted(events, now, { since = null, grace = GRACE } = {}) {
 }
 
 /** Spis spotkań z kalendarza systemowego. */
-function read({ hours = HOURS, helper = helperPath() } = {}) {
+/**
+ * @param {object} options
+ * @param {number} [options.hours] jak daleko w przód
+ * @param {number} [options.back]  ile godzin wstecz; poranek pyta o cały
+ *                                 dzień, reszta aplikacji o godzinę wstecz
+ *                                 (tyle, żeby złapać trwające spotkanie)
+ */
+function read({ hours = HOURS, back = 1, helper = helperPath() } = {}) {
   return new Promise((resolve) => {
     if (!helper) return resolve({ access: "missing", events: [] });
     execFile(
       helper,
-      ["--agenda", "--hours", String(hours)],
+      ["--agenda", "--hours", String(hours), "--back", String(back)],
       { timeout: PATIENCE, encoding: "utf8" },
       (problem, stdout) => {
         if (problem && !stdout) return resolve({ access: "error", events: [] });

@@ -63,12 +63,47 @@ function normalizeUrl(url) {
 }
 
 class Supabase {
+  /* ══ SESJA NIE WCZYTUJE SIĘ W KONSTRUKTORZE ══
+
+     I to nie jest ostrożność na wyrost, tylko poprawka po awarii, którą
+     widać było jako APLIKACJĘ BEZ OKIEN.
+
+     Sesja leży na dysku zaszyfrowana kluczem z pęku kluczy, a odszyfrowanie
+     (safeStorage.decryptString) jest wywołaniem SYNCHRONICZNYM, które macOS
+     potrafi zatrzymać na pytaniu „czy pozwolić tej aplikacji sięgnąć po
+     zapisane hasło?". Pytanie pada za każdym razem, gdy podpis aplikacji
+     się zmieni — czyli po każdym własnym zbudowaniu i zainstalowaniu.
+
+     Wywołane w konstruktorze, na samym początku uruchamiania, zatrzymywało
+     CAŁY proces główny: nie powstawał ani znaczek, ani HUD, ani okno.
+     Aplikacja wyglądała na uruchomioną (proces był), a nie było w niej nic —
+     bo stała w miejscu, czekając na okienko systemu, którego z niczym nie
+     dawało się powiązać.
+
+     Sesja wraca więc OSOBNO, przez restore(), już po tym jak okna staną
+     na ekranie. Do tego czasu Cribro jest po prostu niezalogowane —
+     a to jest stan, który interfejs i tak umie pokazać. */
   constructor({ dir } = {}) {
     this.url = "";
     this.anonKey = "";
     this.session = null;
+    this.restored = false;
     this.sessionPath = path.join(dir ?? app.getPath("userData"), "supabase-session.bin");
+  }
+
+  /**
+   * Sesja z dysku — wołane raz, po wstaniu okien.
+   *
+   * Zwraca prawdę, jeśli COŚ się wczytało: tylko wtedy jest o czym mówić
+   * interfejsowi. Drugie wywołanie nie robi nic, bo sesja żyjąca w pamięci
+   * jest zawsze świeższa od tej z pliku.
+   */
+  restore() {
+    if (this.restored) return false;
+    this.restored = true;
+    if (this.session) return false;
     this.#load();
+    return !!this.session;
   }
 
   /* ── Konfiguracja ───────────────────────────────────────────── */

@@ -69,6 +69,31 @@ const DEFAULTS = {
   // Wyłączenie zostawia ją wyłącznie w pasku menu.
   showInDock: true,
 
+  /* ── Poranek ──────────────────────────────────────────────────
+     Jedno okno raz dziennie: co w poczcie wymaga uwagi, co jest w planie
+     dnia i co przyszło z kanałów. Szczegóły rozstrzygnięć — main/briefing.js.
+
+     `owner` to adres Google, DO KTÓREGO ten poranek należy. Nie jest to
+     ozdoba ani wygoda: poranek pokazuje się wyłącznie wtedy, gdy podłączone
+     konto zgadza się z tym adresem. Zalogowanie się innym kontem nie
+     przełącza poranka na cudzą skrzynkę — odmawia.
+
+     `clientId` zakłada użytkownik u siebie w Google Cloud. Zostawiony
+     w trybie „Testing" z jednym adresem na liście testerów sprawia, że tą
+     drogą nie zaloguje się nikt inny. Dlatego klucza nie ma w aplikacji. */
+  briefing: {
+    enabled: false,
+    owner: "",
+    google: { clientId: "", clientSecret: "" },
+    // Kanały: { name, url }. Pusta lista znaczy „bez sekcji ŚWIAT".
+    feeds: [],
+    // Godzina, przed którą okno nie wyskakuje — nocne sięgnięcie po
+    // komputer po jedną rzecz nie jest początkiem dnia pracy.
+    notBefore: 4,
+    // Kiedy ostatnio pokazany. Po tym poznajemy, że dziś już był.
+    lastAt: null,
+  },
+
   /* Widget — jedyne, co aplikacja pokazuje poza swoimi oknami: pływający
      znaczek z notatkami „na wierzchu" i z tacą czynności robionych w biegu.
 
@@ -504,6 +529,14 @@ class Store {
       endedAt: null,
       seconds: 0,
       title: null,
+      /* Skąd wzięła się nazwa: "room" (przepisana z okna rozmowy — karta
+         Google Meet niesie nazwę pokoju), "calendar", "model" (napisana
+         przy podsumowaniu) albo null. Nazwy przepisanej z okna rozmowy
+         podsumowanie już nie zmienia: skoro pokój tak się nazywa, to tak
+         nazywa się spotkanie. */
+      titleFrom: null,
+      // Nazwa wpisana ręką. Model nie poprawia cudzych decyzji.
+      titleByHand: false,
       // Skąd rozmowa — „Google Meet", „Zoom". Z wykrywania, gdy było czym
       // wykryć; z niczego, gdy nagranie ruszyło z menu.
       where: null,

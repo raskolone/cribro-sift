@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Tytuł okna jest CELOWO bezbarwny.
+
+         Tytuły wszystkich okien na ekranie są widoczne dla każdej innej
+         aplikacji (CGWindowList) i to samo źródło czyta nasze wykrywanie
+         rozmów (src/main/detect.js). Okno o nazwie „Spotkanie — …", stojące
+         obok trwającej rozmowy, jest dokładnie tym, czego szukałby cudzy
+         wykrywacz „asystentów AI" — a Cribro asystentem w rozmowie nie
+         jest: nie dołącza do niej, nic do niej nie mówi i nie ma jej czym
+         zakłócić. Nazwa okna nie ma go w to wrabiać.
+
+         Nazwa spotkania jest w środku okna, gdzie należy do człowieka,
+         który je otworzył. Patrz scripts/quiet-test.js. -->
+    <title>Cribro Sift</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/prose.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <style>
+      /* ─────────────────────────────────────────────────────────
+         Jedno spotkanie we własnym oknie.
+
+         Nie jest to drugi widok spotkania, tylko druga POSTAĆ tego samego:
+         rysuje je ten sam js/meetings-view.js, którym rysuje się zakładka
+         w oknie głównym. Osobny plik oznaczałby dwa notatniki, dwie
+         transkrypcje i dwa miejsca do poprawienia przy każdej zmianie —
+         a rozjechałyby się przy pierwszej.
+
+         Po co osobne okno: spotkanie ogląda się W TRAKCIE innej pracy —
+         pisząc z niego maila albo siedząc na następnym. Wtedy okno główne
+         jest w drodze, bo trzeba je przełączyć i znaleźć w nim zakładkę.
+         ───────────────────────────────────────────────────────── */
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      /* Belka tytułowa jest ukryta (titleBarStyle: hiddenInset), więc
+         miejsce na światła okna trzeba zrobić samemu — inaczej pierwszy
+         wiersz treści leży pod nimi. Cały ten pas jest uchwytem: okno bez
+         ramki nie ma za co złapać. */
+      #bar {
+        height: 38px;
+        -webkit-app-region: drag;
+      }
+
+      /* Kafel spotkania idzie od krawędzi do krawędzi: to całe okno, a nie
+         panel położony w oknie obok czegoś jeszcze. */
+      #solo {
+        height: calc(100% - 38px);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Tło motywu — pierwszym dzieckiem body, reszta warstwę wyżej. -->
+    <canvas id="constellation"></canvas>
+
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-trash" viewBox="0 0 24 24">
+          <path d="M4.5 7h15M9.5 7V5.4a1.4 1.4 0 0 1 1.4-1.4h2.2a1.4 1.4 0 0 1 1.4 1.4V7M6.6 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.8-12"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <!-- Koło zębate rysuje meetings-view.js przy spisie rozmów. To okno
+             spisu nie pokazuje, więc go nie narysuje — ale rysuje je TEN SAM
+             plik, a okno bez symbolu byłoby pustym kwadratem w chwili, w której
+             ktoś kiedyś ten spis tu doda. -->
+        <symbol id="i-gear" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5" />
+          <path
+            d="M12 2.5v2.6M12 18.9v2.6M21.5 12h-2.6M5.1 12H2.5M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8M18.7 18.7l-1.8-1.8M7.1 7.1 5.3 5.3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="i-window" viewBox="0 0 24 24">
+          <rect x="3.5" y="5" width="17" height="14" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <path d="M3.5 9h17" fill="none" stroke="currentColor" stroke-width="1.6" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div id="bar"></div>
+    <div id="solo"></div>
+
+    <script src="../shared/strings.js"></script>
+    <script src="../shared/richtext.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/mock-bridge.js"></script>
+    <script src="js/theme.js"></script>
+    <script src="js/constellation.js"></script>
+    <script src="js/meetings-view.js"></script>
+    <script src="js/meeting-solo.js"></script>
+  </body>
+</html>

@@ -77,6 +77,11 @@ if (!window.cribro) {
     mesh: "srednie",
     language: { mode: "bilingual", primary: "pl", secondary: "en" },
     uiLanguage: "pl",
+    /* Makieta pokazuje to, co widzi ZWYKŁY użytkownik — a ten nie widzi
+       kroku „Silniki" wcale (patrz main/owner.js). Do obejrzenia go
+       w przeglądarce wystarczy dopisać ?owner do adresu makiety. */
+    owner: new URLSearchParams(location.search).has("owner"),
+    enginesReady: true,
     autoPaste: true,
     playSound: true,
     launchAtLogin: false,
@@ -317,7 +322,27 @@ if (!window.cribro) {
           updatedAt: minutesAgo(300),
           pinned: false,
           kind: "quick",
-          text: "Sprawdzić, czy limity Gemini odnawiają się o północy czasu lokalnego.",
+          text: "Sprawdzić, czy limity odnawiają się o północy czasu lokalnego.",
+        },
+        /* Notatka ze spotkania — jedyna, której nikt nie pisał. Powstaje
+           sama po każdej nagranej rozmowie i ma w Notatniku własną
+           przegródkę (patrz groupNotes w js/notes-core.js). Makieta musi ją
+           mieć, bo bez niej nie widać, po co ta przegródka istnieje. */
+        {
+          id: "n5",
+          at: minutesAgo(96),
+          updatedAt: minutesAgo(94),
+          pinned: false,
+          kind: "meeting",
+          folder: "Spotkania",
+          text:
+            "# Przegląd tygodnia · Ania Kowalska\n\n30 sierpnia 2026, 09:00 · Google Meet\n\n" +
+            "**Kto był:** Maciej Wyrozumski, Ania Kowalska\n\n" +
+            "**O czym było**\n\nPrzegląd zgłoszeń i decyzja o starym API.\n\n" +
+            "**Ustalenia**\n\n- Raport idzie w czwartek.\n- Stare API zostaje do końca kwartału.\n\n" +
+            "## Zadania\n\n- [ ] Ania: przysłać dane, wtorek\n- [ ] Napisać notkę o wyłączeniu API\n\n" +
+            "## Zapis rozmowy\n\n**Ty** · 0:00\n\nZdążymy z raportem przed poniedziałkiem?\n\n" +
+            "**Ania Kowalska** · 0:14\n\nDam radę, ale potrzebuję danych z wtorku.",
         },
       ];
       return {
@@ -656,6 +681,86 @@ if (!window.cribro) {
       save: async () => ({ error: "Makieta nie robi zrzutów ekranu." }),
       cancel: () => {},
       onText: on("shot:text"),
+    },
+
+    /* Poranek. W makiecie nie ma ani konta Google, ani kalendarza, więc
+       treść stoi tu wpisana — bez niej okna poranka nie da się obejrzeć
+       ani w przeglądarce, ani zrzutem z ukrytego okna. */
+    briefing: {
+      state: async () => ({
+        enabled: true,
+        owner: "ty@example.com",
+        feeds: [{ url: "https://serwis.example/feed", name: "" }],
+        lastAt: null,
+        account: { configured: true, signedIn: true, email: "ty@example.com" },
+        mismatch: false,
+      }),
+      show: async () => true,
+      connect: async () => ({ account: { signedIn: true, email: "ty@example.com" } }),
+      disconnect: async () => ({ account: { signedIn: false, email: null } }),
+      onData: (handler) => {
+        const hour = 3600e3;
+        const at = new Date();
+        const o = (h, m = 0) => new Date(at.getFullYear(), at.getMonth(), at.getDate(), h, m).getTime();
+        setTimeout(
+          () =>
+            handler({
+              at: at.toISOString(),
+              plan: {
+                all: [
+                  { id: "1", title: "Stand-up zespołu", from: o(9), to: o(9, 15), guests: 5 },
+                  { id: "2", title: "Kursant 4 — pierwsze zajęcia", from: o(11, 30), to: o(12, 15), guests: 2 },
+                  { id: "3", title: "Przegląd tygodnia z Magdaleną", from: o(14), to: o(15), guests: 4 },
+                ],
+                done: [{ id: "1" }],
+                ahead: [{ id: "2" }, { id: "3" }],
+                next: { id: "2", from: o(11, 30) },
+                minutesToNext: 35,
+              },
+              picks: [
+                {
+                  id: "a", threadId: "t1", from: "Magdalena Nowak", address: "magda@example.com",
+                  subject: "Grafik zajęć — potwierdzenie",
+                  why: ["jest dziś na Twoim spotkaniu", "jest w nim pytanie", "wisi 2 dni"],
+                  link: "https://mail.google.com/mail/u/0/#inbox/t1",
+                },
+                {
+                  id: "b", threadId: "t2", from: "Tomasz Kaczmarek", address: "tomasz@example.com",
+                  subject: "Link do Meet",
+                  why: ["napisane wprost do Ciebie", "jest w nim pytanie"],
+                  link: "https://mail.google.com/mail/u/0/#inbox/t2",
+                },
+                {
+                  id: "c", threadId: "t3", from: "Biuro rachunkowe", address: "biuro@example.com",
+                  subject: "Faktura za sierpień",
+                  why: ["wisi 4 dni"],
+                  link: "https://mail.google.com/mail/u/0/#inbox/t3",
+                },
+              ],
+              feeds: [
+                { source: "Serwis", title: "Nowa wersja Electrona zmienia zasady podpisywania", link: "https://x", at: Date.now() - hour },
+                { source: "Serwis", title: "Apple domyka lukę w EventKit", link: "https://y", at: Date.now() - 3 * hour },
+              ],
+              words: {
+                headline: "Trzy spotkania, dzień zbity po południu — poranek masz wolny.",
+                mail: [
+                  "Magdalena Nowak — czeka na potwierdzenie grafiku, pyta wprost i wisi od wtorku.",
+                  "Tomasz Kaczmarek — prosi o link do zajęć, które zaczynają się dziś.",
+                  "Biuro rachunkowe — faktura za sierpień, nic pilnego poza terminem.",
+                ],
+                day: [
+                  "9:00 Stand-up zespołu",
+                  "11:30 Kursant 4 — pierwsze zajęcia, Tomasz czeka na link.",
+                  "14:00 Przegląd tygodnia z Magdaleną — to tam wróci temat grafiku.",
+                ],
+                world: ["Zmiany w podpisywaniu aplikacji na macOS."],
+              },
+              problems: [],
+            }),
+          400,
+        );
+        return () => {};
+      },
     },
 
     system: {

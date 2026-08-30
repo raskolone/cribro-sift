@@ -56,6 +56,10 @@ const state = {
      bo to nie jest ustawienie — to odpowiedź na pytanie zadane przed
      chwilą i znika razem z oknem. */
   notionCheck: null,
+  /* Stan poranka: konto, właściciel, czy konto się z nim zgadza. Poza
+     `settings`, bo to nie jest ustawienie — to odpowiedź procesu głównego
+     na pytanie „co teraz z tym kontem". */
+  briefing: null,
   /* Polecenie w trakcie edycji — kopia, nie oryginał. Widok przerysowuje się
      w całości, więc wpisywany tekst musi mieć gdzie przeczekać; ta sama
      sztuczka co przy formularzu konta. `null` znaczy „nikt nic nie edytuje". */
@@ -148,9 +152,14 @@ function renderStart() {
   const { settings, status, tests } = state;
   const micOk = status.microphone === "granted";
   const axOk = !!status.accessibility;
-  // Klucz może być wpisany w którymkolwiek kroku, jeśli oba chodzą na tym
-  // samym dostawcy — tak samo, jak rozstrzyga to backend w keyFor().
+  /* Klucz może być wpisany w którymkolwiek kroku, jeśli oba chodzą na tym
+     samym dostawcy — tak samo, jak rozstrzyga to backend w keyFor().
+
+     Zwykły użytkownik nie widzi tu ani dostawcy, ani klucza (patrz
+     main/owner.js), więc odpowiedź „czy jest czym mówić" przychodzi gotowa
+     z procesu głównego, jednym polem `enginesReady`. */
   const hasKey = (stage) => {
+    if (!settings.owner) return settings.enginesReady !== false;
     const mine = settings[stage];
     const other = settings[stage === "stt" ? "sieve" : "stt"];
     if (mine.provider === "mock") return true;
@@ -199,23 +208,45 @@ function renderStart() {
           </div>
         </li>
 
-        <li class="setup__row" data-done="${sttOk && sieveOk}">
-          <span class="setup__num">3</span>
-          <div class="setup__body">
-            <strong>Silniki</strong>
-            <span>
-              Transkrypcja: <b>${escape(settings.stt.model)}</b> ·
-              sito: <b>${escape(settings.sieve.model)}</b>.
-              ${sttOk && sieveOk ? "Klucze na miejscu." : "Klucze wpiszesz w Ustawieniach."}
-            </span>
-            ${testLine("stt")}
-            ${testLine("sieve")}
-          </div>
-          <div class="setup__act">
-            <button class="btn btn--sm" data-act="test-stt">Sprawdź transkrypcję</button>
-            <button class="btn btn--sm" data-act="test-sieve">Sprawdź sito</button>
-          </div>
-        </li>
+        ${
+          /* Krok trzeci wygląda inaczej u właściciela i inaczej u wszystkich
+             pozostałych. Właściciel widzi, co jest pod spodem, i ma czym to
+             sprawdzić. Reszta widzi odpowiedź na jedyne pytanie, jakie
+             naprawdę zadaje: czy to działa. Nazwy modeli nie ma tu wcale —
+             aplikacja obiecuje wynik, a nie markę (patrz main/owner.js). */
+          settings.owner
+            ? `<li class="setup__row" data-done="${sttOk && sieveOk}">
+                 <span class="setup__num">3</span>
+                 <div class="setup__body">
+                   <strong>Silniki</strong>
+                   <span>
+                     Transkrypcja: <b>${escape(settings.stt.model)}</b> ·
+                     sito: <b>${escape(settings.sieve.model)}</b>.
+                     ${sttOk && sieveOk ? "Klucze na miejscu." : "Klucze wpiszesz w Ustawieniach."}
+                   </span>
+                   ${testLine("stt")}
+                   ${testLine("sieve")}
+                 </div>
+                 <div class="setup__act">
+                   <button class="btn btn--sm" data-act="test-stt">Sprawdź transkrypcję</button>
+                   <button class="btn btn--sm" data-act="test-sieve">Sprawdź sito</button>
+                 </div>
+               </li>`
+            : `<li class="setup__row" data-done="${sttOk && sieveOk}">
+                 <span class="setup__num">3</span>
+                 <div class="setup__body">
+                   <strong>Sito</strong>
+                   <span>
+                     ${
+                       sttOk && sieveOk
+                         ? "Gotowe — transkrypcja i sito działają od pierwszego dyktowania. Nie ma tu czego ustawiać."
+                         : "Sito milczy — sprawdź połączenie z siecią i spróbuj jeszcze raz."
+                     }
+                   </span>
+                 </div>
+                 <div class="setup__act">${chip(sttOk && sieveOk, "Gotowe", "Milczy")}</div>
+               </li>`
+        }
 
         <li class="setup__row" data-done="${!!last}">
           <span class="setup__num">4</span>
@@ -918,8 +949,10 @@ function renderSettings() {
       <p class="sub">
         Jak aplikacja pokazuje się poza oknem: ikoną w Docku i przełącznikiem ⌘Tab.
       </p>
-      ${toggle("showInDock", "Ikona w Docku", "Wyłączenie zostawia Cribro wyłącznie w pasku menu — znika też z ⌘Tab.", settings.showInDock !== false)}
+      ${toggle("showInDock", "Ikona w Docku", "Wyłączenie zostawia Cribro w pasku menu. Ikona wraca sama na czas, w którym stoi otwarte okno aplikacji — po to, żeby dało się do niego wrócić ⌘Tabem.", settings.showInDock !== false)}
     </div>
+
+    ${renderBriefingCard()}
 
     ${renderWidgetCard()}
 
@@ -946,20 +979,7 @@ function renderSettings() {
 
     ${renderSpellcheck()}
 
-    <div class="card">
-      <h2>Silniki</h2>
-      <p class="sub">
-        Dwa osobne kroki. Najpierw ktoś zamienia głos na tekst, potem ktoś inny
-        ten tekst czyści. Możesz dać oba jednemu dostawcy albo je rozdzielić.
-      </p>
-      ${engineBlock("stt", "Krok 1 — transkrypcja", "Zamienia nagranie na wierny zapis, razem z wahaniami i zacięciami.")}
-      ${engineBlock("sieve", "Krok 2 — sito", "Czyści zapis: usuwa szum mowy, rozstrzyga autopoprawki, stawia interpunkcję.")}
-      ${
-        settings.stt.provider === settings.sieve.provider && settings.stt.provider !== "mock"
-          ? `<p class="hintline">Oba kroki chodzą na tym samym dostawcy — klucz wystarczy wpisać raz, w dowolnym z nich.</p>`
-          : ""
-      }
-    </div>
+    ${renderEngines()}
 
     ${renderShotCard()}
 
@@ -1079,6 +1099,40 @@ function renderShotCard() {
     </div>`;
 }
 
+/**
+ * Karta „Silniki" — dostawca, model i klucz dla trzech kroków potoku.
+ *
+ * WIDZI JĄ WYŁĄCZNIE WŁAŚCICIEL. Nie jest to blokada w interfejsie: proces
+ * główny nie wysyła tu ani katalogu dostawców, ani nazw modeli, ani kluczy,
+ * więc `state.providers` jest u wszystkich pozostałych pustym obiektem
+ * i nie ma z czego zbudować ani jednego pola. Dlaczego — mówi nagłówek
+ * main/owner.js.
+ *
+ * Na miejscu karty nie zostaje nic. Wyszarzone pole nadal mówi, co w nim
+ * stało, a napis „ta funkcja jest niedostępna w twojej wersji" jest
+ * obietnicą, której nikt tu nikomu nie składał: transkrypcja i sito po
+ * prostu działają.
+ */
+function renderEngines() {
+  if (!state.settings?.owner) return "";
+  const { settings } = state;
+  return `
+    <div class="card">
+      <h2>Silniki</h2>
+      <p class="sub">
+        Dwa osobne kroki. Najpierw ktoś zamienia głos na tekst, potem ktoś inny
+        ten tekst czyści. Możesz dać oba jednemu dostawcy albo je rozdzielić.
+      </p>
+      ${engineBlock("stt", "Krok 1 — transkrypcja", "Zamienia nagranie na wierny zapis, razem z wahaniami i zacięciami.")}
+      ${engineBlock("sieve", "Krok 2 — sito", "Czyści zapis: usuwa szum mowy, rozstrzyga autopoprawki, stawia interpunkcję.")}
+      ${
+        settings.stt.provider === settings.sieve.provider && settings.stt.provider !== "mock"
+          ? `<p class="hintline">Oba kroki chodzą na tym samym dostawcy — klucz wystarczy wpisać raz, w dowolnym z nich.</p>`
+          : ""
+      }
+    </div>`;
+}
+
 /** Przełącznik w kształcie pola ustawień — ten sam co w renderSettings. */
 function switchField(path, label, hint, value) {
   return `
@@ -1103,6 +1157,124 @@ function switchField(path, label, hint, value) {
  * plan dnia ma być widoczny, a nie do odszukania. Wspólne mają jedno i to
  * jest cała umowa z użytkownikiem: kliknięcie w znaczek chowa wszystko.
  */
+/**
+ * Poranek — karta w Ustawieniach.
+ *
+ * Prowadzi przez trzy kroki w kolejności, w której naprawdę trzeba je
+ * zrobić: klient OAuth, podłączenie konta, kanały. Każdy następny ma sens
+ * dopiero po poprzednim, więc każdy następny jest wyszarzony, dopóki
+ * poprzedni nie jest zrobiony — zamiast trzech pól obok siebie i pytania,
+ * od którego zacząć.
+ */
+function renderBriefingCard() {
+  const settings = state.settings ?? {};
+  const config = settings.briefing ?? {};
+  const account = state.briefing?.account ?? { configured: false, signedIn: false, email: null };
+  const feeds = config.feeds ?? [];
+
+  const toggle = (path, label, hint, value) => `
+    <div class="field">
+      <div class="field__label"><strong>${label}</strong><span>${hint}</span></div>
+      <div class="field__control">
+        <button class="switch" role="switch" data-toggle="${path}" aria-checked="${!!value}"></button>
+      </div>
+    </div>`;
+
+  /* Stan konta jednym zdaniem. „Podłączone" nie wystarcza: przy poranku
+     liczy się, KTÓRE konto — i dlatego adres stoi na wierzchu. */
+  const state_ = () => {
+    if (!account.configured) return ["pill--amber", "brak klienta OAuth"];
+    if (state.briefing?.mismatch) return ["pill--amber", `cudze konto: ${account.email}`];
+    if (account.signedIn) return ["pill--mint", account.email ?? "podłączone"];
+    return ["pill--amber", "niepodłączone"];
+  };
+  const [pill, label] = state_();
+
+  return `
+    <div class="card">
+      <h2>Poranek</h2>
+      <p class="sub">
+        Jedno okno raz dziennie, przy pierwszym siadaniu do komputera: co
+        w poczcie wymaga uwagi i co jest w planie dnia. Poczta czytana jest
+        tylko do odczytu i tylko z konta wpisanego niżej; wybór maili robią
+        reguły na tym komputerze, a do modelu jedzie dopiero kilkanaście
+        wytypowanych.
+      </p>
+
+      ${toggle("briefing.enabled", "Pokazuj poranek", "Raz na dobę, przy pierwszym uruchomieniu albo odblokowaniu ekranu.", config.enabled)}
+
+      <div class="field">
+        <div class="field__label">
+          <strong>Konto Google</strong>
+          <span>
+            Poranek należy do jednego konta. Zalogowanie innego jest odrzucane —
+            razem z sesją.
+          </span>
+        </div>
+        <div class="field__control">
+          <span class="pill ${pill}">${escape(label)}</span>
+          ${
+            account.signedIn
+              ? `<button class="btn btn--sm" data-brief="disconnect">Odłącz</button>`
+              : `<button class="btn btn--sm btn--primary" data-brief="connect" ${account.configured ? "" : "disabled"}>Podłącz</button>`
+          }
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field__label">
+          <strong>Identyfikator klienta OAuth</strong>
+          <span>
+            Zakładasz go u siebie w Google Cloud (typ „Desktop app", zakres
+            gmail.readonly). Klient zostawiony w trybie „Testing" z jednym
+            adresem na liście testerów sprawia, że tą drogą nie zaloguje się
+            nikt poza Tobą. Dlatego tego klucza nie ma w aplikacji.
+          </span>
+        </div>
+        <div class="field__control">
+          <input type="text" style="min-width:320px" data-setting="briefing.google.clientId"
+                 placeholder="…apps.googleusercontent.com"
+                 value="${escape(config.google?.clientId ?? "")}" />
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field__label">
+          <strong>Tajemnica klienta</strong>
+          <span>
+            Google wydaje ją także klientom desktopowym i nie jest sekretem
+            (leży w każdej kopii aplikacji), ale bywa wymagana przy wymianie
+            kodu. Zostaw puste, jeśli logowanie działa bez niej.
+          </span>
+        </div>
+        <div class="field__control">
+          <input type="password" style="min-width:320px" data-setting="briefing.google.clientSecret"
+                 placeholder="opcjonalne"
+                 value="${escape(config.google?.clientSecret ?? "")}" />
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field__label">
+          <strong>Kanały</strong>
+          <span>
+            Adresy RSS albo Atom, po jednym w wierszu. Kanał, który milczy,
+            wypada sam — nie zatrzymuje poranka. Puste pole znaczy „bez
+            sekcji Świat".
+          </span>
+        </div>
+        <div class="field__control">
+          <textarea rows="3" style="min-width:320px" data-brief-feeds
+                    placeholder="https://serwis.example/feed">${escape(feeds.map((feed) => feed.url ?? feed).join("\n"))}</textarea>
+        </div>
+      </div>
+
+      <div class="meet__act meet__act--tight">
+        <button class="btn btn--sm" data-brief="show">Pokaż teraz</button>
+      </div>
+    </div>`;
+}
+
 function renderWidgetCard() {
   const widget = state.settings.widget ?? {};
   const desk = widget.mode === "desk";
@@ -1567,6 +1739,10 @@ function renderCloud() {
    Lista modeli zmienia się wraz z dostawcą, więc nie da się wybrać
    modelu, którego wybrany dostawca nie zna. */
 function engineBlock(stage, title, hint) {
+  /* Bez katalogu dostawców nie ma czego rysować — i to nie jest usterka,
+     tylko odpowiedź. Proces główny wysyła katalog wyłącznie właścicielowi
+     (patrz providers:get w main/main.js i nagłówek main/owner.js). */
+  if (!state.settings?.owner) return "";
   const cfg = state.settings[stage];
   const catalogue = state.providers[stage] ?? {};
   const provider = catalogue[cfg.provider];
@@ -1693,9 +1869,22 @@ function renderBanner() {
 /* ── Render ───────────────────────────────────────────────────── */
 
 function render() {
+  /* Zakładka schodzi z ekranu razem z tym, co na niej stało — a uchwyt
+     przenoszenia linii stoi na współrzędnych OKNA, nie notatki, i sam się
+     o tym nie dowie: kursor nie drgnął, więc nic mu nie powie, że notatki
+     pod nim już nie ma. Zostawał wtedy sześcioma kropkami na obcej
+     zakładce i łapał kliknięcia zamiast tego, co pod nim. */
+  window.CribroEditor?.parkAll();
+
   const view = VIEWS[state.view];
   $("#title").textContent = view.title;
-  $("#subtitle").textContent = view.subtitle;
+  /* Podtytuł Ustawień wymieniał „dostawców" — a dostawców widzi wyłącznie
+     właściciel (patrz main/owner.js). Zapowiadanie czegoś, czego na stronie
+     nie ma, jest gorsze niż brak zapowiedzi. */
+  $("#subtitle").textContent =
+    state.view === "settings" && state.settings && !state.settings.owner
+      ? t("Skróty, konto, prywatność.")
+      : view.subtitle;
   $("#titlePill").textContent = state.settings
     ? t("Sito {mesh}", { mesh: t(MESH[state.settings.mesh].name) })
     : "";
@@ -1830,6 +2019,40 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  /* Poranek: podłączenie konta, odłączenie i pokazanie na żądanie.
+     Wszystkie trzy mogą zawieść w sposób, o którym trzeba powiedzieć —
+     „cudze konto" i „brak klienta OAuth" to nie są awarie, tylko odpowiedzi. */
+  const brief = event.target.closest("[data-brief]");
+  if (brief) {
+    const what = brief.dataset.brief;
+    const was = brief.textContent;
+    try {
+      if (what === "connect") {
+        brief.textContent = t("Czekam na przeglądarkę…");
+        brief.disabled = true;
+        state.briefing = await api.briefing.connect();
+        state.settings = await api.settings.get();
+  /* Czyja to instalacja — jednym słowem dla całego okna. Przewodnik
+     (js/onboarding.js) rysuje z tego inny ostatni slajd; patrz
+     main/owner.js. */
+  window.CribroOwner = !!state.settings.owner;
+        toast(t("Konto podłączone."));
+      } else if (what === "disconnect") {
+        state.briefing = await api.briefing.disconnect();
+        toast(t("Konto odłączone."));
+      } else if (what === "show") {
+        await api.briefing.show();
+      }
+    } catch (error) {
+      toast(String(error.message ?? error));
+    } finally {
+      brief.textContent = was;
+      brief.disabled = false;
+      render();
+    }
+    return;
+  }
+
   const mesh = event.target.closest("[data-mesh]");
   if (mesh) {
     await save("mesh", mesh.dataset.mesh);
@@ -1945,7 +2168,7 @@ document.addEventListener("click", async (event) => {
               ok: result.ok,
               note: result.ok
                 ? `Sito odpowiedziało w ${result.ms} ms (${result.model}): „${result.text}"`
-                : "Brak klucza Anthropic — sito odda surowy transkrypt.",
+                : "Brak klucza — sito odda surowy transkrypt.",
             };
     } catch (error) {
       state.tests[which] = { ok: false, note: String(error.message || error) };
@@ -2085,6 +2308,20 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("change", async (event) => {
+  /* Kanały zapisujemy przy WYJŚCIU z pola, nie przy każdej literze:
+     w trakcie pisania adresu połowa wierszy to jeszcze nie są adresy,
+     a każdy zapis przerysowuje widok i zabiera kursor. */
+  const feeds = event.target.closest("[data-brief-feeds]");
+  if (feeds) {
+    const rows = feeds.value
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((url) => ({ url, name: "" }));
+    await save("briefing.feeds", rows);
+    return;
+  }
+
   const lang = event.target.closest("[data-spell-lang]");
   if (lang) {
     const chosen = new Set(state.settings.spellcheck?.languages ?? []);
@@ -2528,6 +2765,7 @@ api.onError(({ message, stage, empty }) => {
 });
 api.settings.onChange((settings) => {
   state.settings = settings;
+  window.CribroOwner = !!settings.owner;
   setLanguage(settings.uiLanguage ?? "pl");
   MeetingsView.settings(settings);
   render();
@@ -2569,12 +2807,17 @@ function setRail(collapsed) {
   NotesView.mount($("#view-notes"));
 
   state.settings = await api.settings.get();
+  /* Czyja to instalacja — jednym słowem dla całego okna. Przewodnik
+     (js/onboarding.js) rysuje z tego inny ostatni slajd; patrz
+     main/owner.js. */
+  window.CribroOwner = !!state.settings.owner;
   state.history = await api.history.get();
   state.stats = await api.history.stats();
   state.status = await api.system.status();
   state.providers = await api.system.providers();
   state.cloud = await api.cloud.state();
   state.redirects = (await api.cloud.redirects?.()) ?? [];
+  state.briefing = (await api.briefing?.state?.()) ?? null;
 
   // W podglądzie w przeglądarce pierwszy wpis jest od razu rozwinięty —
   // różnica między surowym a przesianym to sedno produktu, a domyślnie

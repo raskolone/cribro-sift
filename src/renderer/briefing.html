@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Poranek — Cribro Sift</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <style>
+      /* ─────────────────────────────────────────────────────────
+         Poranek — jedno okno raz dziennie.
+
+         Czyta się je RAZ i po to, żeby wiedzieć, od czego zacząć. Stąd
+         trzy decyzje, wszystkie przeciwko dokładaniu czegokolwiek:
+
+           JEDNA KOLUMNA   nie ma tu nic do porównywania obok siebie.
+                           Czyta się z góry na dół i kończy na dole.
+           BEZ AKCJI       poza otwarciem maila i zamknięciem okna nie ma
+                           tu żadnego przycisku. To nie jest skrzynka
+                           i nie ma udawać, że nią jest.
+           POWÓD PRZY MAILU  „wisi 3 dni · jest w nim pytanie" stoi obok
+                           tematu, bo po tym widać, czy reguła się nie
+                           pomyliła — i dlatego to reguły dają powody,
+                           a nie ocenę w procentach.
+         ───────────────────────────────────────────────────────── */
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+        overflow: hidden;
+      }
+
+      /* Pas na światła okna. Cały jest uchwytem — okno bez ramki nie ma
+         za co złapać. */
+      #bar {
+        height: 34px;
+        -webkit-app-region: drag;
+      }
+
+      #sheet {
+        height: calc(100% - 34px);
+        overflow-y: auto;
+        /* W poziomie nie ma czego przewijać i nie ma prawa być czego:
+           wiersze poczty wychodzą poza kolumnę tekstu o własny margines
+           (żeby podświetlenie sięgało poza literę) i bez tego dokładały
+           pasek przewijania na dole okna. */
+        overflow-x: hidden;
+        padding: 0 var(--s-8) var(--s-9);
+        max-width: 46rem;
+        margin: 0 auto;
+      }
+
+      /* Pasek przewijania jak w reszcie aplikacji — cienki i ciemny.
+         Arkusz okna głównego (css/app.css) tu nie dochodzi, bo poranek
+         nie potrzebuje niczego poza tokenami. */
+      #sheet::-webkit-scrollbar {
+        width: 8px;
+      }
+      #sheet::-webkit-scrollbar-thumb {
+        background: var(--line-strong);
+        border-radius: 4px;
+      }
+      #sheet::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      /* ── Nagłówek ── */
+
+      .head {
+        padding: var(--s-2) 0 var(--s-6);
+      }
+      .date {
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+      }
+      .head h1 {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: var(--fs-h1);
+        line-height: var(--lh-tight);
+        letter-spacing: -0.015em;
+        margin: var(--s-2) 0 0;
+        color: var(--text-hi);
+      }
+      .head p {
+        margin: var(--s-3) 0 0;
+        font-size: var(--fs-sm);
+        line-height: 1.6;
+        color: var(--text-2);
+      }
+
+      /* ── Sekcja ── */
+
+      section {
+        margin-top: var(--s-8);
+      }
+      h2 {
+        margin: 0 0 var(--s-4);
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-mute);
+        display: flex;
+        align-items: center;
+        gap: var(--s-3);
+      }
+      /* Kreska dociągająca nazwę sekcji do prawej krawędzi — sekcje mają
+         się od siebie odcinać bez ramek i bez tła. */
+      h2::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+      }
+
+      /* ── Poczta ── */
+
+      .mail {
+        display: block;
+        padding: var(--s-4) var(--s-4) var(--s-4) var(--s-5);
+        margin: 0 calc(var(--s-4) * -1) var(--s-1);
+        border-radius: var(--r-sm);
+        border-left: 2px solid transparent;
+        color: inherit;
+        text-decoration: none;
+        transition: background var(--t-fast), border-color var(--t-fast);
+      }
+      .mail:hover {
+        background: var(--surface-2);
+        border-left-color: var(--accent-55);
+      }
+      .mail__from {
+        font-weight: 700;
+        font-size: var(--fs-sm);
+        color: var(--text-hi);
+      }
+      .mail__subject {
+        font-size: var(--fs-sm);
+        color: var(--text);
+        margin-left: var(--s-2);
+      }
+      .mail__said {
+        margin: var(--s-2) 0 0;
+        font-size: var(--fs-sm);
+        line-height: 1.55;
+        color: var(--text-2);
+      }
+      /* Powody. Monospace i drobno, bo to jest metryka, a nie zdanie —
+         czyta się je wtedy, gdy wybór wygląda na pomyłkę. */
+      .mail__why {
+        margin-top: var(--s-2);
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        letter-spacing: 0.02em;
+        color: var(--text-faint);
+      }
+
+      /* ── Plan dnia ── */
+
+      .slot {
+        display: flex;
+        gap: var(--s-4);
+        padding: var(--s-3) 0;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .slot:last-child {
+        border-bottom: 0;
+      }
+      .slot__at {
+        flex: none;
+        width: 5.5rem;
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        color: var(--text-mute);
+        font-variant-numeric: tabular-nums;
+        padding-top: 2px;
+      }
+      .slot__what {
+        min-width: 0;
+      }
+      .slot__title {
+        font-size: var(--fs-sm);
+        color: var(--text-hi);
+      }
+      .slot__note {
+        margin: 2px 0 0;
+        font-size: var(--fs-label);
+        color: var(--text-2);
+      }
+      /* To, co już było, zostaje w oknie, ale blednie: dzień czyta się
+         wtedy jako całość, a nie jako lista rzeczy do zrobienia. */
+      .slot[data-done="true"] .slot__at,
+      .slot[data-done="true"] .slot__title {
+        color: var(--text-faint);
+        text-decoration: line-through;
+        text-decoration-color: var(--line-strong);
+      }
+      /* Najbliższa rzecz — jedyna, która się w tym oknie wyróżnia. */
+      .slot[data-next="true"] .slot__at {
+        color: var(--accent);
+      }
+      .slot__soon {
+        display: inline-block;
+        margin-left: var(--s-3);
+        padding: 1px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--accent-25);
+        background: var(--accent-08);
+        color: var(--accent);
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+      }
+
+      /* ── Świat ── */
+
+      .feed {
+        display: block;
+        padding: var(--s-2) 0;
+        color: var(--text);
+        text-decoration: none;
+        font-size: var(--fs-sm);
+        line-height: 1.5;
+      }
+      .feed:hover {
+        color: var(--accent);
+      }
+      .feed em {
+        font-style: normal;
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        color: var(--text-faint);
+        margin-right: var(--s-3);
+      }
+
+      /* ── Pusto, czekanie, kłopoty ── */
+
+      .empty {
+        font-size: var(--fs-sm);
+        color: var(--text-mute);
+        padding: var(--s-2) 0;
+      }
+      /* Czekanie mówi, na co się czeka. „Ładowanie…" nie mówi nic,
+         a poranek zbiera z trzech miejsc naraz i każde może być tym,
+         które trwa. */
+      .wait {
+        display: flex;
+        align-items: center;
+        gap: var(--s-3);
+        padding: var(--s-6) 0;
+        font-size: var(--fs-sm);
+        color: var(--text-mute);
+      }
+      /* `hidden` musi naprawdę chować. Atrybut daje `display: none`
+         z arkusza przeglądarki, a KAŻDA reguła autorska z własnością
+         `display` go bije — także ta wyżej, dająca czekaniu `flex`.
+         Bez tej linijki napis „Zbieram pocztę…" zostawał nad gotowym
+         podsumowaniem. */
+      .wait[hidden] {
+        display: none;
+      }
+      .wait::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.25;
+          transform: scale(0.8);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        /* `hidden` musi naprawdę chować. Atrybut daje `display: none`
+         z arkusza przeglądarki, a KAŻDA reguła autorska z własnością
+         `display` go bije — także ta wyżej, dająca czekaniu `flex`.
+         Bez tej linijki napis „Zbieram pocztę…" zostawał nad gotowym
+         podsumowaniem. */
+      .wait[hidden] {
+        display: none;
+      }
+      .wait::before {
+          animation: none;
+          opacity: 0.7;
+        }
+      }
+
+      /* Kłopoty stoją na dole i są drobne: poranek z padniętym kanałem RSS
+         jest nadal porankiem, a nie awarią. */
+      .trouble {
+        margin-top: var(--s-8);
+        padding-top: var(--s-4);
+        border-top: 1px solid var(--line);
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        line-height: 1.7;
+        color: var(--warn);
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="bar"></div>
+    <main id="sheet">
+      <div class="wait" id="wait">Zbieram pocztę, kalendarz i kanały…</div>
+      <div id="stage"></div>
+    </main>
+
+    <script src="../shared/strings.js"></script>
+    <script src="js/i18n.js"></script>
+    <script src="js/mock-bridge.js"></script>
+    <script src="js/briefing.js"></script>
+  </body>
+</html>

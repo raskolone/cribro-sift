@@ -308,10 +308,6 @@
     // Klik gdziekolwiek indziej zamyka paletę — tak jak każde menu.
     showPalette(false);
 
-    if (event.target.closest("#dictate")) {
-      if (note) await api.notes.dictate(note.id);
-      return;
-    }
     /* Zwinięcie do nagłówka. Stan trzyma proces główny razem z resztą
        geometrii kartki — bo to on zmienia wysokość okna, a kartka ma
        wracać zwinięta także po ponownym wyłożeniu talii. */
@@ -365,10 +361,13 @@
   api.deck.onFold?.(fold);
   api.deck.onScale?.(applyScale);
 
+  /* Kartka pokazuje nagrywanie samą belką — jej tło robi się czerwone,
+     tak samo jak znaczek w pasku menu. Przycisku mikrofonu w belce NIE MA
+     i to jest decyzja: dyktowanie do notatki ma skrót klawiaturowy, a pasek
+     kartki jest wąski i ma mieścić tytuł, nie rząd guzików. */
   api.onState?.(({ state }) => {
     runtime = state;
     card.dataset.state = state;
-    $("#dictate").dataset.state = state;
   });
 
 

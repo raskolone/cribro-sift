@@ -221,6 +221,32 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   ok("Zmiana konta przelicza wszystko od zera");
 
   fs.rmSync(home, { recursive: true, force: true });
+
+  /* ── Pęk kluczy nie stoi na drodze uruchamianiu ────────────────
+     Sesja konta leży zaszyfrowana kluczem z pęku kluczy, a odszyfrowanie
+     jest wywołaniem SYNCHRONICZNYM, które macOS potrafi zatrzymać na
+     pytaniu „czy pozwolić tej aplikacji sięgnąć po zapisane hasło?" —
+     i pyta po każdej zmianie podpisu, czyli po każdej własnej instalacji.
+     Zrobione w konstruktorze, zatrzymywało CAŁE uruchamianie: proces stał,
+     okien nie było, znaczka nie było, a okienko systemu wisiało samo.
+
+     Sprawdzamy to na tekście pliku, bo prawdziwy Supabase potrzebuje
+     Electrona — a pytanie jest proste: czy konstruktor sięga po sesję. */
+  {
+    const source = fs.readFileSync(
+      path.join(__dirname, "..", "src", "main", "supabase.js"),
+      "utf8",
+    );
+    const from = source.indexOf("constructor({ dir }");
+    const ctor = source.slice(from, source.indexOf("restore() {", from));
+    assert.ok(ctor, "nie znalazłem konstruktora Supabase");
+    assert.ok(
+      !/#load\(\)|safeStorage/.test(ctor),
+      "konstruktor Supabase sięga po pęk kluczy — uruchamianie zatrzyma się na pytaniu systemu",
+    );
+    ok("Sesja konta nie wczytuje się w konstruktorze — pęk kluczy nie blokuje startu");
+  }
+
   console.log("\nSynchronizacja: wszystko zgodne.");
 })().catch((error) => {
   console.error("\n✗", error.message);

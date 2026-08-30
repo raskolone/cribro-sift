@@ -88,8 +88,14 @@ function applyText(state) {
   if (state.error) {
     show(t("Nie udało się odczytać tekstu: {powód}", { powód: state.error }), "warn");
   } else if (state.missingKey) {
+    /* Właściciel ma dokąd pójść z tą wiadomością — w jego Ustawieniach
+       stoi krok „Silniki". U wszystkich pozostałych ten krok nie istnieje
+       i odsyłanie ich do pola, którego nie zobaczą, byłoby złośliwością
+       (patrz main/owner.js). */
     show(
-      t("Brak klucza OpenAI — zostaje sam obrazek. Klucz wpisuje się w Ustawieniach."),
+      state.owner
+        ? t("Brak klucza OpenAI — zostaje sam obrazek. Klucz wpisuje się w Ustawieniach.")
+        : t("Odczyt tekstu jest w tej chwili niedostępny — zostaje sam obrazek."),
       "warn",
     );
   }

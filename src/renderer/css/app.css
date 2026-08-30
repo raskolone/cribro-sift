@@ -115,6 +115,22 @@ textarea {
   flex-direction: column;
   padding: 0 14px 14px;
   overflow: hidden;
+  /* MENU JEST NAD TREŚCIĄ — zawsze, bez wyjątku.
+
+     Nie dla wyglądu: pas boczny niczego nie przykrywa, bo stoi w siatce
+     obok kolumny z treścią. Chodzi o KLIKANIE. Rzeczy pływające nad
+     notatką stoją na współrzędnych okna (uchwyt przenoszenia linii ma
+     z-index 40, kreska celownicza 39) i potrafiły zawisnąć nad zakładką,
+     a wtedy klik trafiał w nie, a nie w menu — sześć kropek przy nazwie
+     zakładki i jedna pozycja, której nie dało się wybrać.
+
+     Przyczynę widać w js/editor.js i jest tam naprawiona. To jest drugi
+     zamek na tych samych drzwiach: menu ma być klikalne nawet wtedy, gdy
+     coś nad notatką znów zapomni po sobie posprzątać. Warunkiem jest, żeby
+     rzecz pływająca siedziała w `#app` — dlatego uchwyt jest tam wieszany
+     (patrz #dragSetup), a nie w <body>. */
+  position: relative;
+  z-index: 60;
 }
 
 .drag {
@@ -230,7 +246,9 @@ kbd {
   position: absolute;
   top: 62px;
   left: calc(var(--nav-w) - 13px);
-  z-index: 6;
+  /* Ponad pasem bocznym (60), bo siedzi okrakiem na jego krawędzi —
+     połowa uchwytu leży na pasie i bez tego chowałaby się pod nim. */
+  z-index: 61;
   width: 26px;
   height: 26px;
   display: grid;
@@ -1496,25 +1514,32 @@ details.engine[open] > summary {
   gap: var(--s-2);
   width: calc(100% - 12px);
   margin: var(--s-3) 6px 5px;
-  padding: 3px 4px;
+  padding: 4px 5px;
   border-radius: var(--r-sm);
   font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  letter-spacing: var(--track-label);
+  /* Nazwa przegródki była szeptem: jedenaście pikseli w kolorze metryczki,
+     czyli w tym samym, co „14 min · 220 sł." pod kaflem. Przegródka jest
+     jednak podziałem CAŁEJ listy, a nie przypisem do jednej notatki —
+     musi się czytać z odległości, z której czyta się listę, a nie z tej,
+     z której czyta się kafel. Stąd pismo o stopień większe, cięższe
+     i w kolorze treści, a nie tła. */
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   text-align: left;
-  color: var(--text-mute);
+  color: var(--text-2);
   transition: color var(--t), background var(--t);
 }
 .notes__group:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-hi);
+  background: rgba(255, 255, 255, 0.05);
 }
 .notes__caret {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   flex: 0 0 auto;
-  opacity: 0.7;
+  opacity: 0.9;
   transform: rotate(-90deg);
   transition: transform var(--t);
 }
@@ -1527,11 +1552,15 @@ details.engine[open] > summary {
 .notes__group i {
   flex: 1;
   height: 1px;
-  background: var(--line);
+  background: var(--line-strong);
 }
+/* Liczba po prawej mówi, ile tego jest — i ma być do odczytania, a nie do
+   domyślenia się. W --text-faint (kolorze rzeczy wyłączonych) wyglądała
+   jak niedostępna. */
 .notes__group b {
   font-weight: 400;
-  color: var(--text-faint);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
 }
 .notes[data-list="closed"] {
   --list-w: 0px;
@@ -2161,8 +2190,50 @@ input.tag-input:focus {
   gap: var(--s-4);
   min-width: 0;
 }
-.meet__head { display: flex; }
-.meet__record { width: 100%; justify-content: center; }
+.meet__head {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s-2);
+}
+.meet__record { flex: 1; justify-content: center; }
+
+/* Koło zębate obok „Nagraj spotkanie".
+
+   Ustawienia spotkań leżały dotąd rozwinięte pod spisem — trzy ekrany
+   przełączników pod trzema rozmowami. Dotyka się ich raz w życiu, a spisu
+   codziennie, więc stoją teraz pod znakiem, pod którym się ich szuka.
+   Znak jest wyraźny (kwadrat z krawędzią, nie sama ikonka w tle), bo droga
+   do ustawień ma być widoczna, zanim się jej zacznie szukać. */
+.meet__cog {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  cursor: pointer;
+  transition: color var(--t), border-color var(--t), background var(--t);
+}
+.meet__cog svg {
+  width: 19px;
+  height: 19px;
+  transition: transform var(--t);
+}
+.meet__cog:hover {
+  color: var(--text-hi);
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.07);
+}
+/* Wyłożona szuflada widać po samym znaku — inaczej kliknięcie w koło
+   wygląda jak kliknięcie, które nic nie zrobiło. */
+.meet__cog.is-open {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-08);
+}
+.meet__cog.is-open svg { transform: rotate(60deg); }
 
 /* Trwające spotkanie ma w tej aplikacji jeden kolor i jest nim czerwień
    znaku ON AIR (patrz --air w css/tokens.css). Przycisk „Zakończ", napis
@@ -2320,6 +2391,11 @@ input.tag-input:focus {
    tylko środek zaznaczonego i tego nie ratuje. */
 
 .meet__settings {
+  /* Szuflada wjeżdża pod kliknięciem w koło (scrollIntoView w
+     js/meetings-view.js), a belka górna jest przyklejona i nieprzezroczysta
+     — bez tego zapasu jej pierwsze dwieście pikseli, razem z nagłówkiem
+     „Jak działają spotkania", wjeżdżałoby dokładnie ZA belkę. */
+  scroll-margin-top: 128px;
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
@@ -2635,6 +2711,59 @@ input.tag-input:focus {
 }
 .meet__tab:hover { color: var(--text); }
 .meet__tab.is-chosen { background: var(--accent-12); color: var(--accent); }
+
+/* ── Czynności w pasku spotkania ──
+   Dwie ikony, nie dwa napisy. Napis „Usuń" stał w pasku obok czterech nazw
+   zakładek i czytało się go jako piątą z nich — a jest jedyną rzeczą w tym
+   oknie, której nie da się cofnąć. Kosz nie udaje zakładki, a czerwień pod
+   kursorem mówi, czym to się kończy, zanim się w nią kliknie. */
+.meet__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.meet__ico {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-mute);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.meet__ico svg { width: 17px; height: 17px; }
+.meet__ico:hover {
+  color: var(--accent);
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+}
+/* Kosz jest czerwony DOPIERO pod kursorem i to nie jest nieśmiałość:
+   czerwony na stałe krzyczałby w pasku, w którym nic złego się nie dzieje,
+   a ostrzeżenie potrzebne jest dokładnie w chwili sięgania po niego. */
+.meet__ico--danger:hover {
+  color: var(--danger);
+  background: rgba(240, 114, 111, 0.14);
+  border-color: rgba(240, 114, 111, 0.4);
+}
+
+/* ── Jedno spotkanie we własnym oknie ──
+   Ten sam widok bez spisu: zostaje sama karta spotkania, na całe okno. */
+.meet.is-solo { grid-template-columns: minmax(0, 1fr); }
+.meet.is-solo .meet__list { display: none; }
+/* Kafel na całe okno: znikają krawędzie i zaokrąglenia, bo nie ma już od
+   czego się odcinać — zostaje szkło, żeby tekst nie leżał wprost na
+   dryfujących punktach tła. */
+.meet.is-solo .meet__detail {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
 
 .meet__body {
   flex: 1;

@@ -384,6 +384,35 @@ app.whenReady().then(async () => {
       " return { attr: g.hidden, display: cs.display, area: Math.round(b.width * b.height) }; })()"),
   });
 
+  /* ── Notatka znika POD kursorem ──
+     Nie mysz schodzi z notatki, tylko notatka spod myszy: zakładka dostaje
+     atrybut „hidden", a kursor stoi tam, gdzie stał. Nie pada wtedy ŻADEN ruch,
+     po którym uchwyt mógłby się domyślić, że jest już nad czymś cudzym —
+     i zostawał sześcioma kropkami na obcej zakładce, łapiąc kliknięcia
+     zamiast tego, co pod nim. Zdejmuje go dopiero wywołanie wprost. */
+  {
+    await js("window.__setup(" + JSON.stringify("- pierwsze\\n- drugie\\n") + ")");
+    await wait(60);
+    mouse("mouseMove", 4, 4);
+    await wait(70);
+    const on = await js("window.__onLine('pierwsze')");
+    mouse("mouseMove", on.x, on.y);
+    await wait(120);
+    const before = await js("!!window.__grip()");
+    out.push({
+      vanished: {
+        before,
+        after: await js(
+          "(() => {" +
+          " document.getElementById('text').hidden = true;" +
+          " window.CribroEditor.parkAll();" +
+          " const g = document.querySelector('.prose-grip');" +
+          " return { attr: g.hidden, display: getComputedStyle(g).display }; })()",
+        ),
+      },
+    });
+  }
+
   process.stdout.write("\\n@@WYNIK@@" + JSON.stringify(out) + "@@KONIEC@@\\n");
   app.exit(0);
 });
@@ -484,7 +513,7 @@ passed += 1;
    z każdą regułą autorską ustawiającą display — także z tą, która daje
    uchwytowi siatkę na sześć kropek. Uchwyt zostawał więc namalowany
    w miejscu ostatniej linii i wisiał tam nad inną zakładką. */
-const { parked } = results[results.length - 1];
+const parked = results.find((row) => row.parked)?.parked;
 assert.ok(parked, "test nie sprawdził, czy schowany uchwyt znika");
 assert.strictEqual(parked.attr, true, "uchwyt nie schował się po zejściu myszy z notatki");
 assert.strictEqual(
@@ -494,6 +523,18 @@ assert.strictEqual(
 );
 assert.strictEqual(parked.area, 0, "schowany uchwyt nadal zajmuje miejsce na ekranie");
 console.log("✓ Schowany uchwyt naprawdę znika z ekranu, nie tylko z atrybutu");
+passed += 1;
+
+/* Notatka znikająca RAZEM Z ZAKŁADKĄ, a nie spod myszy. */
+const vanished = results.find((row) => row.vanished)?.vanished;
+assert.ok(vanished, "test nie sprawdził, co się dzieje z uchwytem po zniknięciu notatki");
+assert.strictEqual(vanished.before, true, "uchwyt nie pokazał się przy linii — nie ma czego chować");
+assert.strictEqual(
+  vanished.after.display,
+  "none",
+  `uchwyt przeżył notatkę (display: ${vanished.after.display}) — zostaje sześcioma kropkami na obcej zakładce`,
+);
+console.log("✓ Uchwyt schodzi razem z notatką, która znika pod kursorem");
 passed += 1;
 
 fs.rmSync(work, { recursive: true, force: true });

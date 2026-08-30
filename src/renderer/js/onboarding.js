@@ -226,8 +226,14 @@
   /* ── Slajdy ─────────────────────────────────────────────────────
      Kolejność jest drogą, którą przechodzi każdy nowy użytkownik: najpierw
      co to w ogóle jest, potem gest, którym się to robi, potem pokrętło,
-     potem rzeczy, po które sięga się później. Klucz jest na końcu, bo
-     bez pozostałych slajdów nie wiadomo, po co go wpisywać. */
+     potem rzeczy, po które sięga się później.
+
+     OSTATNI SLAJD MA DWIE POSTACIE. Właściciel wpisuje klucz i musi
+     wiedzieć gdzie; wszyscy pozostali żadnego klucza nie wpisują, bo krok
+     „Silniki" u nich nie istnieje (patrz main/owner.js) — i odsyłanie ich
+     do pola, którego nie zobaczą, byłoby wysłaniem w ślepy zaułek na
+     ostatnim ekranie przewodnika. Dostają zamiast tego zdanie, które
+     naprawdę im się należy: że nie ma tu nic do ustawiania. */
 
   const SLIDES = [
     {
@@ -278,8 +284,25 @@
       body: "Sito i transkrypcja korzystają z modelu, więc potrzebują twojego klucza — wpisujesz go raz w Ustawieniach. Do przewodnika wracasz zawsze przyciskiem na dole paska po lewej.",
       art: "key",
       cta: "Otwórz Ustawienia",
+      owner: true,
+    },
+    {
+      label: "Start",
+      title: "To wszystko",
+      body: "Transkrypcja i sito działają od pierwszego dyktowania — nie ma tu kluczy do wpisywania ani silników do wybierania. Do przewodnika wracasz zawsze przyciskiem na dole paska po lewej.",
+      art: "key",
+      owner: false,
     },
   ];
+
+  /* Slajdy dla tego, kto patrzy. `owner` niewpisany znaczy „dla wszystkich".
+     Liczone przy każdym otwarciu, bo konto potrafi się w międzyczasie
+     zalogować. */
+  let slides = SLIDES.filter((slide) => slide.owner !== true);
+  function pickSlides() {
+    const owner = !!window.CribroOwner;
+    slides = SLIDES.filter((slide) => slide.owner === undefined || slide.owner === owner);
+  }
 
   /* ── Budowa ─────────────────────────────────────────────────── */
 
@@ -289,15 +312,16 @@
   function build() {
     if (built) return;
     built = true;
+    pickSlides();
 
-    $("#guideStage").innerHTML = SLIDES.map(
+    $("#guideStage").innerHTML = slides.map(
       (slide, index) => `
       <article class="guide__slide" data-slide="${index}" data-on="false">
         <div class="guide__art">${ART[slide.art]}</div>
         <div class="guide__say">
           <div class="guide__step">
             <span>${slide.label}</span>
-            <span class="guide__count" data-i18n="skip">${index + 1} / ${SLIDES.length}</span>
+            <span class="guide__count" data-i18n="skip">${index + 1} / ${slides.length}</span>
           </div>
           <h2>${slide.title}</h2>
           <p>${slide.body}</p>
@@ -305,7 +329,7 @@
       </article>`,
     ).join("");
 
-    $("#guideDots").innerHTML = SLIDES.map(
+    $("#guideDots").innerHTML = slides.map(
       (slide, index) =>
         `<button data-go="${index}" aria-current="false" title="${slide.label}"
                  aria-label="${slide.label}"></button>`,
@@ -313,7 +337,7 @@
   }
 
   function show(index) {
-    at = Math.max(0, Math.min(SLIDES.length - 1, index));
+    at = Math.max(0, Math.min(slides.length - 1, index));
 
     for (const slide of document.querySelectorAll(".guide__slide")) {
       const on = Number(slide.dataset.slide) === at;
@@ -326,9 +350,9 @@
       dot.setAttribute("aria-current", String(Number(dot.dataset.go) === at));
     }
 
-    const last = at === SLIDES.length - 1;
+    const last = at === slides.length - 1;
     $("#guidePrev").disabled = at === 0;
-    $("#guideNext").textContent = last ? t(SLIDES[at].cta ?? "Zaczynajmy") : t("Dalej");
+    $("#guideNext").textContent = last ? t(slides[at].cta ?? "Zaczynajmy") : t("Dalej");
     $("#guideStage").scrollTop = 0;
   }
 
@@ -367,13 +391,13 @@
     if (dot) return show(Number(dot.dataset.go));
 
     if (event.target.closest("#guideNext")) {
-      if (at < SLIDES.length - 1) return show(at + 1);
+      if (at < slides.length - 1) return show(at + 1);
       close();
       // Ostatni slajd prowadzi tam, gdzie wpisuje się klucz — bo bez niego
       // wszystko, co przed chwilą pokazaliśmy, nie ma czym pracować.
       // Tą samą drogą co kliknięcie w pasku bocznym — widok przełącza się
       // wtedy dokładnie tak, jak przełącza się go ręką.
-      if (SLIDES[at].cta) document.querySelector('#nav [data-view="settings"]')?.click();
+      if (slides[at].cta) document.querySelector('#nav [data-view="settings"]')?.click();
     }
   });
 

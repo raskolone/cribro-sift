@@ -18,6 +18,7 @@ const {
   globalShortcut,
   nativeTheme,
   desktopCapturer,
+  powerMonitor,
 } = require("electron");
 
 const { Store } = require("./store");
@@ -36,12 +37,17 @@ const { sendNote: sendToNotion, check: checkNotion } = require("./notion");
 const { detectConflicts } = require("./shortcuts");
 const { grabRegion, readText, compose, stampName } = require("./shot");
 const { Meetings } = require("./meeting");
-const { Watcher: MeetingWatcher } = require("./detect");
+const { Watcher: MeetingWatcher, spot: spotMeeting } = require("./detect");
 const { speakerFor } = require("./merge");
-const { digest, polish, asNote } = require("./digest");
+const { digest, polish, asNote, send: sendToModel } = require("./digest");
+const { keepNote } = require("./meetnote");
 const agendaSource = require("./agenda");
+const { Google } = require("./google");
+const briefingSource = require("./briefing");
+const { headlines } = require("./rss");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
 const { translator } = require("../shared/strings");
+const ownership = require("./owner");
 
 /* Pasek menu mówi stanem, nie słowami — ale musi być widoczny.
    „Gotowe" jest szablonem: macOS przemaluje je na biało w ciemnym pasku
@@ -91,6 +97,8 @@ let hud = null;
 let notesWindow = null;
 /** Notatki oderwane do własnych okienek: id notatki → okno. */
 const noteWindows = new Map();
+/** Spotkania oderwane do własnych okien: id spotkania → okno. */
+const meetingWindows = new Map();
 let quickWindow = null;
 let widget = null;
 let state = "idle";
@@ -144,6 +152,7 @@ function createMainWindow() {
     },
   });
 
+  markAppWindow(mainWindow);
   mainWindow.loadFile(path.join(__dirname, "..", "renderer", "index.html"));
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.on("closed", () => (mainWindow = null));
@@ -228,6 +237,7 @@ function createNotesWindow() {
     },
   });
 
+  markAppWindow(notesWindow);
   notesWindow.loadFile(path.join(__dirname, "..", "renderer", "notes.html"));
   notesWindow.once("ready-to-show", () => notesWindow.show());
   notesWindow.on("closed", () => (notesWindow = null));
@@ -271,10 +281,62 @@ function openNoteWindow(id) {
   const [x, y] = win.getPosition();
   win.setPosition(x + offset, y + offset);
 
+  markAppWindow(win);
   win.loadFile(path.join(__dirname, "..", "renderer", "notes.html"), { query: { note: id } });
   win.once("ready-to-show", () => win.show());
   win.on("closed", () => noteWindows.delete(id));
   noteWindows.set(id, win);
+  return win;
+}
+
+/**
+ * Jedno spotkanie we własnym oknie.
+ *
+ * Ta sama myśl co przy notatce oderwanej od listy: spotkanie ogląda się
+ * W TRAKCIE innej pracy — pisząc z niego maila albo siedząc już na
+ * następnym. Wtedy okno główne jest w drodze, bo trzeba je przełączyć
+ * i znaleźć w nim zakładkę.
+ *
+ * Zawartość rysuje ten sam widok, co zakładka w oknie głównym (patrz
+ * renderer/meeting.html) — spotkanie ma wyglądać tak samo w obu miejscach,
+ * bo jest tym samym spotkaniem.
+ */
+function openMeetingWindow(id) {
+  const open = meetingWindows.get(id);
+  if (open && !open.isDestroyed()) {
+    open.show();
+    open.focus();
+    return open;
+  }
+
+  const win = new BrowserWindow({
+    width: 640,
+    height: 660,
+    minWidth: 420,
+    minHeight: 360,
+    show: false,
+    backgroundColor: "#09101c", // --bg
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 14, y: 12 },
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload", "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  // Kilka okien naraz nie może wylądować jedno na drugim.
+  const offset = meetingWindows.size * 26;
+  const [x, y] = win.getPosition();
+  win.setPosition(x + offset, y + offset);
+
+  markAppWindow(win);
+  win.loadFile(path.join(__dirname, "..", "renderer", "meeting.html"), {
+    query: { meeting: id },
+  });
+  win.once("ready-to-show", () => win.show());
+  win.on("closed", () => meetingWindows.delete(id));
+  meetingWindows.set(id, win);
   return win;
 }
 
@@ -519,10 +581,10 @@ async function grabScreenText() {
       Object.assign(shot, done, { reading: false });
       const form = done.text ? (settings.shot.form ?? "text") : "image";
       const result = await saveShot({ target: settings.shot.target, form, text: done.text });
-      if (result?.error) broadcast("pipeline:error", { stage: "zrzut", message: result.error });
+      if (result?.error) tellError("zrzut", result.error);
       return result;
     } catch (problem) {
-      broadcast("pipeline:error", { stage: "zrzut", message: problem.message });
+      tellError("zrzut", problem.message);
       return false;
     } finally {
       shot = null;
@@ -535,7 +597,12 @@ async function grabScreenText() {
     if (!shot) return false; // zdążył zamknąć okno
     Object.assign(shot, done, { reading: false });
     if (shotWindow && !shotWindow.isDestroyed()) {
-      shotWindow.webContents.send("shot:text", { ...done, reading: false });
+      shotWindow.webContents.send("shot:text", {
+        ...done,
+        reading: false,
+        error: ownership.scrub(done.error, ownerHere()),
+        owner: ownerHere(),
+      });
     }
     return true;
   } catch (problem) {
@@ -543,7 +610,7 @@ async function grabScreenText() {
        nie przewidzieliśmy. Obrazek zwalniamy — inaczej skrót zamilkłby
        na dobre (patrz komentarz wyżej). */
     shot = null;
-    broadcast("pipeline:error", { stage: "zrzut", message: problem.message });
+    tellError("zrzut", problem.message);
     return false;
   }
 }
@@ -584,7 +651,7 @@ async function saveShot({ target = "new", noteId = null, form = "text", text = "
      je zostawiło. Klawiszy skrótu ta ścieżka nie rusza, więc nie ma tu
      czego przepinać (patrz bindShotHotkey). */
   store.saveSettings({ shot: { target, form } });
-  broadcast("settings:changed", store.getSettings());
+  tellSettings();
 
   if (settings.shot?.copy !== false && text.trim()) clipboard.writeText(text);
 
@@ -613,15 +680,49 @@ async function saveShot({ target = "new", noteId = null, form = "text", text = "
   return { saved: true, noteId: note.id, created: true };
 }
 
+/* ══ IKONA W DOCKU, CZYLI TAKŻE MIEJSCE W ⌘Tab ══
+
+   To jest w macOS jedno ustawienie, nie dwa: aplikacja bez ikony w Docku
+   jest „pomocnicza" (accessory) i przełącznik ⌘Tab jej nie widzi. Cribro
+   jest jednak dwiema rzeczami naraz — znaczkiem w pasku menu, który ma tam
+   siedzieć cicho, i zwykłym oknem z listą przesianych, notatkami
+   i spotkaniami. Do okna trzeba umieć WRÓCIĆ, a wracanie po oknie odbywa
+   się w macOS ⌘Tabem.
+
+   Stąd zasada: ikona jest wtedy, gdy jest do czego wracać. Kto ją włączył
+   w Ustawieniach, ma ją zawsze; kto ją wyłączył, dostaje ją mimo to na
+   czas, w którym stoi otwarte okno aplikacji — i traci razem z ostatnim
+   zamkniętym. Znaczek, HUD i kartki na pulpicie się nie liczą: są bez
+   ramki, poza przełącznikiem okien i nie ma do nich czego przełączać. */
+
+/** Okno, które jest dla systemu oknem aplikacji — z ramką i miejscem w ⌘Tab. */
+function markAppWindow(win) {
+  if (!win || win.isDestroyed()) return win;
+  win.isAppWindow = true;
+  win.on("closed", () => refreshDockIcon());
+  refreshDockIcon();
+  return win;
+}
+
+const someAppWindowOpen = () =>
+  BrowserWindow.getAllWindows().some((win) => !win.isDestroyed() && win.isAppWindow);
+
 /**
  * Ikona aplikacji w Docku. Domyślnie widoczna; kto woli mieć Cribro wyłącznie
- * w pasku menu, wyłącza ją w Ustawieniach. Ukrycie ikony zamyka też przełącznik
- * ⌘Tab — aplikacja przestaje być „zwykłą" aplikacją w oczach systemu.
+ * w pasku menu, wyłącza ją w Ustawieniach — ale otwarte okno pokazuje ją i tak,
+ * żeby dało się do niego wrócić ⌘Tabem.
  */
 function applyDockIcon(show) {
   if (process.platform !== "darwin") return;
-  if (show) app.dock?.show();
+  if (show || someAppWindowOpen()) app.dock?.show();
   else app.dock?.hide();
+}
+
+/* Po zamknięciu okna ikona schodzi dopiero w następnej turze pętli zdarzeń:
+   „closed" pada, zanim okno zniknie ze spisu, więc pytanie zadane od razu
+   dostałoby odpowiedź sprzed chwili. */
+function refreshDockIcon() {
+  setImmediate(() => applyDockIcon(store.getSettings().showInDock !== false));
 }
 
 /* ── Widget ───────────────────────────────────────────────────
@@ -1222,9 +1323,13 @@ const STICKY_MAX = { width: 760, height: 960 };
 const STICKY_HALO = 16;
 /* Wysokość samej belki z tytułem, przy skali 1 — tyle zostaje z kartki
    zwiniętej do nagłówka. Liczba jest z arkusza sticky.html (.head:
-   9 + 8 pikseli odstępu plus rząd ikon) i musi za nim
-   nadążać: kartka wyższa od belki pokazywałaby pasek pustego papieru. */
-const STICKY_HEAD = 43;
+   9 pikseli odstępu u góry, 25-piksslowy rząd ikon, 8 u dołu) i musi za nim
+   nadążać: kartka wyższa od belki pokazywałaby pasek pustego papieru.
+
+   Kreski pod belką w tym rachunku NIE MA i to nie jest przeoczenie:
+   zwinięta kartka zdejmuje `border-bottom` (patrz [data-rolled] w arkuszu),
+   bo nie ma już czego od czego oddzielać. */
+const STICKY_HEAD = 42;
 const STICKY_GAP = 18;
 /* Opóźnienie między kolejnymi kartkami. Na tyle małe, żeby cała talia
    zdążyła się rozłożyć zanim wzrok wróci do pulpitu, i na tyle duże, żeby
@@ -1286,6 +1391,28 @@ function deckCardSize(scale) {
     width: Math.round(STICKY_CARD.width * scale) + STICKY_HALO * 2,
     height: Math.round(STICKY_CARD.height * scale) + STICKY_HALO * 2,
   };
+}
+
+/** Wysokość OKNA kartki zwiniętej do samej belki, przy danej skali. */
+const rolledHeight = (scale) => Math.round(STICKY_HEAD * scale) + STICKY_HALO * 2;
+
+/**
+ * Dolna klamra okna kartki.
+ *
+ * TU SIEDZIAŁA CAŁA USTERKA „zwinięta kartka jest za duża". Okno ma
+ * `minHeight: STICKY_MIN.height` (150) — sensowną podłogę dla kartki, którą
+ * ktoś ściąga ręką za róg. Zwinięcie do belki prosi jednak o siedemdziesiąt
+ * kilka pikseli, czyli MNIEJ niż ta podłoga, a `setBounds` klamry nie pyta
+ * o zdanie: system podnosił wysokość z powrotem do 150 i pod belką zostawał
+ * pasek pustego papieru. Wyglądało to jak kartka „prawie zwinięta".
+ *
+ * Zwinięcie jest stanem, a nie rozmiarem, więc na jego czas podłoga schodzi
+ * do wysokości belki i wraca razem z rozwinięciem.
+ */
+function clampCard(win, rolled, scale) {
+  if (!win || win.isDestroyed()) return;
+  const floor = rolled ? rolledHeight(scale) : STICKY_MIN.height;
+  win.setMinimumSize(STICKY_MIN.width, floor);
 }
 
 /**
@@ -1426,7 +1553,7 @@ function deckPlace(id, fallback, workArea) {
   /* Zwinięta kartka układa się zwinięta: wysokość bierze się wtedy ze
      stanu, a nie z zapamiętanego rozmiaru. */
   if (saved.rolled) {
-    size.height = Math.round(STICKY_HEAD * deckScale(workArea)) + STICKY_HALO * 2;
+    size.height = rolledHeight(deckScale(workArea));
   }
 
   return placeOn(workArea, spot, size);
@@ -1537,17 +1664,24 @@ function retuneCard(win) {
      rozmiaru domyślnego kasowałby decyzję, którą ktoś właśnie podjął. Aureola
      jest stała w pikselach, więc przeliczamy samo wnętrze. */
   const k = scale / was;
+  /* Zwinięta kartka nie ma rozmiaru do przeliczenia — ma stan. Puszczona
+     przez ten sam rachunek co rozwinięta, wracała z drugiego monitora
+     rozdęta do dolnej klamry (150 pikseli) zamiast do wysokości belki. */
+  const rolled = !!store.getSettings().widget?.cards?.[win.noteId]?.rolled;
+  clampCard(win, rolled, scale);
   const size = {
     width: clamp(
       Math.round((bounds.width - STICKY_HALO * 2) * k) + STICKY_HALO * 2,
       STICKY_MIN.width,
       STICKY_MAX.width,
     ),
-    height: clamp(
-      Math.round((bounds.height - STICKY_HALO * 2) * k) + STICKY_HALO * 2,
-      STICKY_MIN.height,
-      STICKY_MAX.height,
-    ),
+    height: rolled
+      ? rolledHeight(scale)
+      : clamp(
+          Math.round((bounds.height - STICKY_HALO * 2) * k) + STICKY_HALO * 2,
+          STICKY_MIN.height,
+          STICKY_MAX.height,
+        ),
   };
   win.setBounds({ x: bounds.x, y: bounds.y, ...size });
   win.webContents.send("sticky:scale", scale);
@@ -1614,7 +1748,18 @@ function createStickyWindow(note, bounds) {
   win.setAlwaysOnTop(true, "floating");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
+  // Po czyjej notatce jeździ to okno — pyta o to retuneCard, żeby wiedzieć,
+  // czy kartka jest zwinięta.
+  win.noteId = note.id;
   win.deckScale = deckScaleAt(bounds);
+  /* Kartka wyłożona ZWINIĘTA musi mieć od razu obniżoną podłogę: rozmiar
+     policzył już deckPlace, ale klamra z konstruktora podniosłaby go
+     z powrotem i belka wyszłaby z paskiem pustego papieru pod spodem. */
+  const wasRolled = !!store.getSettings().widget?.cards?.[note.id]?.rolled;
+  if (wasRolled) {
+    clampCard(win, true, win.deckScale);
+    win.setBounds({ ...bounds, height: rolledHeight(win.deckScale) });
+  }
   win.loadFile(path.join(__dirname, "..", "renderer", "sticky.html"), {
     query: {
       note: note.id,
@@ -1676,7 +1821,13 @@ function openDeck() {
     } else {
       // Kartka schowana na jednym ekranie bywa wykładana na innym: monitor
       // odłączono, znaczek przeciągnięto. Rozmiar policzył już deckPlace —
-      // tutaj zostaje przyjąć skalę do wiadomości (patrz settleScale).
+      // tutaj zostaje przyjąć skalę do wiadomości (patrz settleScale) oraz
+      // obniżyć podłogę, jeśli kartka wraca zwinięta.
+      clampCard(
+        win,
+        !!store.getSettings().widget?.cards?.[note.id]?.rolled,
+        deckScaleAt(bounds),
+      );
       win.setBounds(bounds);
       settleScale(win);
     }
@@ -1931,6 +2082,10 @@ async function toggleMeeting(about = null) {
         });
       } else if (meeting) {
         broadcast("meeting:done", meeting);
+        /* Notatka od razu, zanim jeszcze powstanie podsumowanie: zapis
+           rozmowy już jest, a to on zastępuje skasowane nagranie. Gdy
+           podsumowanie dojdzie, ta sama notatka je do siebie przyjmie. */
+        keepMeetingNote(meeting.id);
         /* Podsumowanie leci SAMO i leci w tle. Czekanie na nie zablokowałoby
            przycisk „Koniec" na kilkanaście sekund — a to jest ta jedna
            chwila, w której człowiek właśnie wstaje od biurka. */
@@ -1940,11 +2095,11 @@ async function toggleMeeting(about = null) {
       }
       return;
     }
-    // Nagranie z menu też zasługuje na nazwę: jeśli w kalendarzu coś
-    // właśnie trwa, bierzemy stamtąd nazwę i ludzi.
-    await meetings.start(about ?? aboutMeeting(null));
+    /* Nagranie z menu też zasługuje na nazwę. Najpierw pytamy ekran —
+       karta Google Meet niesie nazwę pokoju — a dopiero potem kalendarz. */
+    await meetings.start(about ?? aboutMeeting(await roomOnScreen()));
   } catch (problem) {
-    broadcast("pipeline:error", { stage: "spotkanie", message: problem.message });
+    tellError("spotkanie", problem.message);
   }
 }
 
@@ -1981,19 +2136,45 @@ async function summarizeMeeting(id) {
     const { title, summary } = await digest({ ...meeting, previousSummary }, settings);
     const patch = { summary, summarizing: false, summaryError: null };
     /* Kod pokoju z okna przeglądarki („jxg-hfsa-qvb") nazwą nie jest —
-       i to jest cały powód, dla którego ten krok w ogóle istnieje. */
-    if (settings.meetings?.rename !== false && title && !meeting.titleByHand) {
+       i to jest cały powód, dla którego ten krok w ogóle istnieje.
+       Nazwy PRZEPISANEJ z okna rozmowy nie ruszamy: „Meet – Przegląd
+       tygodnia" to nazwa, którą pokojowi nadał człowiek, a nie brak nazwy.
+       Tak samo nie ruszamy nazwy wpisanej ręką. */
+    const named = meeting.titleByHand || meeting.titleFrom === "room";
+    if (settings.meetings?.rename !== false && title && !named) {
       patch.title = title;
+      patch.titleFrom = "model";
     }
     store.updateMeeting(id, patch);
+    // Notatka bierze wniosek do siebie — razem z nazwą, która dopiero co
+    // powstała z treści rozmowy.
+    keepMeetingNote(id);
     return patch;
   } catch (problem) {
     store.updateMeeting(id, { summarizing: false, summaryError: problem.message });
-    broadcast("pipeline:error", { stage: "podsumowanie", message: problem.message });
+    tellError("podsumowanie", problem.message);
     return null;
   } finally {
     broadcast("meeting:changed", meetingState());
   }
+}
+
+/**
+ * Notatka ze spotkania — zakładana i odświeżana sama po każdej rozmowie.
+ *
+ * Rozstrzygnięcia (czego nie wskrzeszać, czego nie nadpisywać, czego nie
+ * zakładać z niczego) siedzą w main/meetnote.js i nie znają Electrona.
+ * Tutaj zostaje to, czego tamten plik nie ma prawa wiedzieć: kim jest
+ * właściciel konta, gdzie leży szuflada i komu o zmianie powiedzieć.
+ */
+function keepMeetingNote(id) {
+  const { note, action } = keepNote(store, id, {
+    me: whoAmI(),
+    folder: store.getSettings().meetings?.folder || null,
+  });
+  if (action === "created") broadcast("note:new", note);
+  else if (action === "updated") broadcast("note:changed", note);
+  return note;
 }
 
 /* ── Wykrywanie spotkania ──────────────────────────────────────
@@ -2022,19 +2203,54 @@ function whoAmI() {
 /**
  * Wszystko, co wiadomo o spotkaniu, ZANIM się zacznie.
  *
- * Dwa źródła i wyraźne pierwszeństwo: kalendarz zna nazwę i ludzi, okno
- * przeglądarki zna tylko kod pokoju. Nazwa z kalendarza wygrywa więc
- * zawsze, gdy w tej chwili trwa wpis, który wygląda na tę rozmowę.
+ * Dwa źródła i wyraźne pierwszeństwo, ODWROTNE niż mogłoby się wydawać:
+ * NAZWA Z OKNA ROZMOWY WYGRYWA. Karta Google Meet nazywa się tak, jak
+ * nazwano pokój („Meet – Przegląd tygodnia") — i to jest nazwa, pod którą
+ * ludzie do tej rozmowy przyszli, a nie nazwa wpisu w czyimś kalendarzu.
+ * Kalendarz bywa przy tym o jedną rozmowę do tyłu: wpis trwający w tej
+ * chwili nie musi być tym, co naprawdę stoi na ekranie.
+ *
+ * Kod pokoju nazwą nie jest i nie dochodzi tutaj wcale — odsiewa go
+ * detect.js, oddając wtedy `title: null`. Kalendarz zostaje więc tym, czym
+ * był: nazwą dla rozmów, które nie mają własnego okna, i jedynym źródłem
+ * listy zaproszonych.
  */
 function aboutMeeting(spot) {
   const live = agendaSource.running(agenda.events, Date.now());
   const people = live?.people ?? [];
+  const fromRoom = spot?.title ?? null;
   return {
-    title: live?.title ?? spot?.title ?? null,
+    title: fromRoom ?? live?.title ?? null,
+    /* Skąd wzięliśmy nazwę. Nazwy przepisanej z okna rozmowy podsumowanie
+       już nie zmienia (patrz summarizeMeeting): przepisanie znaczy „to się
+       tak nazywa", a nie „nie mamy lepszego pomysłu". */
+    titleFrom: fromRoom ? "room" : live?.title ? "calendar" : null,
     where: spot?.where ?? (live ? "Kalendarz" : null),
     people,
     speakers: people.length ? { system: speakerFor(people, whoAmI()) } : null,
   };
+}
+
+/**
+ * Jedno spojrzenie na ekran, tu i teraz — na potrzeby nagrania włączonego
+ * RĘKĄ.
+ *
+ * Pilnowanie ekranu (Watcher) chodzi tylko przy wykrywaniu włączonym
+ * w ustawieniach, a wykrywanie bywa wyłączone przez ludzi, którzy nagrywają
+ * spotkania z przycisku. Ich rozmowa też ma nazwę — stoi w tytule karty
+ * przeglądarki — a bez tego spojrzenia zostawała bezimienna.
+ *
+ * ZGODY NIE WYPRASZAMY: bez „Nagrywania ekranu" nie ma czego czytać
+ * i nagranie ruszy bez nazwy, tak jak dotąd.
+ */
+async function roomOnScreen() {
+  if (spotted) return spotted;
+  if (!canSeeScreen()) return null;
+  try {
+    return spotMeeting(await screenWindows());
+  } catch {
+    return null; // odmowa zgody albo system w złym humorze — nazwa nie jest tego warta
+  }
 }
 
 /** Rozmowa wykryta, o którą jeszcze nie zapytano (albo zapytano i czeka). */
@@ -2193,7 +2409,12 @@ async function lookAtAgenda() {
   if (!mine) return;
 
   startedFromSpot = true;
-  await toggleMeeting({ ...aboutMeeting(null), title: mine.title, where: "Kalendarz" });
+  await toggleMeeting({
+    ...aboutMeeting(null),
+    title: mine.title,
+    titleFrom: "calendar",
+    where: "Kalendarz",
+  });
 }
 
 function watchAgenda(settings = store.getSettings()) {
@@ -2350,7 +2571,7 @@ function refreshTrayMenu() {
 
   const setLanguage = (patch) => {
     store.saveSettings({ language: { ...language, ...patch } });
-    broadcast("settings:changed", store.getSettings());
+    tellSettings();
     refreshMenus();
   };
 
@@ -2362,6 +2583,12 @@ function refreshTrayMenu() {
       { label: t("Szybka notatka"), click: () => quickNote() },
       { label: `${t("Tekst z ekranu")}…`, click: () => grabScreenText() },
       meetingMenuItem(t),
+      /* Poranek pokazuje się sam raz dziennie, ale bywa zamknięty odruchowo
+         razem z resztą okien — a wtedy jedyną drogą z powrotem byłoby
+         czekanie do jutra. Pozycja pojawia się wyłącznie wtedy, gdy poranek
+         jest włączony i podłączony: menu nie ma prawa wystawiać czegoś,
+         co po kliknięciu powie „nie mam konta". */
+      ...(briefingMine() ? [{ label: t("Poranek"), click: () => void showBriefing({ force: true }) }] : []),
       { label: t("Ustawienia"), click: () => createMainWindow().webContents.send("view:go", "settings") },
       { type: "separator" },
       {
@@ -2372,7 +2599,7 @@ function refreshTrayMenu() {
           checked: settings.mesh === key,
           click: () => {
             store.saveSettings({ mesh: key });
-            broadcast("settings:changed", store.getSettings());
+            tellSettings();
             refreshMenus();
           },
         })),
@@ -2418,13 +2645,257 @@ function refreshTrayMenu() {
         checked: settings.autoPaste,
         click: (item) => {
           store.saveSettings({ autoPaste: item.checked });
-          broadcast("settings:changed", store.getSettings());
+          tellSettings();
         },
       },
       { type: "separator" },
       { label: t("Zakończ"), role: "quit" },
     ]),
   );
+}
+
+
+/* ── Poranek ───────────────────────────────────────────────────
+
+   Jedno okno raz dziennie, przy pierwszym siadaniu do komputera: co
+   w poczcie wymaga uwagi i co jest w planie dnia. Rozstrzygnięcia — które
+   maile, w jakiej kolejności i dlaczego — siedzą osobno, w main/briefing.js,
+   i są sprawdzane bez sieci (scripts/briefing-test.js). Tutaj zostaje to,
+   czego tamten plik nie widzi: konto, kalendarz, okno i pora.
+
+   ══ DLACZEGO TO JEST PRZYPISANE DO JEDNEGO KONTA ══
+
+   Poranek czyta CUDZĄ POCZTĘ — cudzą w tym sensie, że nie należy do
+   aplikacji, tylko do człowieka przy klawiaturze. Dlatego pokazuje się
+   wyłącznie wtedy, gdy podłączone konto Google zgadza się z adresem
+   zapisanym w ustawieniach jako właściciel. Zalogowanie innego konta nie
+   przełącza poranka na inną skrzynkę — odmawia i mówi dlaczego.
+
+   Prawdziwa granica leży zresztą wcześniej i nie jest w naszych rękach:
+   klient OAuth zakłada użytkownik u siebie, a klient w trybie „Testing"
+   z jednym adresem na liście testerów nie wpuści nikogo innego (patrz
+   main/google.js).
+
+   ══ KIEDY SIĘ POKAZUJE ══
+
+   „Pierwsze zalogowanie w ciągu dnia" ma w macOS dwa różne znaczenia i oba
+   trzeba obsłużyć, bo aplikacja żyje w pasku menu i bywa włączona tygodniami:
+
+     PIERWSZE URUCHOMIENIE   komputer był wyłączony, aplikacja wstaje razem
+                             z sesją.
+     PIERWSZE ODBLOKOWANIE   komputer stał uśpiony, aplikacja przeżyła noc.
+
+   Obie drogi pytają o to samo (patrz `due` w main/briefing.js): czy dziś
+   ktoś już ten poranek widział. Data ostatniego pokazania leży
+   w ustawieniach, więc przeżywa jedno i drugie. */
+
+let google = null;
+let briefingWindow = null;
+let briefingBusy = false;
+
+const briefingConfig = () => store.getSettings().briefing ?? {};
+
+/**
+ * Czy poranek jest dla tego, kto siedzi przy komputerze.
+ *
+ * Trzy warunki i wszystkie trzy są konieczne: ma być włączony, ma mieć
+ * właściciela i podłączone konto ma być właśnie jego.
+ */
+function briefingMine() {
+  const config = briefingConfig();
+  if (!config.enabled) return false;
+  const owner = String(config.owner ?? "").trim().toLowerCase();
+  if (!owner) return false;
+  google?.restore();
+  const account = String(google?.snapshot().email ?? "").toLowerCase();
+  return !!account && account === owner;
+}
+
+/** Stan poranka dla interfejsu — bez sekretów, z powodem, gdy nie działa. */
+function briefingState() {
+  const config = briefingConfig();
+  google?.restore();
+  const account = google?.snapshot() ?? { configured: false, signedIn: false, email: null };
+  const owner = String(config.owner ?? "").trim();
+  return {
+    enabled: !!config.enabled,
+    owner,
+    feeds: config.feeds ?? [],
+    lastAt: config.lastAt ?? null,
+    account,
+    /* „Cudze konto" to osobny stan, a nie błąd logowania: zalogowanie się
+       udało, tylko nie temu, do kogo ten poranek należy. */
+    mismatch:
+      !!account.email && !!owner && account.email.toLowerCase() !== owner.toLowerCase(),
+  };
+}
+
+/**
+ * Materiał na poranek: poczta, plan dnia, kanały — i zdanie od sita.
+ *
+ * Każde z trzech źródeł ma prawo zawieść SAMO. Kalendarz bez zgody, konto
+ * bez sieci, kanał, który milczy — żadne z tego nie może zabrać całego
+ * okna, bo pozostałe dwie rzeczy nadal są warte pokazania. Dlatego każdy
+ * kawałek łapie swój błąd i oddaje go jako tekst obok treści.
+ */
+async function gatherBriefing() {
+  const settings = store.getSettings();
+  const config = settings.briefing ?? {};
+  const now = new Date();
+  const problems = [];
+
+  /* Kalendarz sięga od północy, a nie od „teraz": poranek otwarty
+     o czternastej ma opisać cały dzień, także to, co już było. */
+  const sinceMidnight = now.getHours() + now.getMinutes() / 60;
+  let plan = briefingSource.dayPlan([], now);
+  try {
+    const read = await agendaSource.read({ hours: 24, back: Math.max(1, sinceMidnight) });
+    if (read.access === "granted") plan = briefingSource.dayPlan(read.events, now);
+    else if (read.access === "denied") problems.push("Brak zgody na kalendarz.");
+  } catch (error) {
+    problems.push(`Kalendarz: ${error.message}`);
+  }
+
+  let picks = [];
+  try {
+    const mails = await google.mail({ days: 7 });
+    picks = briefingSource.needsAttention(mails, {
+      plan,
+      owner: google.snapshot().email ?? config.owner,
+      now,
+    });
+  } catch (error) {
+    problems.push(`Poczta: ${error.message}`);
+  }
+
+  let feeds = [];
+  try {
+    feeds = await headlines(config.feeds ?? [], { now: now.getTime() });
+  } catch (error) {
+    problems.push(`Kanały: ${error.message}`);
+  }
+
+  /* Zdanie od sita jest DODATKIEM, nie treścią. Lista maili i plan dnia są
+     kompletne bez niego — model dokłada do nich jedno zdanie na pozycję.
+     Dlatego brak klucza albo odmowa dostawcy nie może zabrać okna. */
+  let words = null;
+  try {
+    const provider = settings.sieve?.provider ?? "gemini";
+    const apiKey = keyFor(provider, settings);
+    if (apiKey || provider === "mock") {
+      const { system, user } = briefingSource.buildPrompt({ picks, plan, feeds, now });
+      const raw = await sendToModel({
+        provider,
+        model: settings.sieve?.model,
+        apiKey,
+        system,
+        user,
+      });
+      words = briefingSource.readAnswer(raw);
+    }
+  } catch (error) {
+    problems.push(`Sito: ${error.message}`);
+  }
+
+  return {
+    at: now.toISOString(),
+    owner: config.owner ?? "",
+    plan,
+    picks,
+    feeds,
+    words,
+    problems,
+  };
+}
+
+/** Okno poranka. Jedno na raz — drugie byłoby drugim tym samym. */
+function openBriefingWindow() {
+  if (briefingWindow && !briefingWindow.isDestroyed()) {
+    briefingWindow.show();
+    briefingWindow.focus();
+    return briefingWindow;
+  }
+
+  const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const width = Math.min(880, Math.round(workArea.width * 0.62));
+  const height = Math.min(720, Math.round(workArea.height * 0.78));
+
+  briefingWindow = new BrowserWindow({
+    width,
+    height,
+    minWidth: 520,
+    minHeight: 420,
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2.6),
+    show: false,
+    backgroundColor: "#09101c", // --bg
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 14, y: 14 },
+    webPreferences: {
+      preload: path.join(__dirname, "..", "preload", "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  markAppWindow(briefingWindow);
+  briefingWindow.loadFile(path.join(__dirname, "..", "renderer", "briefing.html"));
+  briefingWindow.once("ready-to-show", () => briefingWindow.show());
+  briefingWindow.on("closed", () => (briefingWindow = null));
+  return briefingWindow;
+}
+
+/**
+ * Pokazanie poranka.
+ *
+ * @param {object}  options
+ * @param {boolean} [options.force] z menu albo z Ustawień — bez pytania o porę
+ */
+async function showBriefing({ force = false } = {}) {
+  if (briefingBusy) return false;
+  if (!briefingMine()) return false;
+  const config = briefingConfig();
+  if (!force && !briefingSource.due({ lastAt: config.lastAt, now: new Date(), notBefore: config.notBefore ?? 4 })) {
+    return false;
+  }
+
+  briefingBusy = true;
+  const win = openBriefingWindow();
+  try {
+    const data = await gatherBriefing();
+    if (!win.isDestroyed()) win.webContents.send("briefing:data", data);
+    /* Datę zapisujemy DOPIERO PO ZEBRANIU materiału. Zapisana wcześniej
+       oznaczałaby dzień jako „już pokazany" także wtedy, gdy zbieranie
+       padło i człowiek nie zobaczył niczego. */
+    store.saveSettings({ briefing: { lastAt: new Date().toISOString() } });
+    tellSettings();
+  } catch (error) {
+    if (!win.isDestroyed()) {
+      win.webContents.send("briefing:data", { problems: [error.message], picks: [], feeds: [] });
+    }
+  } finally {
+    briefingBusy = false;
+  }
+  return true;
+}
+
+/**
+ * Pilnowanie pory.
+ *
+ * Zegar co kwadrans, a nie o stałej godzinie: komputer bywa włączany
+ * o różnych porach, a poranek ma się pokazać przy PIERWSZYM siadaniu do
+ * niego, nie o ósmej. Pytanie „czy dziś już był" jest tanie (porównanie
+ * dwóch dat), więc może padać często.
+ */
+let briefingClock = null;
+function watchBriefing() {
+  clearInterval(briefingClock);
+  briefingClock = null;
+  if (!briefingConfig().enabled) return;
+  briefingClock = setInterval(() => void showBriefing(), 15 * 60 * 1000);
+  // Odblokowanie ekranu to drugie „zalogowanie się do komputera" — patrz
+  // komentarz na górze sekcji.
+  void showBriefing();
 }
 
 
@@ -2560,7 +3031,7 @@ function attachContextMenu(win) {
 function saveSpellcheck(patch) {
   const settings = store.saveSettings({ spellcheck: patch });
   applySpellcheck(settings);
-  broadcast("settings:changed", settings);
+  tellSettings(settings);
   return settings;
 }
 
@@ -2654,6 +3125,57 @@ function broadcast(channel, payload) {
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) win.webContents.send(channel, payload);
   }
+}
+
+/* ── Czyja to instalacja ────────────────────────────────────────
+   Krok „Silniki" — dostawca, model, klucz — należy do właściciela i tylko
+   on go widzi. Dlaczego akurat tak i czym to NIE jest, mówi nagłówek
+   main/owner.js. Tutaj są trzy rzeczy: kto pyta, co mu wolno zobaczyć
+   i czym to wysyłamy. */
+
+/** Czy ta instalacja należy do właściciela. */
+function ownerHere() {
+  return ownership.isOwner({
+    email: cloud?.user?.email ?? null,
+    userData: app.getPath("userData"),
+  });
+}
+
+/** Czy ten krok potoku ma czym działać — bez mówienia, czym. */
+function engineReady(stage, settings = store.getSettings()) {
+  const step = settings[stage] ?? {};
+  if (!step.provider) return false;
+  if (step.provider === "mock") return true;
+  return !!keyFor(step.provider, settings);
+}
+
+/**
+ * Ustawienia w postaci, w której wolno je pokazać temu, kto pyta.
+ *
+ * JEDYNA droga ustawień do renderera. Nie ma drugiej i nie może być:
+ * `store.getSettings()` wysłane wprost jest wyciekiem klucza, a klucz
+ * w odpowiedzi mostu leży w oknie, którego nikt już potem nie sprawdza.
+ */
+function visibleSettings(settings = store.getSettings()) {
+  return ownership.publicSettings(settings, ownerHere(), (stage) =>
+    engineReady(stage, settings),
+  );
+}
+
+/** Zmiana ustawień do wszystkich okien — zawsze w postaci publicznej. */
+function tellSettings(settings = store.getSettings()) {
+  broadcast("settings:changed", visibleSettings(settings));
+}
+
+/**
+ * Awaria do okna — bez nazw dostawców i modeli.
+ *
+ * Komunikat błędu potrafi powiedzieć więcej niż całe Ustawienia: dość, że
+ * raz padnie „Brak klucza API dla dostawcy «gemini»". Patrz scrub
+ * w main/owner.js.
+ */
+function tellError(stage, message) {
+  broadcast("pipeline:error", { stage, message: ownership.scrub(message, ownerHere()) });
 }
 
 /* Ta sama notatka bywa otwarta w kilku oknach naraz. Okno, które właśnie
@@ -2866,7 +3388,7 @@ async function runPipeline(audioBuffer, durationMs) {
     setTimeout(() => state === "done" && setState("idle"), 1600);
   } catch (error) {
     const message = String(error.message || error);
-    broadcast("pipeline:error", { stage, message });
+    tellError(stage, message);
     setState("idle", { error: `${stage}: ${message}` });
   }
 }
@@ -3064,9 +3586,15 @@ function watchPermissions() {
 /* ── IPC ──────────────────────────────────────────────────────── */
 
 function registerIpc() {
-  ipcMain.handle("settings:get", () => store.getSettings());
+  /* Ustawienia wychodzą do okna WYŁĄCZNIE przez visibleSettings: krok
+     „Silniki" należy do właściciela i nikt inny nie dostaje go nawet
+     mostem (patrz main/owner.js). */
+  ipcMain.handle("settings:get", () => visibleSettings());
 
-  ipcMain.handle("settings:save", (_e, patch) => {
+  ipcMain.handle("settings:save", (_e, raw) => {
+    // Drugie sito, po stronie zapisu: interfejs tych pól nie pokazuje, ale
+    // most jest mostem i przez most da się wysłać cokolwiek.
+    const patch = ownership.sealPatch(raw, ownerHere());
     const settings = store.saveSettings(patch);
     if (patch.hotkey) bindHotkeys();
     // Sam zapamiętany wybór okna (dokąd, w jakiej formie) skrótu nie rusza —
@@ -3085,6 +3613,11 @@ function registerIpc() {
     // Kalendarz włącza się i gaśnie razem z przełącznikiem — a pierwsze
     // włączenie jest tym momentem, w którym system pyta o zgodę.
     if (patch.meetings?.calendar !== undefined) watchAgenda(settings);
+    /* Poranek. Zmiana klienta OAuth unieważnia sesję (patrz configure
+       w main/google.js), więc przepinamy konto przy każdej zmianie —
+       a zegar tylko wtedy, gdy przełącznik naprawdę drgnął. */
+    if (patch.briefing?.google) google?.configure(settings.briefing?.google);
+    if (patch.briefing?.enabled !== undefined) watchBriefing();
     if (patch.cloud) {
       cloud.configure(settings.cloud);
       watchCloud();
@@ -3094,7 +3627,7 @@ function registerIpc() {
       app.setLoginItemSettings({ openAtLogin: !!patch.launchAtLogin });
     }
     refreshMenus();
-    broadcast("settings:changed", settings);
+    tellSettings(settings);
     return settings;
   });
 
@@ -3107,7 +3640,13 @@ function registerIpc() {
     return true;
   });
 
-  ipcMain.handle("providers:get", () => ({ stt: STT, sieve: SIEVE, shot: OCR }));
+  /* Katalog dostawców — nazwy modeli i adresy, spod których bierze się
+     klucze. Dla zwykłego użytkownika pusty, i to nie na niby: pusty
+     katalog znaczy, że renderer nie ma czym narysować kroku „Silniki",
+     nawet gdyby ktoś kazał mu spróbować. */
+  ipcMain.handle("providers:get", () =>
+    ownerHere() ? { stt: STT, sieve: SIEVE, shot: OCR } : {},
+  );
 
   /* ── Notatnik ── */
   ipcMain.handle("notes:get", () => store.getNotes());
@@ -3165,7 +3704,10 @@ function registerIpc() {
       reading: shot.reading,
       text: shot.text,
       missingKey: shot.missingKey,
-      error: shot.error,
+      // Awaria odczytu potrafi wymienić dostawcę z nazwy — patrz scrub
+      // w main/owner.js.
+      error: ownership.scrub(shot.error, ownerHere()),
+      owner: ownerHere(),
       target: settings.shot?.target ?? "new",
       form: settings.shot?.form ?? "text",
     };
@@ -3341,7 +3883,7 @@ function registerIpc() {
       const order = ["bilingual", "single", "auto"];
       const next = order[(order.indexOf(language.mode) + 1) % order.length];
       const settings = store.saveSettings({ language: { ...language, mode: next } });
-      broadcast("settings:changed", settings);
+      tellSettings(settings);
       refreshMenus();
       return shortLabel(settings.language);
     }
@@ -3358,7 +3900,7 @@ function registerIpc() {
       const now = store.getSettings().mesh;
       const next = order[(order.indexOf(now) + 1) % order.length] ?? order[0];
       const settings = store.saveSettings({ mesh: next });
-      broadcast("settings:changed", settings);
+      tellSettings(settings);
       refreshMenus();
       return next;
     }
@@ -3622,8 +4164,10 @@ function registerIpc() {
     const scale = win.deckScale ?? deckScaleAt(bounds);
 
     if (rolled) {
-      const height = Math.round(STICKY_HEAD * scale) + STICKY_HALO * 2;
-      win.setBounds({ ...bounds, height });
+      // Podłoga PRZED zmianą rozmiaru — inaczej system podniósłby wysokość
+      // z powrotem do 150 i belka wyszłaby z paskiem pustego papieru.
+      clampCard(win, true, scale);
+      win.setBounds({ ...bounds, height: rolledHeight(scale) });
       store.saveSettings({
         widget: { cards: { [id]: { rolled: true, fullHeight: bounds.height } } },
       });
@@ -3631,6 +4175,7 @@ function registerIpc() {
     }
 
     const full = cards[id]?.fullHeight ?? deckCardSize(scale).height;
+    clampCard(win, false, scale);
     win.setBounds({ ...bounds, height: clamp(full, STICKY_MIN.height, STICKY_MAX.height) });
     store.saveSettings({ widget: { cards: { [id]: { rolled: false } } } });
     return true;
@@ -3664,6 +4209,9 @@ function registerIpc() {
   ipcMain.handle("meetings:list", () => meetings.list());
   ipcMain.handle("meetings:delete", (_e, id) => {
     store.deleteMeeting(id);
+    // Okno tego spotkania nie ma już czego pokazywać.
+    const solo = meetingWindows.get(id);
+    if (solo && !solo.isDestroyed()) solo.close();
     broadcast("meeting:changed", meetingState());
     return true;
   });
@@ -3688,14 +4236,25 @@ function registerIpc() {
      przy spotkaniu byłby drugim miejscem do poprawiania przy każdej
      zmianie. Zadania z podsumowania stają się przy okazji listą do
      odhaczenia — bo taka jest ich natura, a w podsumowaniu były akapitem. */
-  ipcMain.handle("meetings:toNote", (_e, { id, transcript } = {}) => {
+  /* Przycisk „Pokaż notatkę" prowadzi do notatki, która i tak już powstała
+     sama (patrz keepMeetingNote). Zakłada ją tylko wtedy, gdy jej nie ma —
+     bo ktoś ją skasował albo bo rozmowa nagrała się jeszcze przed tym, jak
+     notatki zaczęły powstawać same. Drugiej kopii tej samej rozmowy ten
+     przycisk nie robi. */
+  ipcMain.handle("meetings:toNote", (_e, { id } = {}) => {
     const meeting = store.getMeetings().find((item) => item.id === id);
     if (!meeting) return null;
-    const text = asNote(meeting, { transcript: transcript !== false });
-    const folder = store.getSettings().meetings?.folder || null;
-    const note = store.createNote({ text, kind: "meeting", folder });
-    store.updateMeeting(id, { noteId: note.id });
-    broadcast("note:new", note);
+
+    const known = meeting.noteId
+      ? store.getNotes().find((note) => note.id === meeting.noteId)
+      : null;
+    if (known) return known;
+
+    /* Notatki skasowanej ręką keepMeetingNote nie wskrzesza — ale
+       kliknięcie w „Pokaż notatkę" jest właśnie prośbą o nową. Zdejmujemy
+       więc wskazanie na nagrobek i zakładamy kartkę od nowa. */
+    if (meeting.noteId) store.updateMeeting(id, { noteId: null });
+    const note = keepMeetingNote(id);
     broadcast("meeting:changed", meetingState());
     return note;
   });
@@ -3714,7 +4273,7 @@ function registerIpc() {
       return true;
     } catch (problem) {
       store.updateMeeting(id, { sifting: false, talkError: problem.message });
-      broadcast("pipeline:error", { stage: "sito", message: problem.message });
+      tellError("sito", problem.message);
       return false;
     } finally {
       broadcast("meeting:changed", meetingState());
@@ -3725,13 +4284,16 @@ function registerIpc() {
   ipcMain.handle("meetings:copy", (_e, id) => {
     const meeting = store.getMeetings().find((item) => item.id === id);
     if (!meeting) return false;
-    clipboard.writeText(asNote(meeting, { transcript: false }));
+    clipboard.writeText(asNote(meeting, { transcript: false, me: whoAmI() }));
     return true;
   });
 
   ipcMain.handle("meetings:retranscribe", async (_e, id) => {
     try {
       const transcript = await meetings.retranscribe(id);
+      // Świeży zapis idzie do notatki od razu — a jeśli podsumowanie ma
+      // powstać, dopisze się do tej samej kartki chwilę później.
+      keepMeetingNote(id);
       /* Skoro jest już tekst, jest z czego zrobić wniosek. Robimy go sami,
          bo po to się przepisuje drugi raz. */
       if (transcript?.length && store.getSettings().meetings?.summarize !== false) {
@@ -3739,7 +4301,7 @@ function registerIpc() {
       }
       return true;
     } catch (problem) {
-      broadcast("pipeline:error", { stage: "transkrypcja", message: problem.message });
+      tellError("transkrypcja", problem.message);
       return false;
     }
   });
@@ -3759,9 +4321,15 @@ function registerIpc() {
   });
   /* Tytuł wpisany ręką. Znacznik `titleByHand` chroni go przed inteligentną
      zmianą nazwy: kto nazwał spotkanie sam, podjął decyzję. */
+  ipcMain.handle("meetings:openWindow", (_e, id) => (openMeetingWindow(id), true));
+
   ipcMain.handle("meetings:rename", (_e, { id, title } = {}) => {
     const name = String(title ?? "").trim();
-    store.updateMeeting(id, { title: name || null, titleByHand: !!name });
+    store.updateMeeting(id, {
+      title: name || null,
+      titleByHand: !!name,
+      titleFrom: name ? "hand" : null,
+    });
     broadcast("meeting:changed", meetingState());
     return true;
   });
@@ -3881,7 +4449,15 @@ function registerIpc() {
   ipcMain.handle("capture:toggle", () => toggleCapture("button"));
 
   /** Sprawdzenie kluczy zanim ktokolwiek cokolwiek powie. */
+  /* Sprawdzenie połączenia woła dostawcę naprawdę i mówi, kto odpowiedział.
+     To jest część kroku „Silniki" i należy do właściciela razem z nim —
+     przycisku nie ma na ekranie, a most odmawia. */
+  const onlyOwner = (what) => {
+    if (!ownerHere()) throw new Error(`${what} jest w tej wersji niedostępne.`);
+  };
+
   ipcMain.handle("test:sieve", async () => {
+    onlyOwner("Sprawdzanie silnika");
     const settings = store.getSettings();
     const t0 = Date.now();
     const probe = "yyy no wiesz to to znaczy chciałem powiedzieć że że to działa eee";
@@ -3906,6 +4482,7 @@ function registerIpc() {
      i to, czy obrazek w ogóle do niego dojechał — czego samo wysłanie
      tekstu nie potwierdzi, bo odczyt jedzie innym kanałem niż sito. */
   ipcMain.handle("test:shot", async () => {
+    onlyOwner("Sprawdzanie silnika");
     const settings = store.getSettings();
     const probe = "Cribro Sift czyta ekran";
     const page = `<body style="margin:0;overflow:hidden;background:#fff"><p style="font:600 34px/1.4 -apple-system,Helvetica,sans-serif;color:#111;padding:40px 32px">${probe}</p></body>`;
@@ -3940,6 +4517,7 @@ function registerIpc() {
   });
 
   ipcMain.handle("test:stt", async () => {
+    onlyOwner("Sprawdzanie silnika");
     const settings = store.getSettings();
     const { provider, model } = settings.stt;
     if (provider === "mock") return { ok: true, note: "Atrapa — klucz niepotrzebny." };
@@ -4075,6 +4653,73 @@ function registerIpc() {
     return { ...cloudState(), report };
   });
 
+  /* ── Poranek ─────────────────────────────────────────────────
+     Interfejs pyta o stan, prosi o pokazanie i podłącza konto. Reszta —
+     kiedy, komu i z czego — jest wyżej, w sekcji „Poranek". */
+
+  ipcMain.handle("briefing:state", () => briefingState());
+
+  ipcMain.handle("briefing:show", async () => {
+    const shown = await showBriefing({ force: true });
+    if (!shown) {
+      const state = briefingState();
+      if (state.mismatch) {
+        throw new Error(
+          `Podłączone konto to ${state.account.email}, a poranek należy do ${state.owner}.`,
+        );
+      }
+      if (!state.account.signedIn) throw new Error("Konto Google nie jest podłączone.");
+      if (!state.owner) throw new Error("Poranek nie ma właściciela — podłącz konto Google.");
+      throw new Error("Poranek jest wyłączony.");
+    }
+    return true;
+  });
+
+  /* Podłączenie konta. Wygląda jak logowanie do chmury i idzie tą samą
+     drogą (pętla zwrotna, PKCE), ale kończy się inaczej: sprawdzeniem,
+     CZYJE konto właśnie przyszło. */
+  ipcMain.handle("briefing:connect", async () => {
+    if (oauthPending) throw new Error("Logowanie już trwa — dokończ je w przeglądarce.");
+    google.configure(store.getSettings().briefing?.google);
+
+    const owner = String(store.getSettings().briefing?.owner ?? "").trim();
+    const attempt = google.signIn({
+      openExternal: (url) => shell.openExternal(url),
+      hint: owner || undefined,
+    });
+    oauthPending = { provider: "google-mail", cancel: attempt.cancel };
+
+    try {
+      const account = await attempt.result;
+      oauthPending = null;
+
+      /* Właściciel zapisuje się przy PIERWSZYM podłączeniu i od tej chwili
+         jest warunkiem, a nie notatką: kolejne konto albo się z nim zgadza,
+         albo zostaje odrzucone razem z sesją. Inaczej wystarczyłoby zalogować
+         się swoim kontem na cudzym komputerze, żeby poranek zaczął czytać
+         cudzą skrzynkę. */
+      if (!owner) {
+        store.saveSettings({ briefing: { owner: account.email ?? "" } });
+      } else if ((account.email ?? "").toLowerCase() !== owner.toLowerCase()) {
+        google.forget();
+        throw new Error(
+          `To konto (${account.email}) nie jest tym, do którego należy poranek (${owner}).`,
+        );
+      }
+
+      tellSettings();
+      return briefingState();
+    } catch (error) {
+      oauthPending = null;
+      throw error;
+    }
+  });
+
+  ipcMain.handle("briefing:disconnect", () => {
+    google.forget();
+    return briefingState();
+  });
+
   ipcMain.on("window:minimize", () => mainWindow?.minimize());
   ipcMain.on("window:close", () => mainWindow?.hide());
 }
@@ -4108,6 +4753,13 @@ if (!app.requestSingleInstanceLock()) {
     cloud = new Supabase();
     cloud.configure(store.getSettings().cloud);
 
+    /* Konto Google — wyłącznie do porannego podsumowania. Powstaje zawsze,
+       bo bez identyfikatora klienta jest tylko wyłączone, a nie nieobecne;
+       reszta kodu nie musi wtedy sprawdzać, czy w ogóle istnieje. Sesji
+       z dysku NIE wczytuje przy starcie — patrz nagłówek main/google.js. */
+    google = new Google();
+    google.configure(store.getSettings().briefing?.google);
+
     /* Spotkania chodzą OBOK dyktowania, nie zamiast niego: to dwa różne
        stany i dwa różne mikrofony (ScreenCaptureKit kontra getUserMedia).
        Dyktowanie notatki w trakcie rozmowy ma działać. */
@@ -4135,7 +4787,7 @@ if (!app.requestSingleInstanceLock()) {
               ? "Od pięciu minut nie słychać Twojego mikrofonu — sprawdź, czy nie jest wyciszony."
               : "Od pięciu minut nie słychać drugiej strony — sprawdź, czy dźwięk rozmowy nie idzie do słuchawek Bluetooth.",
         }),
-      onError: (message) => broadcast("pipeline:error", { stage: "spotkanie", message }),
+      onError: (message) => tellError("spotkanie", message),
     });
 
     /* Nagrania, które nie miały jak się skończyć — bo aplikacja zginęła
@@ -4159,7 +4811,28 @@ if (!app.requestSingleInstanceLock()) {
     watchAgenda();
     watchPermissions();
     createMainWindow();
-    watchCloud();
+
+    /* ══ SESJA KONTA WRACA DOPIERO TERAZ ══
+
+       Leży na dysku zaszyfrowana kluczem z pęku kluczy, a odszyfrowanie
+       jest wywołaniem synchronicznym, które macOS potrafi zatrzymać na
+       pytaniu „czy pozwolić tej aplikacji sięgnąć po zapisane hasło?".
+       Pytanie pada po każdej zmianie podpisu, czyli po każdej własnej
+       instalacji. Zrobione przed oknami, zatrzymywało całe uruchamianie:
+       proces stał, okien nie było, a okienko systemu wisiało na ekranie
+       bez niczego, z czym dałoby się je powiązać.
+
+       Teraz najgorsze, co może się stać, to że przez chwilę po starcie
+       Cribro jest niezalogowane — a to jest stan, który interfejs umie
+       pokazać, i który mija sam, gdy tylko pęk kluczy odpowie. */
+    setTimeout(() => {
+      /* Pytamy pęk kluczy WYŁĄCZNIE wtedy, gdy jest po co: bez adresu
+         projektu żadnej sesji i tak nie ma do czego przyłożyć, a okienko
+         systemu pytające o hasło do czegoś, czego się nie używa, jest
+         samym niepokojem. */
+      if (cloud.configured && cloud.restore()) cloudChanged();
+      watchCloud();
+    }, 400);
     if (store.getSettings().widget?.enabled) showWidget(true);
     applyDockIcon(store.getSettings().showInDock !== false);
 
@@ -4167,6 +4840,15 @@ if (!app.requestSingleInstanceLock()) {
        w obszar roboczy — tak samo po podłączeniu monitora i po zmianie
        samego ekranu. Co dokładnie robi każde z tych zdarzeń i dlaczego
        wszystkie trzy prowadzą w to samo miejsce: patrz screensChanged. */
+    /* Poranek. Zegar pilnuje pory, a odblokowanie ekranu jest drugą drogą
+       do tego samego pytania: „czy dziś ktoś to już widział". Zwłoka jest
+       po to, żeby okno nie wyskoczyło w tej samej sekundzie, w której
+       odsłania się pulpit — wtedy wygląda jak usterka, a nie jak coś,
+       co ktoś położył na wierzchu. */
+    watchBriefing();
+    powerMonitor.on("unlock-screen", () => setTimeout(() => void showBriefing(), 2500));
+    powerMonitor.on("resume", () => setTimeout(() => void showBriefing(), 4000));
+
     screen.on("display-removed", screensChanged);
     screen.on("display-added", screensChanged);
     screen.on("display-metrics-changed", screensChanged);

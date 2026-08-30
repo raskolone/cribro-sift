@@ -101,9 +101,9 @@ function renderList() {
         </button>
       </div>`;
 
-  /* Przypięte, szybkie i reszta mają własne przegródki — patrz groupNotes
-     w notes-core.js. Zwinięta przegródka chowa kafle, ale nie przy szukaniu:
-     fraza ma pokazać wszystko, co pasuje. */
+  /* Przypięte, spotkania, szybkie i reszta mają własne przegródki — patrz
+     groupNotes w notes-core.js. Zwinięta przegródka chowa kafle, ale nie przy
+     szukaniu: fraza ma pokazać wszystko, co pasuje. */
   const head = (group) => {
     const open = !!query || !state.collapsed.has(group.key);
     return `

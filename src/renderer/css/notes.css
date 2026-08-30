@@ -107,33 +107,42 @@ body.is-solo .list__edge {
   display: none;
 }
 
-/* Nagłówek przegródki: „Przypięte", „Szybkie notatki", „Notatki".
-   Jest zarazem klapką — kliknięcie zwija przegródkę. */
+/* Nagłówek przegródki: „Przypięte", „Notatki ze spotkań", „Szybkie
+   notatki", „Notatki". Jest zarazem klapką — kliknięcie zwija przegródkę.
+
+   Ten sam wygląd co .notes__group w css/app.css i to nie jest przypadek:
+   ta sama lista stoi w dwóch oknach i nie może mieć w nich dwóch różnych
+   nagłówków. Poprawiając tutaj, popraw tam.
+
+   Nazwa przegródki chodziła w kolorze metryczki, tym samym co „14 min ·
+   220 sł." pod kaflem — a jest podziałem CAŁEJ listy, nie przypisem do
+   jednej notatki. Czyta się ją z odległości, z której czyta się listę. */
 .list__group {
   display: flex;
   align-items: center;
   gap: var(--s-2);
   width: calc(100% - 12px);
   margin: var(--s-3) 6px 5px;
-  padding: 3px 4px;
+  padding: 4px 5px;
   border-radius: var(--r-sm);
   font-family: var(--font-mono);
-  font-size: var(--fs-label);
-  letter-spacing: var(--track-label);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   text-align: left;
-  color: var(--text-mute);
+  color: var(--text-2);
   transition: color var(--t), background var(--t);
 }
 .list__group:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-hi);
+  background: rgba(255, 255, 255, 0.05);
 }
 .list__caret {
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   flex: 0 0 auto;
-  opacity: 0.7;
+  opacity: 0.9;
   transform: rotate(-90deg);
   transition: transform var(--t);
 }
@@ -146,11 +155,12 @@ body.is-solo .list__edge {
 .list__group i {
   flex: 1;
   height: 1px;
-  background: var(--line);
+  background: var(--line-strong);
 }
 .list__group b {
   font-weight: 400;
-  color: var(--text-faint);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Notatka oderwana do własnego okienka: zostaje sama notatka. Lista
@@ -728,30 +738,38 @@ body.is-solo #detach {
 .notes__folders::-webkit-scrollbar {
   display: none;
 }
+/* Szuflada jest wyborem, po którym widać połowę listy — więc jej nazwa
+   musi być do przeczytania także wtedy, gdy się jej nie szuka. Kolor
+   metryczki (--text-mute) zostawiał ją na granicy widoczności; nazwa
+   niewybranej szuflady chodzi teraz w kolorze treści, a wybranej —
+   w akcencie, tak jak dotąd. */
 .folder-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex: none;
-  padding: 3px 9px;
+  padding: 4px 10px;
   border-radius: var(--r-pill);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: none;
-  color: var(--text-mute);
+  color: var(--text-2);
   font-size: var(--fs-xs);
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
   transition: color var(--t), border-color var(--t), background var(--t);
 }
 .folder-chip b {
   font-weight: 400;
-  color: var(--text-faint);
+  color: var(--text-mute);
   font-family: var(--font-mono);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .folder-chip:hover {
-  color: var(--text);
+  color: var(--text-hi);
   border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
 }
 .folder-chip[aria-pressed="true"] {
   color: var(--accent);
@@ -759,7 +777,7 @@ body.is-solo #detach {
   background: var(--accent-08);
 }
 .folder-chip[aria-pressed="true"] b {
-  color: var(--accent-55);
+  color: var(--accent-soft);
 }
 
 .notes__tags {

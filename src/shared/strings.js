@@ -33,6 +33,7 @@ const EN = {
   "Jedno pokrętło: jak gęsto przesiewać.": "One dial: how finely to sift.",
   "Słowa, których sito nigdy nie tknie.": "Words the sieve never touches.",
   "Skróty, dostawcy, prywatność.": "Shortcuts, providers, privacy.",
+  "Skróty, konto, prywatność.": "Shortcuts, account, privacy.",
   Skrót: "Shortcut",
   "trzymaj i mów": "hold and speak",
   "Zwiń pas boczny": "Collapse sidebar",
@@ -117,6 +118,9 @@ const EN = {
   "Posłuchaj tego fragmentu": "Listen to this bit",
   "Znacznik chwili": "Mark the moment",
   "Zapisz jako notatkę": "Save as a note",
+  /* Notatka ze spotkania powstaje sama po każdej rozmowie — ten przycisk
+     do niej prowadzi, a nie zakłada jej drugi raz. */
+  "Pokaż notatkę": "Open the note",
   Kopiuj: "Copy",
   Skopiowane: "Copied",
   "Napisz podsumowanie": "Write the summary",
@@ -149,7 +153,9 @@ const EN = {
     "By default the recording is deleted after transcription — same as with dictation.",
   "Krótsze nagranie to pomyłka": "A shorter recording is a mistake",
   sekund: "seconds",
-  "Szuflada na podsumowania": "Drawer for summaries",
+  "Szuflada na notatki ze spotkań": "Drawer for meeting notes",
+  "Każda nagrana rozmowa dostaje notatkę sama — z podsumowaniem, zadaniami i całym zapisem. Leży w Notatniku, w przegródce „Notatki ze spotkań”.":
+    "Every recorded conversation gets a note of its own — summary, tasks and the full transcript. It waits in Notes, under “Meeting notes”.",
   "Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek świeci przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.":
     "Recording involves people who never clicked anything in this app. The badge glows the whole time, and macOS shows its own indicator next to it.",
 
@@ -411,8 +417,8 @@ const EN = {
   "Jak aplikacja pokazuje się poza oknem: ikoną w Docku i przełącznikiem ⌘Tab.":
     "How the app shows up outside its window: a Dock icon and the ⌘Tab switcher.",
   "Ikona w Docku": "Dock icon",
-  "Wyłączenie zostawia Cribro wyłącznie w pasku menu — znika też z ⌘Tab.":
-    "Turning it off leaves Cribro in the menu bar only — it also disappears from ⌘Tab.",
+  "Wyłączenie zostawia Cribro w pasku menu. Ikona wraca sama na czas, w którym stoi otwarte okno aplikacji — po to, żeby dało się do niego wrócić ⌘Tabem.":
+    "Turning it off leaves Cribro in the menu bar. The icon comes back while an app window is open, so you can switch back to it with ⌘Tab.",
   Położenie: "Position",
   Podgląd: "Preview",
 
@@ -503,6 +509,7 @@ const EN = {
   "Dyktuj do tej notatki": "Dictate into this note",
   Zwiń: "Collapse",
   "Pisz albo naciśnij mikrofon.": "Write, or press the microphone.",
+  "Pisz albo podyktuj skrótem.": "Write, or dictate with the shortcut.",
   "Piszę…": "Typing…",
   pusta: "empty",
   "1 słowo": "1 word",
@@ -627,8 +634,24 @@ const EN = {
   "Zapisz jako plik .md…": "Save as .md file…",
   "Usuń notatkę": "Delete note",
   "Otwórz w osobnym okienku": "Open in its own window",
+  "Pokaż w osobnym oknie": "Show in its own window",
+  Poranek: "Morning",
+  "Dzień dobry.": "Good morning.",
+  "Wymaga uwagi": "Needs you",
+  "Plan dnia": "Your day",
+  Świat: "World",
+  "za chwilę": "any moment",
+  "za {n} min": "in {n} min",
+  "za {n} godz.": "in {n} h",
+  "Nic nie czeka na Twoją odpowiedź. Tak też bywa.": "Nothing is waiting for your reply. It happens.",
+  "Zbieram pocztę, kalendarz i kanały…": "Collecting mail, calendar and feeds…",
+  "Konto podłączone.": "Account connected.",
+  "Konto odłączone.": "Account disconnected.",
+  "Czekam na przeglądarkę…": "Waiting for the browser…",
+  "Skasuj spotkanie": "Delete meeting",
   "Zwiń listę notatek": "Collapse the note list",
   "Szybkie notatki": "Quick notes",
+  "Notatki ze spotkań": "Meeting notes",
   "Rozwiń listę notatek": "Expand the note list",
   "Podwójne kliknięcie otwiera notatkę w osobnym okienku":
     "A double click opens the note in its own window",
@@ -775,6 +798,10 @@ const EN = {
   "Zapisane w nowej notatce.": "Saved as a new note.",
   "Brak klucza OpenAI — zostaje sam obrazek. Klucz wpisuje się w Ustawieniach.":
     "No OpenAI key — the image alone remains. The key goes in Settings.",
+  /* To samo zdanie dla wszystkich, którzy nie są właścicielem: kroku
+     „Silniki" u nich nie ma, więc nie ma ich dokąd odesłać (main/owner.js). */
+  "Odczyt tekstu jest w tej chwili niedostępny — zostaje sam obrazek.":
+    "Reading the text is unavailable right now — the image alone remains.",
   "Nie udało się odczytać tekstu: {powód}": "The text could not be read: {powód}",
   "Nie udało się zapisać zrzutu": "The capture could not be saved",
   "Nie ma czego zapisać.": "There is nothing to save.",

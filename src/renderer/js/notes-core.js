@@ -107,16 +107,28 @@
      rzuconych myśli spycha tę jedną, po którą się przyszło. */
   const isQuick = (note) => note?.kind === "quick";
 
+  /* Notatka ze spotkania powstaje SAMA, w chwili gdy rozmowa doczeka się
+     podsumowania (patrz keepMeetingNote w main/main.js). Nikt jej nie pisze
+     i nikt nie zakłada — więc gdyby leżała w jednym ciągu z resztą, każde
+     nagrane spotkanie spychałoby w dół notatki naprawdę napisane ręką.
+     Ma za to własną naturę: nagłówek, ustalenia, zadania i zapis rozmowy
+     na końcu — i wraca się do niej po tygodniu, a nie po godzinie. */
+  const isMeeting = (note) => note?.kind === "meeting";
+
   /**
    * Podział listy na przegródki. Kolejność jest kolejnością ważności:
    * najpierw przypięte — to one są powodem, dla którego ktokolwiek
-   * przypina — potem szybkie notatki, na końcu cała reszta. Przypięta
-   * szybka notatka idzie na górę, a nie zostaje w swojej przegródce:
+   * przypina — potem notatki ze spotkań, potem szybkie notatki, na końcu
+   * cała reszta. Przypięta notatka idzie na górę bez względu na rodzaj:
    * przypięcie znaczy „mam to mieć przed oczami", nie „posortuj mnie".
    *
+   * Spotkania stoją wysoko, bo są jedynymi notatkami, których nikt nie
+   * zakładał — dopisują się same po każdej nagranej rozmowie. Wrzucone
+   * między napisane ręką, spychałyby je z ekranu tygodniem cudzej pracy.
+   *
    * Nagłówek pokazujemy dopiero wtedy, gdy naprawdę jest co dzielić — kto
-   * nigdy nie przypiął notatki ani nie użył szybkiej, nie ma powodu oglądać
-   * nagłówka nad wszystkim, co ma.
+   * nigdy nie przypiął notatki, nie nagrał spotkania ani nie użył szybkiej,
+   * nie ma powodu oglądać nagłówka nad wszystkim, co ma.
    *
    * @returns {{ groups: {key: string, label: string, items: object[]}[], divided: boolean }}
    */
@@ -125,8 +137,17 @@
     const loose = sorted.filter((note) => !note.pinned);
     const groups = [
       { key: "pinned", label: "Przypięte", items: sorted.filter((note) => !!note.pinned) },
+      {
+        key: "meeting",
+        label: "Notatki ze spotkań",
+        items: loose.filter(isMeeting),
+      },
       { key: "quick", label: "Szybkie notatki", items: loose.filter(isQuick) },
-      { key: "note", label: "Notatki", items: loose.filter((note) => !isQuick(note)) },
+      {
+        key: "note",
+        label: "Notatki",
+        items: loose.filter((note) => !isQuick(note) && !isMeeting(note)),
+      },
     ].filter((group) => group.items.length);
 
     return { groups, divided: groups.length > 1 };
@@ -355,6 +376,7 @@
     foldersOf,
     allTags,
     groupNotes,
+    isMeeting,
     collapsedGroups,
     saveCollapsedGroups,
     matches,

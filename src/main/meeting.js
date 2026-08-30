@@ -137,6 +137,9 @@ class Meetings {
     // co wykryć. Nagranie z menu zaczyna się bez nazwy i tak zostaje.
     const meeting = this.store.createMeeting({
       title: about?.title ?? null,
+      // Skąd nazwa: z okna rozmowy, z kalendarza albo znikąd. Rozstrzyga
+      // to potem, czy podsumowanie ma prawo ją zmienić.
+      titleFrom: about?.titleFrom ?? null,
       where: about?.where ?? null,
       /* Kto był zaproszony i jak podpisać drugi tor. Jedno i drugie
          przychodzi z kalendarza (main/agenda.js) i jest jedyną drogą,

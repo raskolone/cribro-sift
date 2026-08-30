@@ -191,18 +191,33 @@ contextBridge.exposeInMainWorld("cribro", {
     summarize: (id) => ipcRenderer.invoke("meetings:summarize", id),
     // Przepisanie nagrania jeszcze raz, z plików na dysku.
     retranscribe: (id) => ipcRenderer.invoke("meetings:retranscribe", id),
-    /* Droga wyjścia: spotkanie jako notatka. Stamtąd prowadzą już wszystkie
-       pozostałe — PDF, Notion, Apple Notes, chmura. */
-    toNote: (id, transcript) => ipcRenderer.invoke("meetings:toNote", { id, transcript }),
+    /* Droga wyjścia: spotkanie jako notatka. Notatka powstaje sama po każdej
+       rozmowie (patrz keepMeetingNote w main/main.js), więc to jest prośba
+       „pokaż mi ją" — a nie „zrób ją". Drugiej kopii nie zakłada. */
+    toNote: (id) => ipcRenderer.invoke("meetings:toNote", { id }),
     copy: (id) => ipcRenderer.invoke("meetings:copy", id),
     // Rozmowa bez szumu — to samo sito, co przy dyktowaniu, tylko materiał
     // ma dwie strony zamiast jednej.
     polish: (id) => ipcRenderer.invoke("meetings:polish", id),
     rename: (id, title) => ipcRenderer.invoke("meetings:rename", { id, title }),
+    /* Jedno spotkanie we własnym oknie — do postawienia obok rozmowy,
+       tak samo jak notatka (notes.openWindow). */
+    openWindow: (id) => ipcRenderer.invoke("meetings:openWindow", id),
     // Kalendarz: „notuj to spotkanie", zgoda zapadająca przed czasem.
     arm: (id, on) => ipcRenderer.invoke("meetings:arm", { id, on }),
     onChange: on("meeting:changed"),
     onDone: on("meeting:done"),
+  },
+
+  /* Poranek — jedno okno raz dziennie. Interfejs pyta o stan, prosi
+     o pokazanie i podłącza konto Google; kiedy i z czego, decyduje proces
+     główny (sekcja „Poranek" w main/main.js). */
+  briefing: {
+    state: () => ipcRenderer.invoke("briefing:state"),
+    show: () => ipcRenderer.invoke("briefing:show"),
+    connect: () => ipcRenderer.invoke("briefing:connect"),
+    disconnect: () => ipcRenderer.invoke("briefing:disconnect"),
+    onData: on("briefing:data"),
   },
 
   system: {

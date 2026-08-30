@@ -110,6 +110,34 @@ gdy tylko okno dostanie fokus.
 
 ### 4. Klucze API
 
+> **UWAGA: ten krok widzi wyłącznie właściciel.**
+>
+> Przy wydanej aplikacji wywołania do modeli opłaca autor, ze swojego klucza —
+> a przełącznik, który zmienia cudzy rachunek, nie jest ustawieniem, tylko
+> dziurą. Cały krok „Silniki" jest więc dla zwykłego użytkownika
+> **niewidoczny**: proces główny nie wysyła do okna ani katalogu dostawców,
+> ani nazw modeli, ani kluczy, a komunikaty błędów mówią „silnik" zamiast
+> wymieniać dostawcę z nazwy. Rozstrzyga to `src/main/owner.js`; co to
+> jest, a czym NIE jest, mówi nagłówek tego pliku.
+>
+> **Instalacja jest instalacją właściciela, gdy zachodzi którakolwiek z trzech
+> rzeczy** (pierwsza, która odpowie „tak", kończy pytanie):
+>
+> 1. podłączone konto w chmurze ma adres z listy `OWNERS` w `owner.js`,
+> 2. w środowisku stoi `CRIBRO_OWNER=1`,
+> 3. w katalogu danych leży plik `owner`:
+>    ```bash
+>    touch ~/Library/Application\ Support/Cribro\ Sift/owner
+>    ```
+>    To jest wyjście awaryjne na maszynę bez sieci i bez konta — i to nim
+>    otwiera się Ustawienia na komputerze autora, gdy nie jest zalogowany.
+>    Skasowanie tego pliku zamyka krok „Silniki" z powrotem, co jest
+>    najprostszym sposobem, żeby zobaczyć aplikację cudzymi oczami.
+>
+> Sprawdzają to `scripts/owner-test.js` (rozstrzygnięcia) i
+> `scripts/blind-test.js` (otwiera prawdziwe okno i czyta, co się w nim
+> narysowało — razem z podpowiedziami w `title` i ze slajdami przewodnika).
+
 **Ustawienia → Silniki.** Każdy krok ma własny wybór dostawcy, modelu i klucza.
 
 | Dostawca | Skąd klucz | Obsługuje |
@@ -1186,6 +1214,107 @@ To samo, czego najczęściej potrzeba bez okna, siedzi dalej w **pasku menu**:
 Przesiane, Notatnik, Szybka notatka, Ustawienia, gęstość sita, język
 dyktowania i automatyczne wklejanie.
 
+### Spotkania
+
+Zakładka **Spotkania** to trzecia rzecz w tej aplikacji, obok dyktowania
+i notatki — a nie odmiana którejś z tamtych dwóch. Dyktowanie trwa kilkanaście
+sekund, słucha jednego mikrofonu i kończy się tekstem pod kursorem. Spotkanie
+trwa godzinę, słucha dwóch źródeł naraz i kończy się dokumentem.
+
+Nagranie bierze **dwa tory z jednego strumienia** ScreenCaptureKit: mikrofon
+(„ty") i wyjście systemu („oni"). Podział na osoby wynika stąd za darmo — nie
+zgaduje go model, tylko okablowanie. Szczegóły: `native/tap/main.swift`.
+
+#### Ustawienia pod kołem zębatym
+
+Ustawienia spotkań leżały dotąd rozwinięte pod spisem rozmów — trzy ekrany
+przełączników pod trzema wpisami. Dotyka się ich raz w życiu, a spisu
+codziennie, więc teraz stoją pod **kołem zębatym obok „Nagraj spotkanie"**.
+Kliknięcie wykłada szufladę z nagłówkiem *Jak działają spotkania*; wybór
+zostaje między uruchomieniami.
+
+#### W trakcie rozmowy widać zapis
+
+Dopóki nagranie trwa, domyślną zakładką jest **Transkrypcja** — bo to jedyna
+rzecz, która wtedy rośnie (zapis powstaje odcinkami, w biegu). Podsumowania
+jeszcze nie ma i długo nie będzie, a notatnik obok jest pustą kartką. Po
+zakończeniu ekran wraca do **Podsumowania**, bo to ono jest powodem, dla
+którego się nagrywało. Zakładka wybrana ręką zostaje tam, gdzie ją
+postawiono, do końca tej rozmowy.
+
+#### Nazwa rozmowy
+
+Karta Google Meet nazywa się tak, jak nazwano pokój — „Meet – Przegląd
+tygodnia" — i **ta nazwa wygrywa**: to pod nią ludzie do rozmowy przyszli,
+a nie pod nazwą wpisu w czyimś kalendarzu. Nagranie włączone ręką też o nią
+pyta: przed startem Cribro zerka raz na tytuły okien. Kod pokoju
+(„jrx-kfoz-hys") nazwą nie jest i nie dochodzi tu wcale — odsiewa go
+`src/main/detect.js`. Nazwy przepisanej z okna rozmowy podsumowanie już nie
+zmienia; nazwę wziętą z kalendarza albo żadną — owszem, i wtedy pisze ją
+z treści.
+
+#### Notatka powstaje sama
+
+Każda rozmowa, po której zostało cokolwiek do przeczytania, **dostaje notatkę
+bez proszenia**: podsumowanie, zadania jako lista do odhaczenia i **cały zapis
+rozmowy** na końcu. Notatka leży w Notatniku, w przegródce **„Notatki ze
+spotkań"**, w szufladzie z ustawień (domyślnie *Spotkania*).
+
+To ostatnie jest tu najważniejsze: dopiero pełny zapis w notatce pozwala
+skasować nagranie bez straty — a nagranie ginie po transkrypcji domyślnie
+i tak. Wyjątek zostaje jeden i jest w kodzie od początku: gdy przepisywanie
+zawiedzie, pliki zostają niezależnie od ustawienia. Kasuje się to, co da się
+odtworzyć.
+
+Nazwę notatki składa `noteTitle` w `src/main/digest.js` z dwóch rzeczy — bo
+takie jest pytanie zadawane tydzień później: **o czym to było ORAZ z kim**.
+„O czym" bierze z nazwy spotkania (napisanej przez model z treści, przepisanej
+z okna rozmowy albo wziętej z kalendarza); „z kim" liczy lokalnie, z listy
+zaproszonych i z podpisów w zapisie, odejmując siebie. Wychodzi z tego
+*Budżet na trzeci kwartał · Ania Kowalska* albo *Przegląd tygodnia · zespół
+(4 osoby)*.
+
+Trzy granice, których ta automatyka nie przekracza (`src/main/meetnote.js`):
+
+1. notatka **skasowana ręką nie wraca** — nagrobek po niej mówi „tej notatki
+   nie ma" i to jest odpowiedź, nie usterka;
+2. notatka **zmieniona ręką nie jest nadpisywana** — czyjeś dopiski są jedyną
+   rzeczą w tej kartce, której nie da się odtworzyć z niczego;
+3. notatka **nie powstaje z niczego** — rozmowa bez zapisu i bez podsumowania
+   nie ma czym wypełnić kartki.
+
+Przycisk *Pokaż notatkę* przy podsumowaniu prowadzi do tej istniejącej
+kartki, a drugiej kopii nie zakłada.
+
+#### Czego to nagrywanie NIE robi
+
+Narzędzia do notatek ze spotkań dzielą się na dwa gatunki. Pierwszy **dołącza
+do rozmowy**: wchodzi do pokoju jako uczestnik, staje na liście obecnych
+i bywa zapowiadany przez samą platformę („do spotkania dołączył asystent AI").
+Drugi **słucha głośnika**, tak samo jak dyktafon położony obok laptopa.
+
+Cribro jest drugim gatunkiem i tak ma zostać:
+
+- nie dołącza do rozmowy i nie ma jej czym zakłócić — nie ma tu WebRTC ani
+  żadnego cudzego API do spotkań;
+- nie instaluje wirtualnego mikrofonu ani kamery, więc **nie ma czym niczego
+  do rozmowy wpuścić**;
+- wyklucza z nagrania **własny dźwięk** (sygnał po dyktowaniu, odsłuch
+  fragmentu zapisu) — `excludesCurrentProcessAudio` łapie tylko program
+  pomocniczy, więc aplikacja jest wykluczana z nazwy;
+- bierze ze strumienia **wyłącznie dźwięk**, obrazu nie zamawia;
+- tytuły własnych okien są bezbarwne, żeby żaden wykrywacz „asystentów AI"
+  — ani nasz własny w `detect.js` — nie brał okna Cribro za okno rozmowy;
+- nagranie opuszcza ten komputer **wyłącznie** jako materiał do przepisania
+  i wyłącznie do dostawcy transkrypcji.
+
+Pilnuje tego `scripts/quiet-test.js`. Czego ten test **nie** obiecuje: że
+nagrywania nie widać na tym komputerze (macOS pokazuje własny wskaźnik i to
+jest dobrze), ani że rozmówców nie trzeba uprzedzić — trzeba, a w wielu
+miejscach wymaga tego prawo. Zakładka ma gotowe zdanie do wklejenia na czat.
+
+---
+
 ### Historia
 
 Zakładka **Przesiane** trzyma wszystkie dyktowania. Przy każdym wpisie:
@@ -1390,6 +1519,8 @@ nie ma załączników i nie ma współdzielenia notatek z innym kontem.
 | Zrzuty wstawione do notatek | `~/Library/Application Support/Cribro Sift/zrzuty/` |
 | Zakładka synchronizacji | `~/Library/Application Support/Cribro Sift/cloud.json` |
 | Sesja Supabase (szyfrowana) | `~/Library/Application Support/Cribro Sift/supabase-session.bin` |
+| Spotkania (metryka, zapis, podsumowanie) | `~/Library/Application Support/Cribro Sift/spotkania.json` |
+| Znacznik właściciela (otwiera krok „Silniki") | `~/Library/Application Support/Cribro Sift/owner` |
 | Token Notion i zakładka stron | `settings.json`, gałąź `notion` — nie jedzie do chmury |
 | Schemat bazy do wklejenia | `supabase/schema.sql` w katalogu projektu |
 | Certyfikat do podpisu | `~/Library/Keychains/cribro-sign.keychain-db` |
@@ -1434,6 +1565,14 @@ src/main/
   share.js       Notatki Apple przez AppleScript, eksport do Markdown
   pdf.js         notatka jako PDF: jasna kartka z tokenów motywu
   notion.js      notatka jako strona w Notion: Markdown → bloki, na samym fetch
+  owner.js       czyja to instalacja: co widać w Ustawieniach, a czego nie
+  meeting.js     przebieg spotkania: start, odcinki w biegu, koniec, ratunek
+  meetnote.js    notatka ze spotkania: kiedy powstaje, a kiedy jej nie tykać
+  digest.js      KROK 3 — wniosek z rozmowy, rozmowa bez szumu, nazwa notatki
+  detect.js      czy na ekranie stoi rozmowa — po tytułach okien
+  merge.js       splot dwóch torów w jeden zapis, przesłuch, kto mówił
+  segments.js    krajalnica: tor na odcinki, cisza nie jedzie do modelu
+  agenda.js      kalendarz systemowy: co trwa, co się zaczyna, kto zaproszony
   store.js       ustawienia i historia w JSON, migracja, statystyki
   supabase.js    konta i baza: GoTrue + PostgREST na samym fetch, sesja
   oauth.js       logowanie przez Google: przeglądarka, PKCE, pętla zwrotna
@@ -1455,6 +1594,8 @@ src/renderer/
   js/editor.js   edytor notatki: contenteditable, własne operacje na blokach
   js/notes-core.js   tytuł, zajawka, kolejność — wspólne dla obu widoków
   js/notes-view.js   zakładka Notatki w oknie głównym
+  js/meetings-view.js  zakładka Spotkania — i to samo w oknie jednej rozmowy
+  meeting.html   jedno spotkanie we własnym oknie (tytuł celowo bezbarwny)
   js/shot.js     okno zrzutu: podgląd, poprawki w odczycie, dwa wybory
   js/theme.js    kolory z tokenów dla tego, co rysowane na canvasie
   js/i18n.js     tłumaczenie interfejsu (t() i przejście po drzewie)
@@ -1486,6 +1627,17 @@ scripts/         testy, zrzuty ekranu, ikona
                     furtka, znacznik od sita, migracja zestawu startowego
   shot-test.js      tekst z ekranu: adres obrazka ze spacjami, kontrakt odczytu,
                     brak klucza, anulowane zaznaczenie, obrazek w notatce
+  meetnote-test.js  nazwa notatki ze spotkania: o czym i z kim, po polsku
+  meetnote-live-test.js  ta sama notatka na prawdziwym sklepie: co się dzieje
+                    z kartką dopisaną ręką, skasowaną i przyniesioną z chmury
+  meetings-test.js  przegródka „Notatki ze spotkań", koło zębate, domyślna
+                    zakładka w trakcie nagrywania, nazwa z okna Google Meet
+  owner-test.js     krok „Silniki" należy do właściciela: kto nim jest, co
+                    wychodzi mostem, czego nie da się zapisać, co mówi błąd
+  blind-test.js     to samo, ale w PRAWDZIWYM oknie: przejście po wszystkich
+                    zakładkach i po przewodniku w poszukiwaniu nazwy modelu
+  quiet-test.js     czego to nagrywanie nie robi: nie dołącza do rozmowy, nic
+                    do niej nie wpuszcza, nie udaje oknem asystenta AI
   cloud-check.js    RLS na żywym projekcie: próby zrobienia tego, czego nie wolno
   make-identity.sh  certyfikat o stałym odcisku — raz na Maca
   sign.sh           podpis buildu tym certyfikatem

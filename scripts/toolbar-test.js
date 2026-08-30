@@ -31,7 +31,16 @@ const ok = (label) => console.log(`✓ ${label}`);
 const RENDERER = path.join(__dirname, "..", "src", "renderer");
 const read = (file) => fs.readFileSync(path.join(RENDERER, file), "utf8");
 
-const PAGES = ["index.html", "notes.html", "widget.html", "sticky.html", "quick.html", "shot.html"];
+const PAGES = [
+  "index.html",
+  "notes.html",
+  "widget.html",
+  "sticky.html",
+  "quick.html",
+  "shot.html",
+  "meeting.html",
+  "briefing.html",
+];
 
 /* ── 1. Każdy rysunek mówi, czym jest wypełniony ──────────────────
    Albo wprost przy kształcie, albo arkuszem dla całego `svg` w tym
@@ -202,6 +211,41 @@ assert.equal(
   `sceny przewodnika mają ${frames.size} różne kadry: ${[...frames].join(" | ")}`,
 );
 ok("Wszystkie sceny przewodnika stoją w jednym kadrze");
+
+/* ── 6. Pasek spotkania ───────────────────────────────────────────
+   Trzy rzeczy, które w nim łatwo popsuć po cichu — i wszystkie trzy widać
+   w samym tekście widoku, bez przeglądarki. */
+
+const meet = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "js", "meetings-view.js"), "utf8");
+
+/* Zakładka „Rozmowa" pokazywała te same zdania trzeci raz, obok zapisu
+   i obok wniosku. Wróciłaby najłatwiej przez skopiowanie sąsiedniego
+   wiersza — dlatego pytamy o nią wprost. */
+assert.ok(!/tab\("talk"/.test(meet), `zakładki „Rozmowa" w pasku spotkania nie ma`);
+assert.ok(!/state\.tab === "talk"/.test(meet), `po zakładce „Rozmowa" nie została gałąź treści`);
+ok(`Spotkanie ma trzy zakładki — bez „Rozmowy"`);
+
+/* Kasowanie jest jedyną rzeczą w tym module, której nie da się cofnąć.
+   Napis „Usuń" stał w rzędzie nazw zakładek i czytało się go jako czwartą
+   z nich; kosz nie udaje zakładki. */
+assert.ok(
+  /data-meet-remove="\$\{meeting\.id\}"[\s\S]{0,160}#i-trash/.test(meet),
+  "kasowanie spotkania jest koszem, nie napisem",
+);
+assert.ok(
+  /meet__ico--danger/.test(meet),
+  "kosz ma własną, czerwoną odmianę — inaczej wygląda jak każda inna ikona",
+);
+ok("Kasowanie spotkania to czerwony kosz, a nie napis w rzędzie zakładek");
+
+/* Osobne okno spotkania. W samym oknie spotkania tego przycisku być nie
+   może: otwierałby to, w czym się właśnie stoi. */
+assert.ok(/data-meet-open=/.test(meet), "spotkanie da się otworzyć w osobnym oknie");
+assert.ok(
+  /state\.solo\s*\n?\s*\?\s*""/.test(meet),
+  `w oknie jednego spotkania przycisku „Pokaż w osobnym oknie" nie ma`,
+);
+ok("Spotkanie otwiera się w osobnym oknie — i tylko z okna głównego");
 
 console.log(
   `\nPaski i przewodnik: ${PAGES.length} szablonów i ${used.length} slajdów sprawdzonych.`,
