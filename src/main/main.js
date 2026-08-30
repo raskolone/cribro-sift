@@ -2753,7 +2753,18 @@ async function gatherBriefing() {
   try {
     const read = await agendaSource.read({ hours: 24, back: Math.max(1, sinceMidnight) });
     if (read.access === "granted") plan = briefingSource.dayPlan(read.events, now);
-    else if (read.access === "denied") problems.push("Brak zgody na kalendarz.");
+    /* Każdy stan poza „granted" znaczy tu to samo: planu dnia nie będzie.
+       Mówimy o tym RÓŻNIE, bo różne są wyjścia — „nie pytano" naprawia się
+       jednym kliknięciem w zakładce Spotkania, „odmówiono" wymaga wizyty
+       w Ustawieniach systemowych. Wcześniej stan „nie pytano" nie mówił tu
+       nic i poranek milczał o brakującym planie dnia. */
+    else if (read.access === "notDetermined") {
+      problems.push("Kalendarz nie był jeszcze pytany o zgodę — poproś o nią w zakładce Spotkania.");
+    } else if (read.access === "denied" || read.access === "writeOnly") {
+      problems.push("Brak zgody na kalendarz.");
+    } else if (read.access === "restricted") {
+      problems.push("Kalendarz jest zablokowany zasadami tego komputera.");
+    }
   } catch (error) {
     problems.push(`Kalendarz: ${error.message}`);
   }
