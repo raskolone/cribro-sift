@@ -101,6 +101,12 @@ const PAPER = `
      pęknąć w pół między stronami. */
   .prose h1, .prose h2, .prose h3 { break-after: avoid-page; }
   .prose li, .prose blockquote, .prose pre { break-inside: avoid; }
+
+  /* CAŁA SZUFLADA W JEDNYM PLIKU: każda następna notatka zaczyna nową
+     stronę. Bez tego druga notatka doklejałaby się pod pierwszą w połowie
+     kartki i cały plik czytałby się jak jedna, bardzo długa notatka —
+     a szuflada to zbiór osobnych rzeczy, nie jeden dokument. */
+  .sheet + .sheet { break-before: page; }
 `;
 
 /**
@@ -151,7 +157,7 @@ function bodyOf(text, title) {
  * @param {string} title  tytuł (pierwsza linia — patrz notes-core.js)
  * @param {string} locale język, w którym wypisujemy datę
  */
-function toDocument(note, { title, locale = "pl-PL" } = {}) {
+function sheetOf(note, { title, locale = "pl-PL" } = {}) {
   const when = new Date(note.updatedAt ?? note.at ?? Date.now()).toLocaleDateString(locale, {
     day: "numeric",
     month: "long",
@@ -162,18 +168,7 @@ function toDocument(note, { title, locale = "pl-PL" } = {}) {
   const folder = String(note.folder ?? "").trim();
   const meta = [when, folder].filter(Boolean).map(escapeHtml).join(" · ");
 
-  return `<!doctype html>
-<html lang="pl">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(title)}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <style>${sheet("tokens.css")}</style>
-    <style>${sheet("prose.css")}</style>
-    <style>${PAPER}</style>
-  </head>
-  <body>
-    <div class="sheet">
+  return `    <div class="sheet">
       <header class="head">
         <h1>${escapeHtml(title)}</h1>
         <div class="meta">${meta}</div>
@@ -181,9 +176,56 @@ function toDocument(note, { title, locale = "pl-PL" } = {}) {
       </header>
       <div class="rule"></div>
       <div class="prose" data-align="${escapeHtml(note.align ?? "left")}">${markdownToHtml(bodyOf(note.text, title))}</div>
-    </div>
+    </div>`;
+}
+
+/**
+ * Kartki w kopercie: gotowy dokument z arkuszami wklejonymi w środek.
+ *
+ * Arkusze jadą wklejone, nie podlinkowane — patrz `sheet` wyżej. Tytuł
+ * dokumentu to tytuł pierwszej kartki, bo tak nazwie plik czytnik i tak
+ * pokaże go podgląd.
+ */
+function wrap(sheets, documentTitle) {
+  return `<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(documentTitle)}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>${sheet("tokens.css")}</style>
+    <style>${sheet("prose.css")}</style>
+    <style>${PAPER}</style>
+  </head>
+  <body>
+${sheets.join("\n")}
   </body>
 </html>`;
+}
+
+function toDocument(note, { title, locale = "pl-PL" } = {}) {
+  return wrap([sheetOf(note, { title, locale })], title);
+}
+
+/**
+ * Cała szuflada w jednym dokumencie — kartka po kartce, każda od nowej strony.
+ *
+ * JEDEN PLIK, NIE KATALOG PLIKÓW. Szuflada eksportowana w całości jedzie
+ * zwykle dalej: do skrzynki, na papier, do czyjegoś czytnika — a tam jeden
+ * załącznik jest jedną rzeczą do otwarcia, podczas gdy katalog z dwudziestoma
+ * PDF-ami jest dwudziestoma. Notatki zostają przy tym osobnymi kartkami,
+ * każda z własną metryczką: szuflada to zbiór osobnych rzeczy, nie jeden
+ * długi dokument.
+ *
+ * @param {Array<{note: object, title: string}>} items notatki w kolejności,
+ *        w jakiej mają leżeć — kolejność ustala wołający, nie ten plik
+ */
+function toBook(items, { locale = "pl-PL", documentTitle } = {}) {
+  if (!items.length) throw new Error("Nie ma czego wyeksportować — szuflada jest pusta.");
+  return wrap(
+    items.map(({ note, title }) => sheetOf(note, { title, locale })),
+    documentTitle ?? items[0].title,
+  );
 }
 
 /**
@@ -196,12 +238,22 @@ function toDocument(note, { title, locale = "pl-PL" } = {}) {
  *
  * @returns {Promise<{ filePath: string, bytes: number }>}
  */
-async function noteToPdf(note, { filePath, title, locale }) {
+/**
+ * Gotowy dokument → plik PDF. Wspólny druk dla jednej kartki i dla szuflady.
+ *
+ * Dokument jedzie przez plik w katalogu tymczasowym, a nie przez `data:`.
+ * Adres `data:` ma ograniczenie długości zależne od platformy, a kartka
+ * z wklejonymi arkuszami ma kilkadziesiąt kilobajtów — plik nie ma z tym
+ * żadnego kłopotu i przy okazji daje się podejrzeć, gdy coś wyjdzie krzywo.
+ *
+ * @returns {Promise<{ filePath: string, bytes: number }>}
+ */
+async function renderPdf(html, filePath) {
   const scratch = path.join(
     os.tmpdir(),
     `cribro-pdf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}.html`,
   );
-  fs.writeFileSync(scratch, toDocument(note, { title, locale }), "utf8");
+  fs.writeFileSync(scratch, html, "utf8");
 
   /* Zwykłe okno, tylko nigdy niepokazane. Renderowania „offscreen" tu nie
      ma celowo: `printToPDF` i tak rysuje własny przebieg dla papieru,
@@ -238,4 +290,18 @@ async function noteToPdf(note, { filePath, title, locale }) {
   }
 }
 
-module.exports = { noteToPdf, toDocument, bodyOf };
+/** Jedna notatka → jeden plik PDF. */
+async function noteToPdf(note, { filePath, title, locale }) {
+  return renderPdf(toDocument(note, { title, locale }), filePath);
+}
+
+/**
+ * Szuflada → jeden plik PDF z kartką na notatkę.
+ *
+ * @param {Array<{note: object, title: string}>} items notatki w kolejności
+ */
+async function folderToPdf(items, { filePath, locale, documentTitle }) {
+  return renderPdf(toBook(items, { locale, documentTitle }), filePath);
+}
+
+module.exports = { noteToPdf, folderToPdf, toDocument, toBook, bodyOf };

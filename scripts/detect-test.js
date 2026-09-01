@@ -135,5 +135,53 @@ check(
   check("Awaria spisu okien jest zgłaszana, a nie połykana", problems[0] === "brak zgody");
   check("…i nie zatrzymuje pilnowania", problems.length >= 2);
 
+  /* ── Rytm ───────────────────────────────────────────────────
+     Spis okien kosztuje kilkadziesiąt milisekund procesu GŁÓWNEGO, więc
+     pytanie zadawane co osiem sekund przez całą dobę jest realnym obciążeniem
+     — i przez większość doby odpowiedź brzmi tak samo. Rytm ma więc zwalniać,
+     gdy nic się nie dzieje, i wracać natychmiast, gdy coś się zaczyna. */
+  {
+    const pacing = new Watcher({
+      list: async () => [],
+      onChange: () => {},
+      every: 8000,
+      idle: 32_000,
+      patience: 3,
+    });
+    check("Na początku pytamy szybko", pacing.pace === 8000);
+    pacing.empty = 2;
+    check("…i przy dwóch pustych spojrzeniach nadal szybko", pacing.pace === 8000);
+    pacing.empty = 3;
+    check("Po trzech pustych spojrzeniach zwalniamy", pacing.pace === 32_000);
+    pacing.hurry();
+    check("Wezwanie z zewnątrz wraca na szybki rytm", pacing.pace === 8000);
+  }
+
+  {
+    /* Zwolnienie NIE MOŻE przeżyć pojawienia się rozmowy — ani jej
+       zniknięcia. Jedno i drugie jest chwilą, w której liczy się każda
+       sekunda: przy pojawieniu trzeba zdążyć zapytać o notatki, przy
+       zniknięciu — zakończyć nagranie. */
+    let screen = [];
+    const waking = new Watcher({
+      list: async () => screen,
+      onChange: () => {},
+      every: 20,
+      idle: 5000,
+      patience: 2,
+    });
+    waking.start();
+    await wait(120);
+    check("Pusty ekran zwalnia pilnowanie", waking.pace === 5000);
+    screen = ["Zoom Meeting"];
+    await waking.look();
+    check("Rozmowa na ekranie natychmiast przyspiesza", waking.pace === 20);
+    screen = [];
+    await waking.look();
+    await waking.look();
+    check("…a jej zniknięcie też, bo trzeba kończyć nagranie", waking.pace === 20);
+    waking.stop();
+  }
+
   console.log(`\n${passed} sprawdzeń przeszło.`);
 })();

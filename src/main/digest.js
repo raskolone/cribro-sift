@@ -694,6 +694,22 @@ function asNote(meeting, { transcript = true, me = "" } = {}) {
 
   if (transcript && meeting?.transcript?.length) {
     out.push("## Zapis rozmowy", "");
+    /* ══ NIEPEŁNY ZAPIS MÓWI O TYM SAM ══
+
+       Zapis rozmowy jest w notatce po to, żeby zastąpić skasowane nagranie
+       — więc pytanie „czy to jest całość" trzeba na niego nanieść, a nie
+       zostawić do wywnioskowania. Zapis, w którym brakuje pół godziny,
+       wygląda dokładnie tak samo jak kompletny: kilka wypowiedzi ze
+       znacznikami czasu. Jedno zdanie tutaj kosztuje linijkę i jest jedyną
+       rzeczą, która odróżnia jedno od drugiego. */
+    const cover = meeting.coverage;
+    if (cover && cover.complete === false && cover.spokenSeconds) {
+      out.push(
+        `> Ten zapis jest niepełny: obejmuje ${Math.round(cover.writtenSeconds / 60)} ` +
+          `z ${Math.round(cover.spokenSeconds / 60)} minut rozmowy.`,
+        "",
+      );
+    }
     for (const line of meeting.transcript) {
       out.push(`**${line.speaker ?? "?"}** · ${stamp(line.at)}`, "", String(line.text ?? "").trim(), "");
     }

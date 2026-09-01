@@ -476,6 +476,9 @@ body.is-solo #detach {
   align-items: center;
   gap: var(--s-2);
   padding: 10px 26px var(--s-4);
+  /* Kreska nad stopką od czasu, gdy stoi w niej pasek czynności: bez niej
+     „Usuń" wygląda na doczepione do ostatniego akapitu notatki. */
+  border-top: 1px solid var(--line-soft);
   font-family: var(--font-mono);
   font-size: var(--fs-label);
   letter-spacing: var(--track-label);
@@ -778,6 +781,21 @@ body.is-solo #detach {
 }
 .folder-chip[aria-pressed="true"] b {
   color: var(--accent-soft);
+}
+
+/* Wyjście na papier stoi w tym samym pasie, co szuflady, ale NIE JEST
+   szufladą — jest czynnością. Kreskowana obwódka i odstęp przed nią mówią
+   to bez podpisu: obok wybiera się, tutaj się robi. Bez tej różnicy
+   „Do PDF" wyglądałoby jak kolejna szuflada o dziwnej nazwie. */
+.folder-chip--act {
+  margin-left: auto;
+  border-style: dashed;
+  color: var(--text-mute);
+}
+.folder-chip--act:hover {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  border-style: solid;
 }
 
 .notes__tags {

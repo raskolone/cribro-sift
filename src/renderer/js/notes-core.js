@@ -359,6 +359,262 @@
     return safe.replace(new RegExp(pattern, "gi"), (hit) => `<mark>${hit}</mark>`);
   }
 
+
+  /* ══ PASEK CZYNNOŚCI ═══════════════════════════════════════════
+     Co MOŻNA ZROBIĆ Z NOTATKĄ, a nie co można zrobić z tekstem.
+
+     ── DLACZEGO NA DOLE, A NIE W GÓRNYM PASKU ──
+
+     Bo to są dwie różne rzeczy, a mieszanie ich kosztowało czytelność.
+     Górny pasek to narzędzia PISANIA: pogrubienie, nagłówek, lista. Sięga
+     się po nie w trakcie pisania, dziesiątki razy, nie odrywając wzroku od
+     zdania. Przypięcie, udostępnienie, przesianie i skasowanie robi się
+     RAZ, kiedy notatka jest już napisana — a stojąc obok „B" i „I" mówiły
+     „jesteśmy tym samym rodzajem rzeczy". Nie są: jedno zmienia słowo,
+     drugie decyduje o losie całej notatki. Kasowanie dwa piksele od
+     kursywy to zresztą nie tylko nieporządek.
+
+     ── DLACZEGO Z PODPISAMI ──
+
+     Sama ikona jest zagadką, którą rozwiązuje się najechaniem i czekaniem
+     na dymek. Przy pięciu czynnościach, z których każda robi coś
+     nieodwracalnego albo prawie, zagadka jest złym pomysłem. Podpis
+     kosztuje kilkadziesiąt pikseli i zdejmuje ją całą.
+
+     ── DLACZEGO TU, A NIE OSOBNO W KAŻDYM OKNIE ──
+
+     Bo notatka jest ta sama w zakładce Notatki, w osobnym oknie Notatnika
+     i na kartce na pulpicie. Trzy kopie tego samego paska rozjechałyby się
+     przy pierwszej zmianie — a rozjazd w miejscu, w którym stoi „Usuń",
+     nie jest kosmetyczny. */
+
+  const ACTIONS = [
+    { id: "pin", icon: "i-pin", label: "Przypnij", on: "Odepnij", state: "pinned" },
+    /* „Widoczna w widgecie" nie mówiło nic nikomu — ani czym jest widget,
+       ani co się stanie po naciśnięciu. Czynność jest zaś prosta do
+       nazwania: notatka zostaje kartką leżącą na pulpicie, nad wszystkimi
+       oknami. Tak też się teraz nazywa. */
+    { id: "desktop", icon: "i-sticky", label: "Na pulpit", on: "Z pulpitu", state: "widget" },
+    { id: "sift", icon: "i-sieve", label: "Przesiej" },
+    { id: "share", icon: "i-share", label: "Udostępnij", menu: true },
+    { id: "delete", icon: "i-trash", label: "Usuń", danger: true },
+  ];
+
+  /** Dokąd notatka może pojechać. Jedna lista dla obu okien. */
+  const SHARE = [
+    { id: "apple", label: "Wyślij do Notatek Apple" },
+    { id: "notion", label: "Wyślij do Notion" },
+    { sep: true },
+    { id: "text", label: "Kopiuj tekst" },
+    { id: "md", label: "Kopiuj jako Markdown" },
+    { sep: true },
+    { id: "pdf", label: "Zapisz jako PDF…" },
+    { id: "file", label: "Zapisz jako plik .md…" },
+  ];
+
+  /**
+   * Ikony wstrzykiwane do dokumentu, który ich nie ma.
+   *
+   * Okno Notatnika ma własny zestaw symboli w swoim HTML-u; kartka na
+   * pulpicie ma cztery własne i ani jednego z tamtych. Pasek czynności ma
+   * wyglądać w obu tak samo, więc brakujące symbole dokłada kod, który go
+   * rysuje — zamiast trzeciej kopii tych samych ścieżek w trzecim pliku.
+   */
+  const ICON_SHAPES = {
+    "i-pin":
+      '<path d="M9 3.5h6l-.8 5.2 3 2.6v2.2H6.8v-2.2l3-2.6L9 3.5ZM12 13.5V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />',
+    "i-sticky":
+      '<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5V14l-6 6H5.5A1.5 1.5 0 0 1 4 18.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><path d="M20 14h-4.5a1.5 1.5 0 0 0-1.5 1.5V20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />',
+    "i-sieve":
+      '<circle cx="12" cy="12" r="8.6" fill="none" stroke="currentColor" stroke-width="1.7" /><path d="M4.6 9.4h14.8M4.6 14.6h14.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />',
+    "i-share":
+      '<path d="M12 15.5V3.8M8.2 7.4 12 3.6l3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /><path d="M5.5 12.5v6a1.8 1.8 0 0 0 1.8 1.8h9.4a1.8 1.8 0 0 0 1.8-1.8v-6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />',
+    "i-trash":
+      '<path d="M4.5 7h15M9.5 7V5.4a1.4 1.4 0 0 1 1.4-1.4h2.2a1.4 1.4 0 0 1 1.4 1.4V7M6.6 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.8-12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />',
+    "i-omega":
+      '<path d="M7 20h3.2v-1.6a6.4 6.4 0 1 1 3.6 0V20H17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />',
+  };
+
+  function ensureIcons(doc = document) {
+    const missing = Object.keys(ICON_SHAPES).filter((id) => !doc.getElementById(id));
+    if (!missing.length) return;
+    const sheet = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+    sheet.setAttribute("width", "0");
+    sheet.setAttribute("height", "0");
+    sheet.setAttribute("aria-hidden", "true");
+    sheet.style.position = "absolute";
+    sheet.innerHTML = `<defs>${missing
+      .map((id) => `<symbol id="${id}" viewBox="0 0 24 24">${ICON_SHAPES[id]}</symbol>`)
+      .join("")}</defs>`;
+    doc.body.appendChild(sheet);
+  }
+
+  /**
+   * Pasek czynności jako HTML.
+   *
+   * @param {object} [options]
+   * @param {string[]} [options.skip]  czego w tym oknie nie ma
+   */
+  function actionBar({ skip = [] } = {}) {
+    const buttons = ACTIONS.filter((act) => !skip.includes(act.id))
+      .map((act) => {
+        const menu = act.menu
+          ? `<div class="note-acts__menu" data-acts-menu="${act.id}" hidden>${SHARE.map((item) =>
+              item.sep
+                ? '<div class="note-acts__sep"></div>'
+                : `<button type="button" data-share="${item.id}">${item.label}</button>`,
+            ).join("")}</div>`
+          : "";
+        /* Napisy zostają po polsku i tłumaczy je przebieg po drzewie
+           (patrz translateTree w js/i18n.js) — tak samo jak resztę
+           szablonów. `data-label-*` zostaje ŹRÓDŁEM, po polsku: to z niego
+           paintActions bierze napis i sam go tłumaczy przy przełączaniu
+           stanu, więc przetłumaczony w szablonie nie znalazłby się
+           w słowniku za drugim razem. */
+        return `<div class="note-acts__slot">
+            <button type="button" class="note-act${act.danger ? " note-act--danger" : ""}"
+                    data-act="${act.id}" data-label-off="${act.label}"
+                    ${act.on ? `data-label-on="${act.on}"` : ""}
+                    aria-pressed="false" title="${act.label}">
+              <svg><use href="#${act.icon}" /></svg><span>${act.label}</span>
+            </button>${menu}
+          </div>`;
+      })
+      .join("");
+    return `<div class="note-acts">${buttons}</div>`;
+  }
+
+  /** Stan przycisków: co jest włączone i jak się w tej chwili nazywa. */
+  function paintActions(root, note) {
+    for (const act of ACTIONS) {
+      const button = root?.querySelector?.(`[data-act="${act.id}"]`);
+      if (!button) continue;
+      const on = act.state ? !!note?.[act.state] : false;
+      button.setAttribute("aria-pressed", String(on));
+      const source = on ? button.dataset.labelOn : button.dataset.labelOff;
+      if (!source) continue;
+      const label = t(source);
+      button.title = label;
+      const text = button.querySelector("span");
+      if (text) text.textContent = label;
+    }
+  }
+
+  /**
+   * Czynność wykonana. Jedno miejsce dla obu okien — bo „Usuń" ma wszędzie
+   * znaczyć to samo.
+   *
+   * @returns {Promise<boolean>} czy notatka przestała istnieć
+   */
+  async function runAction(what, note, { api, say = () => {}, after = () => {} } = {}) {
+    if (!note) return false;
+
+    if (what === "pin") {
+      note.pinned = !note.pinned;
+      await api.notes.update(note.id, { pinned: note.pinned });
+      say(note.pinned ? t("Przypięta") : t("Odpięta"));
+      after();
+      return false;
+    }
+
+    if (what === "desktop") {
+      note.widget = !note.widget;
+      await api.notes.update(note.id, { widget: note.widget });
+      say(note.widget ? t("Notatka jest na wierzchu") : t("Notatka zeszła z wierzchu"));
+      after();
+      return false;
+    }
+
+    if (what === "sift") {
+      say(t("Przesiewam notatkę…"));
+      Object.assign(note, await api.notes.sift(note.id));
+      after();
+      return false;
+    }
+
+    if (what === "delete") {
+      await api.notes.remove(note.id);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Wysyłka notatki tam, gdzie wskazano w menu „Udostępnij".
+   *
+   * Meldunek idzie DWA RAZY tam, gdzie czynność trwa: „Wysyłam…" zaraz po
+   * naciśnięciu i „Wysłane" po fakcie. Notatki Apple i Notion to cudze
+   * serwery i cudze aplikacje — potrafią myśleć kilka sekund, a przycisk,
+   * który przez ten czas milczy, wygląda na niedziałający.
+   */
+  async function runShare(where, note, { api, say = () => {} } = {}) {
+    if (!note) return;
+
+    if (where === "apple") {
+      say(t("Wysyłam do Notatek Apple…"));
+      await api.notes.toAppleNotes(note.id);
+      return say(t("Wysłane do Notatek Apple"));
+    }
+    if (where === "notion") {
+      say(t("Wysyłam do Notion…"));
+      const result = await api.notes.toNotion(note.id);
+      return say(result?.updated ? t("Zaktualizowane w Notion") : t("Wysłane do Notion"));
+    }
+    if (where === "text") {
+      await api.system.copy(note.text ?? "");
+      return say(t("Tekst skopiowany"));
+    }
+    if (where === "md") {
+      await api.system.copy(await api.notes.markdown(note.id));
+      return say(t("Markdown skopiowany"));
+    }
+    if (where === "pdf") {
+      const result = await api.notes.pdf(note.id);
+      if (!result?.canceled) say(t("Zapisane jako PDF"));
+      return;
+    }
+    if (where === "file") {
+      const result = await api.notes.export(note.id);
+      if (!result?.canceled) say(t("Zapisane do pliku"));
+    }
+  }
+
+  /* ══ ZNAKI SPECJALNE ═══════════════════════════════════════════
+     Znaki, których nie ma na klawiaturze, a których notatka potrzebuje
+     naprawdę: myślnik w zdaniu, polski cudzysłów, strzałka w liście
+     ustaleń, stopień przy temperaturze, „×" w wymiarach.
+
+     Nie ma tu emoji i to jest decyzja. Emoji wstawia systemowy panel
+     (⌃⌘spacja) i robi to lepiej — ma wyszukiwarkę i historię. Tutaj stoją
+     znaki, których tamten panel nie pokazuje albo pokazuje na trzeciej
+     stronie, bo nie są obrazkami: są interpunkcją. */
+  const SPECIALS = [
+    ["Interpunkcja", ["—", "–", "…", "„", "”", "«", "»", "’", "‚", "•", "·", "§", "¶"]],
+    ["Strzałki", ["→", "←", "↑", "↓", "↔", "⇒", "⇐", "⇔", "↳", "⤵", "▸", "▾"]],
+    ["Liczby i miary", ["×", "÷", "±", "≈", "≠", "≤", "≥", "½", "¼", "¾", "°", "′", "″", "‰", "∞"]],
+    ["Waluty", ["zł", "€", "$", "£", "¥", "₿"]],
+    ["Znaki", ["✓", "✗", "★", "☆", "☐", "☑", "⚠", "©", "®", "™", "№", "†"]],
+    ["Greka", ["α", "β", "γ", "δ", "λ", "μ", "π", "σ", "Δ", "Ω", "∑", "√"]],
+  ];
+
+  /** Menu znaków specjalnych jako HTML — wkłada je do siebie pasek narzędzi. */
+  function specialsMenu() {
+    return SPECIALS.map(
+      ([group, chars]) =>
+        /* Nazwa grupy jest napisem interfejsu i tłumaczy się jak każdy inny.
+           Same znaki — nie: „×" i „Ω" nie mają wersji angielskiej, a przebieg
+           tłumaczący mógłby trafić na taki, który przypadkiem jest kluczem
+           w słowniku. Stąd `skip` na samym rzędzie znaków. */
+        `<div class="chars__group"><b>${group}</b><div class="chars__row" data-i18n="skip">${chars
+          .map(
+            (ch) =>
+              `<button type="button" data-char="${escape(ch)}" title="${escape(ch)}">${escape(ch)}</button>`,
+          )
+          .join("")}</div></div>`,
+    ).join("");
+  }
+
   window.NotesCore = {
     escape,
     titleOf,
@@ -384,5 +640,14 @@
     NOTE_COLORS,
     colorOf,
     renameInPlace,
+    ensureIcons,
+    actionBar,
+    paintActions,
+    runAction,
+    runShare,
+    specialsMenu,
+    ACTIONS,
+    SHARE,
+    SPECIALS,
   };
 })();

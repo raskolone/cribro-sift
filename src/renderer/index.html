@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/prose.css" />
     <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/note-acts.css" />
     <link rel="stylesheet" href="css/onboarding.css" />
   </head>
   <body>
@@ -93,6 +94,15 @@
              czytania podpisu, bo po to jest znakiem; ten mówił „jasność"
              albo „motyw". Teraz jest to koło z ośmioma ZĘBAMI: zamknięty
              obrys z wcięciami między zębami i piastą w środku. -->
+        <!-- Panel admina. Tarcza, bo to jedyne miejsce w aplikacji, które
+             widzi cudze konta — a nie klucz, bo klucz w tym oknie znaczy
+             już co innego (silniki). -->
+        <symbol id="i-shield" viewBox="0 0 24 24">
+          <path d="M12 3.2 19 6v5.4c0 4-2.8 7.3-7 9.4-4.2-2.1-7-5.4-7-9.4V6l7-2.8Z"
+                fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+          <path d="M9.2 12.2l2 2 3.6-3.9" fill="none" stroke="currentColor"
+                stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
         <symbol id="i-gear" viewBox="0 0 24 24">
           <path
             d="M11.02 2.5h1.96a.7.7 0 0 1 .69.58l.26 1.53c.5.16.98.36 1.42.61l1.28-.9a.7.7 0 0 1 .9.08l1.38 1.38a.7.7 0 0 1 .08.9l-.9 1.28c.25.44.45.92.6 1.42l1.54.26a.7.7 0 0 1 .58.69v1.96a.7.7 0 0 1-.58.69l-1.53.26c-.16.5-.36.98-.61 1.42l.9 1.28a.7.7 0 0 1-.08.9l-1.38 1.38a.7.7 0 0 1-.9.08l-1.28-.9c-.44.25-.92.45-1.42.6l-.26 1.54a.7.7 0 0 1-.69.58h-1.96a.7.7 0 0 1-.69-.58l-.26-1.53a6.9 6.9 0 0 1-1.42-.61l-1.28.9a.7.7 0 0 1-.9-.08L5.1 18.9a.7.7 0 0 1-.08-.9l.9-1.28a6.9 6.9 0 0 1-.6-1.42l-1.54-.26a.7.7 0 0 1-.58-.69v-1.96a.7.7 0 0 1 .58-.69l1.53-.26c.16-.5.36-.98.61-1.42l-.9-1.28a.7.7 0 0 1 .08-.9L6.48 5.1a.7.7 0 0 1 .9-.08l1.28.9c.44-.25.92-.45 1.42-.6l.26-1.54a.7.7 0 0 1 .68-.58Z"
@@ -282,6 +292,17 @@
           <button class="nav__item" title="Ustawienia" data-view="settings" aria-selected="false">
             <svg><use href="#i-gear" /></svg> <span>Ustawienia</span>
           </button>
+          <!-- OSOBNA POZYCJA, nie karta w Ustawieniach. Ustawienia to
+               decyzje o TEJ instalacji; panel to decyzje o cudzych kontach.
+               Zmieszane w jednym oknie kazałyby przy każdym kliknięciu
+               pytać, czyje ustawienie się właśnie zmienia.
+
+               Widoczna wyłącznie na koncie właściciela — chowa ją render()
+               w js/app.js, a odmowa i tak zapada w bazie. -->
+          <button class="nav__item nav__item--admin" title="Panel admina"
+                  data-view="admin" aria-selected="false" hidden>
+            <svg><use href="#i-shield" /></svg> <span>Panel</span>
+          </button>
         </nav>
 
         <div class="sidebar__foot">
@@ -321,6 +342,7 @@
         <section class="view" id="view-grains" hidden></section>
         <section class="view" id="view-commands" hidden></section>
         <section class="view" id="view-settings" hidden></section>
+        <section class="view" id="view-admin" hidden></section>
       </main>
     </div>
 

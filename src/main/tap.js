@@ -93,18 +93,52 @@ function wavHeader(payload) {
   return header;
 }
 
-/** Plik toru. Otwarty od razu, domykany nagłówkiem przy zamknięciu. */
+/**
+ * Plik toru. Otwarty od razu, domykany nagłówkiem przy zamknięciu.
+ *
+ * ══ DLACZEGO PISZEMY PORCJAMI, A NIE RAMKAMI ══
+ *
+ * ScreenCaptureKit sypie ramkami kilkadziesiąt razy na sekundę, na każdy
+ * tor osobno. Zapis ramka po ramce to ponad sto zapisów SYNCHRONICZNYCH
+ * na sekundę — a synchronicznych znaczy: proces główny stoi i czeka na
+ * dysk, sto razy na sekundę, przez całą godzinę rozmowy. Stoi wtedy razem
+ * z nim wszystko, co proces główny robi poza tym: skróty klawiszowe,
+ * meldunki do okien, obsługa menu.
+ *
+ * Sekunda dźwięku to 32 kB i jeden zapis. Cena jest widoczna i policzona:
+ * po twardym ubiciu aplikacji ginie do sekundy nagrania zamiast do jednej
+ * ramki. Za tę sekundę kupujemy stukrotnie mniej wejść do jądra — i tę
+ * samą sekundę ratunek po awarii (patrz recover w main/meeting.js) i tak
+ * odtwarza z rozmiaru pliku.
+ */
+const FLUSH_BYTES = 32 * 1024; // sekunda dźwięku przy 16 kHz mono
+
 class Lane {
   constructor(file) {
     this.file = file;
     this.handle = fs.openSync(file, "w");
     this.payload = 0;
+    this.held = [];
+    this.holding = 0;
     fs.writeSync(this.handle, Buffer.alloc(44));
   }
 
   write(pcm) {
-    fs.writeSync(this.handle, pcm);
+    /* Kopia, bo ramka jest wycinkiem wspólnego bufora, który za chwilę
+       przestanie być aktualny — a my odkładamy ją na później. */
+    this.held.push(Buffer.from(pcm));
+    this.holding += pcm.length;
     this.payload += pcm.length;
+    if (this.holding >= FLUSH_BYTES) this.flush();
+  }
+
+  /** Wszystko, co czeka, na dysk. Jedno wejście do jądra na porcję. */
+  flush() {
+    if (!this.holding) return;
+    const batch = this.held.length === 1 ? this.held[0] : Buffer.concat(this.held, this.holding);
+    this.held = [];
+    this.holding = 0;
+    fs.writeSync(this.handle, batch);
   }
 
   get seconds() {
@@ -112,6 +146,9 @@ class Lane {
   }
 
   close() {
+    // Reszta z bufora MUSI trafić na dysk przed nagłówkiem: nagłówek mówi,
+    // ile bajtów jest w pliku, i skłamałby o tę ostatnią porcję.
+    this.flush();
     fs.writeSync(this.handle, wavHeader(this.payload), 0, 44, 0);
     fs.closeSync(this.handle);
   }

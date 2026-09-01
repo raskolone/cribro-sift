@@ -9,6 +9,7 @@
     />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/prose.css" />
+    <link rel="stylesheet" href="css/note-acts.css" />
     <style>
       /* ─────────────────────────────────────────────────────────
          Kartka na pulpicie — jedna notatka we własnym okienku.
@@ -369,6 +370,26 @@
 
       /* ── Stopka ── */
 
+      /* Kartka jest mała, a pasek czynności ma się w niej zmieścić razem
+         ze stanem zapisu. Podpisy zostają — to one są całą różnicą między
+         przyciskiem a zagadką — ale wszystko wokół nich chudnie. */
+      .foot__spacer {
+        flex: 1 1 auto;
+      }
+      .foot .note-act {
+        height: 24px;
+        padding: 0 7px;
+        gap: 5px;
+        font-size: 9px;
+      }
+      .foot .note-act svg {
+        width: 13px;
+        height: 13px;
+      }
+      /* Podpisy schodzą same, gdy stopce brakuje miejsca — pilnuje tego
+         zapytanie o pojemnik w css/note-acts.css. Kartka nie potrzebuje
+         własnej reguły. */
+
       .foot {
         flex: none;
         display: flex;
@@ -485,10 +506,17 @@
             ></div>
           </div>
 
+          <!-- Czynności na notatce. Ten sam pasek co w Notatniku i z tego
+               samego kodu (patrz actionBar w js/notes-core.js) — kartka na
+               pulpicie jest tą samą notatką, więc ma z niej dać się zrobić
+               to samo. „Na pulpit" tu nie ma: kartka już na nim leży,
+               a zdejmuje ją krzyżyk w nagłówku. -->
           <footer class="foot">
             <span id="state">Zapisane</span>
             <span class="dot">·</span>
             <span id="words">0 słów</span>
+            <span class="foot__spacer"></span>
+            <div id="acts"></div>
           </footer>
 
           <button id="grip" title="Zmień rozmiar kartki">

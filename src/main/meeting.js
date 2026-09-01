@@ -7,6 +7,8 @@ const { cutter } = require("./segments");
 const { splice } = require("./merge");
 const { shrink, expand } = require("./audio");
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /**
  * Przebieg spotkania — start, koniec i to, co zostaje.
  *
@@ -47,7 +49,20 @@ class Meetings {
    *        test mógł przepuścić przez ten obieg wymyślony tekst zamiast
    *        wołać cudzy serwer
    */
-  constructor(store, { onChange, onLevel, onError, onTranscript, onSilence, transcribe, slice } = {}) {
+  constructor(
+    store,
+    {
+      onChange,
+      onLevel,
+      onError,
+      onTranscript,
+      onSilence,
+      onIdle,
+      transcribe,
+      slice,
+      backoff,
+    } = {},
+  ) {
     this.store = store;
     this.onChange = onChange ?? (() => {});
     this.onLevel = onLevel ?? (() => {});
@@ -56,6 +71,12 @@ class Meetings {
        cicha awaria w tym module: nagranie wychodzi, transkrypcja wychodzi,
        tylko rozmowa jest w nim jednostronna — i widać to dopiero na końcu. */
     this.onSilence = onSilence ?? (() => {});
+    /* OBA tory milczą od kwadransa. To jest inna wiadomość niż onSilence:
+       tam jedna strona zamilkła i to jest usterka, tutaj zamilkły obie
+       i to nie jest usterka, tylko koniec rozmowy. Sam moduł go nie
+       kończy — nagranie ucina wyłącznie ten, kto wie o oknach i o tym,
+       czego chciał człowiek (patrz main/main.js). */
+    this.onIdle = onIdle ?? (() => {});
     /* Osobno od onChange, bo to jest inna wiadomość. Zmiana STANU
        (zaczęło się, skończyło) przestawia znak w pasku menu i przebudowuje
        menu aplikacji; przybycie odcinka zapisu nie zmienia ani jednego,
@@ -67,6 +88,11 @@ class Meetings {
        na trzysekundowym nagraniu, odcinek musi trwać sekundę, a nie dwie
        minuty. Nagranie prawdziwe zostaje przy swoim. */
     this.slice = slice ?? {};
+    /* Odstęp przed powtórką. Podawany z zewnątrz wyłącznie w teście: żeby
+       sprawdzić trzy podejścia do dwunastu odcinków, nie da się czekać
+       po półtorej sekundy przed każdym. Nagranie prawdziwe zostaje przy
+       swoim — mrugnięcie sieci mija w sekundę, a nie w milisekundę. */
+    this.backoff = backoff ?? Meetings.BACKOFF;
     this.tap = null;
     this.id = null;
     this.startedAt = 0;
@@ -84,6 +110,18 @@ class Meetings {
     /* Ile ciszy z rzędu w każdym torze — liczone odcinkami, nie sekundami. */
     this.quiet = { mic: 0, system: 0 };
     this.told = { mic: false, system: false };
+    this.toldIdle = false;
+    /* ══ REJESTR ODCINKÓW ══
+
+       Co się stało z każdym kawałkiem rozmowy: przepisany, cichy, pusty,
+       stracony. Bez tego spisu nie da się odpowiedzieć na jedyne pytanie,
+       które przy transkrypcji naprawdę się zadaje — CZY TO JEST CAŁOŚĆ.
+       Godzinne zajęcia zapisały się dwiema linijkami i nic w aplikacji nie
+       wiedziało, że czegoś brakuje: nagranie skasowało się jak po udanej
+       transkrypcji, bo „transkrypt niepusty" uchodziło za „transkrypt
+       gotowy". Spis jest po to, żeby te dwie rzeczy przestały być tym
+       samym. */
+    this.ledger = [];
   }
 
   /**
@@ -98,6 +136,22 @@ class Meetings {
   }
 
   /**
+   * Po ilu cichych odcinkach W OBU TORACH rozmowa jest skończona.
+   *
+   * Pięć odcinków to blisko dziesięć minut, w których nie padło ani jedno
+   * słowo po żadnej stronie. Nie ma takiej rozmowy — jest za to spotkanie,
+   * z którego wszyscy wyszli, i okno, które komuś zostało otwarte.
+   *
+   * Więcej niż QUIET_LIMIT i nie jest to przeoczenie: jedna strona milcząca
+   * pięć minut to usterka nagrania, o której trzeba powiedzieć w trakcie;
+   * obie strony milczące dziesięć minut to koniec, po którym trzeba
+   * przestać nagrywać. Inne progi, bo inne pytania.
+   */
+  static get IDLE_LIMIT() {
+    return 5;
+  }
+
+  /**
    * Ile pomyłek z rzędu, zanim przestaniemy próbować.
    *
    * Nie jedna, bo sieć potrafi mrugnąć. I nie w nieskończoność, bo przy
@@ -106,6 +160,34 @@ class Meetings {
    */
   static get GIVE_UP() {
     return 3;
+  }
+
+  /**
+   * Ile razy próbujemy przepisać JEDEN odcinek, zanim uznamy go za stracony.
+   *
+   * Wcześniej próba była jedna i to jest ta różnica, o którą rozbiła się
+   * godzina zajęć: jedno mrugnięcie sieci albo jedna pusta odpowiedź
+   * dostawcy kasowała dwie minuty rozmowy bez śladu — bez błędu, bez wpisu,
+   * bez niczego, po czym dałoby się poznać, że czegoś brakuje.
+   */
+  static get TRIES() {
+    return 3;
+  }
+
+  /** Odstęp przed kolejną próbą, w milisekundach. Rośnie z każdą. */
+  static get BACKOFF() {
+    return 1500;
+  }
+
+  /**
+   * Ile mowy musi być w odcinku, żeby pusta odpowiedź była podejrzana.
+   *
+   * Poniżej tego pusta odpowiedź jest po prostu prawdą: w odcinku brzęknął
+   * kubek i tyle. Powyżej — padły zdania, a wróciło nic, i to jest awaria,
+   * którą trzeba powtórzyć, a nie wynik, który wolno przyjąć.
+   */
+  static get SUSPECT_SECONDS() {
+    return 2;
   }
 
   get recording() {
@@ -162,6 +244,8 @@ class Meetings {
     this.glossary = about?.people ?? [];
     this.quiet = { mic: 0, system: 0 };
     this.told = { mic: false, system: false };
+    this.toldIdle = false;
+    this.ledger = [];
 
     try {
       this.tap = record({
@@ -200,21 +284,46 @@ class Meetings {
    * Obietnicę odkładamy do `jobs`, bo koniec nagrywania musi na nią
    * poczekać: bez tego ostatnie dwie minuty rozmowy zostałyby w powietrzu,
    * a wpis zamknąłby się bez nich.
+   *
+   * KAŻDY ODCINEK ZOSTAWIA ŚLAD W REJESTRZE — także ten, który przepadł.
+   * To jest cała różnica między zapisem niepełnym a zapisem niepełnym,
+   * o którym wiadomo.
    */
   #write(piece) {
     /* Cisza nie jedzie nigdzie. W godzinnym spotkaniu jest jej więcej niż
        mowy, a płaci się za nią tyle samo. Liczymy ją jednak — bo tor, który
        milczy CAŁY CZAS, to nie cisza w rozmowie, tylko zepsute nagranie. */
     if (piece.silent) {
+      this.#note(piece, "silent");
       this.quiet[piece.lane] = (this.quiet[piece.lane] ?? 0) + 1;
       if (this.quiet[piece.lane] >= Meetings.QUIET_LIMIT && !this.told[piece.lane]) {
         this.told[piece.lane] = true;
         this.onSilence(piece.lane);
       }
+      /* Cisza w OBU torach naraz to nie usterka, tylko pusty pokój.
+         Mówimy o tym raz — kto tę wiadomość dostaje, ten decyduje, czy
+         kończyć nagranie. */
+      if (
+        !this.toldIdle &&
+        this.quiet.mic >= Meetings.IDLE_LIMIT &&
+        this.quiet.system >= Meetings.IDLE_LIMIT
+      ) {
+        this.toldIdle = true;
+        this.onIdle();
+      }
       return;
     }
     this.quiet[piece.lane] = 0;
-    if (this.misses >= Meetings.GIVE_UP) return;
+    this.toldIdle = false; // ktoś się odezwał — pokój znowu nie jest pusty
+    if (this.misses >= Meetings.GIVE_UP) {
+      /* Bezpiecznik przestał kasować rozmowę. Odcinek zostaje w rejestrze
+         jako stracony, nagranie z tego powodu NIE ZGINIE (patrz stop), a po
+         zakończeniu rusza przebieg naprawczy z pliku — więc „poddajemy się"
+         znaczy dziś „nie dobijamy dostawcy w trakcie", a nie „ta część
+         rozmowy przepada". */
+      this.#note(piece, "skipped");
+      return;
+    }
 
     const id = this.id;
     const job = (async () => {
@@ -231,16 +340,21 @@ class Meetings {
            imion z kalendarza. Jedno i drugie jest podpowiedzią, nie
            treścią: model ma z nich skorzystać przy zapisie tego, co
            naprawdę słychać. */
-        const { text } = await this.transcribe(wav, this.store.getSettings(), {
+        const said = await this.#say(wav, {
           lane: piece.lane,
           from: piece.from,
           to: piece.to,
           context: this.tails?.[piece.lane] ?? "",
           glossary: this.glossary ?? [],
-        });
+        }, piece.voiced);
+
         this.misses = 0;
-        const said = String(text ?? "").trim();
-        if (!said) return;
+        if (!said) {
+          // Nic nie padło — i tyle. Odcinek jest opisany, a nie zgubiony.
+          this.#note(piece, "empty");
+          return;
+        }
+        this.#note(piece, "done");
         this.pieces.push({ lane: piece.lane, from: piece.from, to: piece.to, text: said });
         // Ogon dla następnego odcinka tego toru — tyle, ile wystarczy na
         // kontekst, a nie tyle, żeby model zaczął go przepisywać.
@@ -248,6 +362,7 @@ class Meetings {
         this.#stitch(id);
       } catch (problem) {
         this.misses += 1;
+        this.#note(piece, "failed", problem.message);
         // Mówimy o pierwszej pomyłce i o tej, po której się poddajemy.
         // O każdej z osobna znaczyłoby komunikat co dwie minuty przez
         // godzinę — przy braku klucza API zawsze ten sam.
@@ -255,12 +370,114 @@ class Meetings {
           this.onError(`Nie udało się przepisać fragmentu: ${problem.message}`);
         } else if (this.misses === Meetings.GIVE_UP) {
           this.onError(
-            "Przepisywanie w biegu wyłączone do końca tego spotkania — nagranie leci dalej.",
+            "Przepisywanie w biegu wyłączone do końca tego spotkania — nagranie leci dalej " +
+              "i zostanie przepisane z pliku po zakończeniu.",
           );
         }
       }
     })();
     this.jobs.push(job);
+  }
+
+  /**
+   * Odcinek na tekst, z powtórkami.
+   *
+   * DWA RODZAJE NIEPOWODZENIA, JEDNA ODPOWIEDŹ. Błąd sieci jest oczywisty.
+   * Pusta odpowiedź na odcinek, w którym słychać zdania, jest gorsza, bo
+   * wygląda jak wynik — a wcześniej właśnie tak wyglądała i tak była
+   * przyjmowana: `if (!said) return`, bez śladu. Odcinek, w którym było
+   * czym mówić, dostaje więc drugą i trzecią próbę tak samo jak odcinek,
+   * który się wywrócił.
+   *
+   * @param {number} voiced  ile w odcinku sekund mowy
+   * @returns {Promise<string>} tekst albo pusty ciąg, gdy naprawdę nic nie padło
+   */
+  async #say(wav, about, voiced = 0) {
+    const suspicious = (voiced ?? 0) >= Meetings.SUSPECT_SECONDS;
+    let last = null;
+
+    for (let attempt = 1; attempt <= Meetings.TRIES; attempt += 1) {
+      try {
+        const { text } = await this.transcribe(wav, this.store.getSettings(), about);
+        const said = String(text ?? "").trim();
+        if (said) return said;
+        // Cisza w odcinku bez mowy jest prawdą; w odcinku z mową — awarią.
+        if (!suspicious) return "";
+        last = new Error("dostawca oddał pusty tekst mimo mowy w odcinku");
+      } catch (problem) {
+        last = problem;
+      }
+      if (attempt < Meetings.TRIES) await wait(this.backoff * attempt);
+    }
+
+    throw last ?? new Error("nie udało się przepisać odcinka");
+  }
+
+  /** Wpis do rejestru odcinków. Jedno miejsce, żeby żaden nie wyszedł bokiem. */
+  #note(piece, state, detail = null) {
+    this.ledger.push({
+      lane: piece.lane,
+      index: piece.index,
+      from: piece.from,
+      to: piece.to,
+      seconds: Math.max(0, (piece.to ?? 0) - (piece.from ?? 0)),
+      voiced: piece.voiced ?? 0,
+      state,
+      detail,
+    });
+  }
+
+  /**
+   * Ile z rozmowy naprawdę weszło do zapisu.
+   *
+   * To jest odpowiedź na pytanie „czy to jest cała transkrypcja" i jedyny
+   * powód, dla którego rejestr odcinków w ogóle istnieje. Liczymy w SEKUNDACH
+   * MOWY, nie w odcinkach: odcinek, w którym padło jedno zdanie, i odcinek
+   * gadany bez przerwy są w spisie tym samym, a w rozmowie nie są.
+   *
+   * `complete` znaczy dokładnie tyle: nie ma odcinka, w którym coś mówiono,
+   * a nie wiadomo co. Tylko przy `complete` wolno skasować nagranie.
+   *
+   * @param {Array} ledger
+   * @returns {{segments, done, empty, failed, skipped, silent,
+   *            spokenSeconds, writtenSeconds, complete}}
+   */
+  static tally(ledger = []) {
+    const count = (state) => ledger.filter((item) => item.state === state).length;
+    const voiced = (test) =>
+      ledger.filter(test).reduce((total, item) => total + (item.voiced || 0), 0);
+
+    const lost = (item) => item.state === "failed" || item.state === "skipped";
+    /* Pusta odpowiedź na odcinek z mową liczy się do strat tak samo jak
+       błąd — bo z punktu widzenia notatki jest tym samym: minutami, które
+       padły, a których nie ma. */
+    const hollow = (item) => item.state === "empty" && item.voiced >= Meetings.SUSPECT_SECONDS;
+
+    const spoken = voiced((item) => item.state !== "silent");
+    const written = voiced((item) => item.state === "done");
+
+    return {
+      segments: ledger.length,
+      done: count("done"),
+      empty: count("empty"),
+      failed: count("failed"),
+      skipped: count("skipped"),
+      silent: count("silent"),
+      spokenSeconds: Math.round(spoken),
+      writtenSeconds: Math.round(written),
+      /* Trzy warunki, wszystkie o jedno i to samo: czy wolno skasować
+         nagranie.
+
+           — pusty rejestr znaczy, że dźwięk NIE PRZESZEDŁ przez ten obieg
+             w ogóle; nie wiemy o nim nic, więc nie wolno go wyrzucić;
+           — mowa bez ani jednego zapisanego słowa to awaria, choćby
+             wszystkie odcinki wróciły „grzecznie" puste;
+           — no i zwykłe straty: odcinek stracony albo pusty mimo mowy. */
+      complete:
+        ledger.length > 0 &&
+        !(spoken > 0 && written === 0) &&
+        !ledger.some((item) => lost(item) || hollow(item)),
+    };
   }
 
   /**
@@ -304,6 +521,7 @@ class Meetings {
       this.cutters = null;
       this.jobs = [];
       this.pieces = [];
+      this.ledger = [];
       this.onChange();
       return { discarded: true, meeting: null, seconds };
     }
@@ -322,14 +540,24 @@ class Meetings {
 
     const transcript = splice(this.pieces, { speakers: this.speakers });
     this.pieces = [];
+    const coverage = Meetings.tally(this.ledger);
+    this.ledger = [];
 
-    /* Nagranie ginie po przepisaniu — tak mówi ustawienie i tak samo dzieje
+    /* ══ KIEDY WOLNO SKASOWAĆ NAGRANIE ══
+
+       Nagranie ginie po przepisaniu — tak mówi ustawienie i tak samo dzieje
        się przy dyktowaniu. ALE TYLKO WTEDY, GDY JEST CZYM JE ZASTĄPIĆ.
-       Spotkanie bez transkryptu i bez plików nie zostawiłoby po sobie nic,
-       a dźwięku nie da się nagrać drugi raz — więc gdy przepisywanie
-       zawiodło (brak klucza, brak sieci), pliki zostają niezależnie od
-       ustawienia. Kasuje się to, co da się odtworzyć. */
-    const keepAudio = settings.meetings?.keepAudio === true || transcript.length === 0;
+
+       Tu był najdroższy błąd w tym pliku. Warunkiem było „transcript.length
+       === 0", czyli: WYSTARCZYŁA JEDNA LINIJKA, żeby uznać godzinę rozmowy
+       za przepisaną i skasować dźwięk. Godzinne zajęcia zapisały się dwiema
+       linijkami z ostatnich stu sekund — i te dwie linijki wystarczyły,
+       żeby pięćdziesiąt sześć minut nagrania zniknęło bezpowrotnie.
+       Transkrypcję da się powtórzyć, dźwięku nie da się nagrać drugi raz.
+
+       Dziś decyduje POKRYCIE, a nie długość: nagranie zostaje, dopóki
+       istnieje choć jeden odcinek, w którym coś mówiono, a nie wiadomo co. */
+    const keepAudio = settings.meetings?.keepAudio === true || !coverage.complete;
     let tracks = null;
     if (keepAudio) {
       /* ══ CO ŚCISKAMY, A CZEGO NIE ══
@@ -358,9 +586,16 @@ class Meetings {
       state: "done",
       tracks,
       transcript,
+      coverage,
+      /* Zdanie dla człowieka, nie liczba dla programu. Stoi we wpisie, bo
+         to jest pierwsza rzecz, którą trzeba wiedzieć o zapisie rozmowy —
+         przed jego treścią. */
+      transcriptError: coverage.complete
+        ? null
+        : `Zapis obejmuje ${Math.round(coverage.writtenSeconds / 60)} z ${Math.round(coverage.spokenSeconds / 60)} minut rozmowy. Nagranie zostało zachowane, żeby dało się przepisać resztę.`,
     });
     this.onChange();
-    return { discarded: false, meeting };
+    return { discarded: false, meeting, coverage };
   }
 
   /** Przełącznik dla menu i tacy — jedna pozycja, dwa znaczenia. */
@@ -424,6 +659,21 @@ class Meetings {
     const tails = { mic: "", system: "" };
     const glossary = meeting.people ?? [];
     const settings = this.store.getSettings();
+    /* Przebieg z pliku prowadzi własny rejestr — z tego samego powodu,
+       z którego prowadzi go przepisywanie w biegu: żeby na końcu dało się
+       powiedzieć, czy to już jest całość. */
+    const ledger = [];
+    const note = (piece, state, detail = null) =>
+      ledger.push({
+        lane: piece.lane,
+        index: piece.index,
+        from: piece.from,
+        to: piece.to,
+        seconds: Math.max(0, piece.to - piece.from),
+        voiced: piece.voiced ?? 0,
+        state,
+        detail,
+      });
 
     try {
       for (const [lane, kept] of Object.entries(files)) {
@@ -436,17 +686,34 @@ class Meetings {
         const cut = cutter({ lane, ...this.slice });
         const chew = async (segments) => {
           for (const piece of segments) {
-            if (piece.silent) continue;
+            if (piece.silent) {
+              note({ ...piece, lane }, "silent");
+              continue;
+            }
             const wav = Buffer.concat([wavHeader(piece.pcm.length), piece.pcm]);
-            const { text } = await this.transcribe(wav, settings, {
-              lane,
-              from: piece.from,
-              to: piece.to,
-              context: tails[lane],
-              glossary,
-            });
-            const said = String(text ?? "").trim();
-            if (!said) continue;
+            /* Z powtórkami, tak samo jak w biegu. Ten przebieg jest ostatnią
+               drogą do tekstu — po nim nagranie wolno skasować — więc jest
+               ostatnim miejscem, w którym wolno odpuścić odcinek po jednej
+               nieudanej próbie. */
+            let said = "";
+            try {
+              said = await this.#say(
+                wav,
+                { lane, from: piece.from, to: piece.to, context: tails[lane], glossary },
+                piece.voiced,
+              );
+            } catch (problem) {
+              /* Jeden stracony odcinek NIE PRZERYWA przebiegu. Wcześniej
+                 wyjątek leciał w górę i zabierał ze sobą całą resztę
+                 godziny — z powodu dwóch minut, które się nie udały. */
+              note({ ...piece, lane }, "failed", problem.message);
+              continue;
+            }
+            if (!said) {
+              note({ ...piece, lane }, "empty");
+              continue;
+            }
+            note({ ...piece, lane }, "done");
             tails[lane] = said.slice(-320);
             pieces.push({ lane, from: piece.from, to: piece.to, text: said });
             /* Zapisujemy po każdym odcinku. Przepisanie godziny trwa
@@ -481,12 +748,17 @@ class Meetings {
       }
 
       const transcript = splice(pieces, { speakers: meeting.speakers });
+      const coverage = Meetings.tally(ledger);
       /* Teraz, gdy tekst jest, nagranie przestaje być jedynym egzemplarzem
          rozmowy — i dopiero teraz wolno je ścisnąć albo skasować, zgodnie
          z ustawieniem. Wcześniej byłoby to niszczeniem czegoś, czego nie
-         było czym zastąpić. */
+         było czym zastąpić.
+
+         Warunkiem jest POKRYCIE, a nie „transcript.length" — z tego samego
+         powodu co w stop(): jedna linijka z godziny rozmowy nie jest
+         przepisaną rozmową i nie wolno jej kupić za nagranie. */
       let tracks = meeting.tracks;
-      if (transcript.length) {
+      if (coverage.complete) {
         if (settings.meetings?.keepAudio === true) {
           tracks = { mic: await shrink(files.mic), system: await shrink(files.system) };
         } else {
@@ -497,8 +769,11 @@ class Meetings {
       this.store.updateMeeting(id, {
         transcript,
         tracks,
+        coverage,
         transcribing: false,
-        transcriptError: null,
+        transcriptError: coverage.complete
+          ? null
+          : `Zapis obejmuje ${Math.round(coverage.writtenSeconds / 60)} z ${Math.round(coverage.spokenSeconds / 60)} minut rozmowy. Nagranie zostało zachowane.`,
       });
       this.onChange();
       return transcript;

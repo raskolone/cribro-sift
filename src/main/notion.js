@@ -49,6 +49,9 @@ const TEXT_LIMIT = 2000;
    strony blokowałyby się nawzajem przy pierwszej zmianie. */
 
 const LIST_LINE = /^(\s*)([-*]|\d+\.)[ \t]+(?:\[([ xX])\][ \t]+)?(.*)$/;
+/* Linia będąca SAMYM obrazkiem — tak wstawia zrzut main/shot.js. Obrazek
+   w środku zdania zostaje tekstem; osobna linia ma dokąd pójść. */
+const IMAGE_LINE = /^\s*!\[([^\]\n]*)\]\(([^)\s]+)\)\s*$/;
 const QUOTE_LINE = /^\s*>[ \t]?/;
 const HEADING_LINE = /^(#{1,6})[ \t]+(.*)$/;
 const DIVIDER_LINE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/;
@@ -122,6 +125,41 @@ function toBlocks(markdown) {
 
     if (DIVIDER_LINE.test(line)) {
       out.push(block("divider", {}));
+      i += 1;
+      continue;
+    }
+
+    /* ZRZUT EKRANU.
+       Notion umie pokazać obrazek, ale tylko taki, po który sam sięgnie —
+       czyli spod adresu http(s). Zrzuty Cribro leżą na tym dysku, pod
+       `file://`, i Notion nie ma jak ich zobaczyć.
+
+       Wcześniej taka linia wpadała tu jako zwykły akapit i lądowała
+       w cudzej stronie jako surowy Markdown, w całości, razem z zakodowanymi
+       spacjami w ścieżce. To nie było „obrazka nie ma" — to był śmieć
+       w miejscu, w którym miał być obrazek.
+
+       Teraz obrazek spod adresu jedzie jako prawdziwy blok, a ten z dysku
+       zostawia po sobie jedno zdanie: że był i gdzie został. Zdanie da się
+       przeczytać, ścieżki z procentami — nie. */
+    const picture = IMAGE_LINE.exec(line);
+    if (picture) {
+      const [, alt, src] = picture;
+      if (/^https?:\/\//i.test(src)) {
+        out.push(block("image", { type: "external", external: { url: src } }));
+      } else {
+        out.push(
+          block("paragraph", {
+            rich_text: [
+              {
+                type: "text",
+                text: { content: `[${alt || "obrazek"} — został na komputerze, z którego wyszła notatka]` },
+                annotations: { italic: true },
+              },
+            ],
+          }),
+        );
+      }
       i += 1;
       continue;
     }

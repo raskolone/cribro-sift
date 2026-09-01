@@ -27,6 +27,10 @@
   const { landing, nearest, pointless } = window.CribroBlockMove;
 
   const CHECKBOX_ZONE = 26; // szerokość pola do odhaczenia, w pikselach
+  /* Najmniejszy obrazek, jaki ma sens: poniżej dziesiątej części kolumny
+     zrzut przestaje być czymkolwiek do obejrzenia. Ta sama liczba stoi
+     w shared/richtext.js — tam pilnuje zapisu, tutaj gestu. */
+  const MIN_IMAGE = 10;
   /* Uchwyt do przenoszenia linii — rozmiar i odstęp od tekstu. Stoi
      w marginesie, po lewej stronie notatki, i nigdy nad literami. */
   const GRIP_W = 16;
@@ -62,9 +66,11 @@
       this.root.addEventListener("input", () => this.#changed());
       this.root.addEventListener("paste", (event) => this.#paste(event));
       this.root.addEventListener("click", (event) => this.#click(event));
+      this.root.addEventListener("pointerdown", (event) => this.#imageDown(event));
       this.root.addEventListener("keydown", (event) => this.#keydown(event));
 
       this.#dragSetup();
+      this.#imageSetup();
     }
 
     /* ── Treść ── */
@@ -74,6 +80,7 @@
       // gdy na ekranie jest naprawdę co innego niż w notatce.
       const same = this.getMarkdown() === String(markdown ?? "").trim();
       if (same && this.root.innerHTML.trim()) return;
+      this.#unpick();
       this.root.innerHTML = markdownToHtml(markdown);
       this.applyFolds();
       this.#markEmpty();
@@ -161,6 +168,9 @@
       this.#normalizeTasks();
       this.applyFolds();
       this.#markEmpty();
+      // Obrazek mógł właśnie zmienić rozmiar albo miejsce; ramka stoi na
+      // współrzędnych ekranu i sama się o tym nie dowie.
+      this.#paintPick();
       this.onInput();
     }
 
@@ -662,9 +672,13 @@
       const doc = this.grip.ownerDocument;
       live.delete(this);
       doc.removeEventListener("pointermove", this.onOutside, true);
+      doc.removeEventListener("pointerdown", this.onPickOutside, true);
+      doc.removeEventListener("scroll", this.onPickReflow, true);
+      doc.defaultView?.removeEventListener("resize", this.onPickReflow);
       this.watch?.disconnect();
       this.grip.remove();
       this.dropMark.remove();
+      this.pick?.remove();
     }
 
     /**
@@ -850,7 +864,11 @@
      */
     parkGrip() {
       if (this.drag) this.#dragCleanup();
+      if (this.sizing) this.#resizeEnd();
       this.#gripHide();
+      // Ramka obrazka znika razem z uchwytem i z tego samego powodu: notatki,
+      // przy której stała, nie widać już na ekranie.
+      this.#unpick();
     }
 
     #dragStart(event) {
@@ -1052,8 +1070,17 @@
      */
     #moveByKey(direction) {
       const line = this.#lineFor(this.#anchor());
-      if (!line) return false;
+      return line ? this.#moveLine(line, direction) : false;
+    }
 
+    /**
+     * Przełożenie WSKAZANEJ linii o jedno miejsce.
+     *
+     * Osobno od #moveByKey, bo linię wskazuje się na dwa sposoby: kursorem
+     * (wtedy szuka jej #anchor) albo zaznaczonym obrazkiem (wtedy jest znana
+     * wprost, a kursora w niej nie ma wcale).
+     */
+    #moveLine(line, direction) {
       const lines = this.#lines();
       const from = lines.indexOf(line);
       if (from === -1) return false;
@@ -1075,9 +1102,337 @@
       return true;
     }
 
+    /* ── Obrazek w notatce ─────────────────────────────────────
+       Zrzut ekranu wchodził do notatki i stawał się w niej rzeczą martwą:
+       nie dało się go zmniejszyć, przesunąć ani skasować — zostawało
+       otwarcie pliku .md w innym edytorze i szukanie nawiasów.
+
+       Cała obsługa stoi POZA notatką, w warstwie nad nią, i to jest ta
+       sama decyzja co przy uchwycie przenoszenia linii: wszystko, co
+       narysujemy wewnątrz contenteditable, JEST treścią — da się w to
+       wejść kursorem, skasować Backspace'em i wychodzi do Markdownu.
+       Ramka i pasek narysowane przy obrazku zostawiłyby po sobie ślad
+       w pliku na dysku.
+
+       Rozmiar mieszka w opisie obrazka (patrz IMAGE_WIDTH w
+       shared/richtext.js), więc przeżywa zamknięcie notatki, wysyłkę do
+       PDF-u i synchronizację. */
+
+    #imageSetup() {
+      const doc = this.root.ownerDocument;
+
+      /* Sprzątanie po poprzednikach — tak samo jak przy uchwycie: Notatnik
+         przebudowuje szkielet widoku, więc element notatki ginie, a warstwa
+         leżąca w oknie zostałaby po każdym otwarciu po jednej. */
+      for (const stale of doc.querySelectorAll(".prose-pick")) {
+        if (!stale.__root?.isConnected) stale.remove();
+      }
+
+      const host = doc.getElementById("app") ?? doc.body;
+      this.picked = null;
+      this.sizing = null;
+
+      const pick = doc.createElement("div");
+      pick.className = "prose-pick";
+      pick.hidden = true;
+      pick.__root = this.root;
+      pick.innerHTML = `
+        <div class="prose-pick__frame"></div>
+        <div class="prose-pick__bar">
+          <button type="button" data-do="smaller" title="Mniejszy">−</button>
+          <button type="button" data-do="bigger" title="Większy">+</button>
+          <button type="button" data-do="full" title="Cała szerokość">⤢</button>
+          <span class="prose-pick__size">100%</span>
+          <button type="button" data-do="alt" title="Opis obrazka">Opis</button>
+          <button type="button" data-do="drop" title="Usuń obrazek (Backspace)">Usuń</button>
+        </div>
+        <input class="prose-pick__alt" type="text" hidden placeholder="opis obrazka" />
+        <div class="prose-pick__grab" title="Przeciągnij róg, żeby zmienić rozmiar"></div>
+      `;
+      host.appendChild(pick);
+
+      this.pick = pick;
+      this.pickSize = pick.querySelector(".prose-pick__size");
+      this.pickAlt = pick.querySelector(".prose-pick__alt");
+
+      /* Pasek działa NA WCIŚNIĘCIU, a nie na kliknięciu, i nie oddaje
+         fokusu. Inaczej naciśnięcie przycisku zabiera zaznaczenie z notatki,
+         a przeglądarka — widząc, że contenteditable stracił fokus — zwija
+         zaznaczenie obrazka, więc guzik działa raz i przestaje. */
+      pick.addEventListener("pointerdown", (event) => {
+        const button = event.target.closest("button");
+        if (!button) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.#imageDo(button.dataset.do);
+      });
+
+      pick.querySelector(".prose-pick__grab").addEventListener("pointerdown", (event) =>
+        this.#resizeStart(event),
+      );
+
+      this.pickAlt.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          this.#applyAlt();
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          this.pickAlt.hidden = true;
+          this.root.focus();
+        }
+        event.stopPropagation();
+      });
+      this.pickAlt.addEventListener("blur", () => this.#applyAlt());
+
+      this.onResizeMove = (event) => this.#resizeMove(event);
+      this.onResizeEnd = () => this.#resizeEnd();
+
+      /* Ramka stoi na współrzędnych ekranu, więc przewinięcie i zmiana
+         rozmiaru okna przesuwają obrazek pod nią. Przerysowujemy ją zamiast
+         chować: zaznaczenie obrazka ma przeżyć przewinięcie do niego. */
+      this.onPickReflow = () => this.#paintPick();
+      doc.addEventListener("scroll", this.onPickReflow, true);
+      doc.defaultView?.addEventListener("resize", this.onPickReflow);
+
+      /* Kliknięcie gdziekolwiek indziej zdejmuje zaznaczenie — także poza
+         notatką, bo obrazek zaznaczony przy zamkniętej notatce byłby ramką
+         wiszącą nad cudzą zakładką. */
+      this.onPickOutside = (event) => {
+        if (!this.root.isConnected) return void this.#unpick();
+        if (this.sizing) return;
+        if (this.pick.contains(event.target)) return;
+        if (event.target?.tagName === "IMG" && this.root.contains(event.target)) return;
+        this.#unpick();
+      };
+      doc.addEventListener("pointerdown", this.onPickOutside, true);
+    }
+
+    /** Obrazek pod wskaźnikiem, o ile należy do TEJ notatki. */
+    #imageAt(node) {
+      const img = node?.closest?.("img");
+      return img && this.root.contains(img) ? img : null;
+    }
+
+    /**
+     * Szerokość KOLUMNY TEKSTU, względem której liczy się procent.
+     *
+     * Nie `clientWidth` notatki: ta zawiera pasek na uchwyt przenoszenia
+     * linii (--grip-gutter), a `width: 60%` w CSS liczy się od pola treści,
+     * czyli już bez niego. Dwie różne podstawy dawały rozjazd kilku punktów
+     * między tym, co zapisane w pliku, a tym, co widać na ekranie — i to
+     * przy każdym pierwszym naciśnięciu „mniejszy".
+     */
+    #column() {
+      const view = this.root.ownerDocument.defaultView;
+      const style = view.getComputedStyle(this.root);
+      const inside =
+        this.root.clientWidth -
+        (parseFloat(style.paddingLeft) || 0) -
+        (parseFloat(style.paddingRight) || 0);
+      return Math.max(1, inside);
+    }
+
+    /** Szerokość obrazka w procentach kolumny — zawsze liczba. */
+    #widthOf(img) {
+      const stored = Number(img.getAttribute("data-width"));
+      if (Number.isFinite(stored) && stored > 0) return stored;
+      /* Bez zapisanej szerokości obrazek zajmuje tyle, ile zajmuje: pełną
+         kolumnę albo mniej, jeśli sam jest mniejszy niż ona. Pytamy więc
+         o stan faktyczny, zamiast zakładać sto procent — inaczej pierwsze
+         naciśnięcie „mniejszy" przy wąskim zrzucie potrafiłoby go
+         POWIĘKSZYĆ. */
+      const column = this.#column();
+      const shown = img.getBoundingClientRect().width || column;
+      return Math.min(100, Math.round((shown / column) * 100));
+    }
+
+    #setWidth(img, percent) {
+      const width = Math.max(MIN_IMAGE, Math.min(100, Math.round(percent)));
+      if (width >= 100) {
+        // Pełna szerokość nie zapisuje się do pliku — patrz richtext.js.
+        img.removeAttribute("data-width");
+        img.style.removeProperty("width");
+      } else {
+        img.setAttribute("data-width", String(width));
+        img.style.width = `${width}%`;
+      }
+      return width;
+    }
+
+    #pick(img) {
+      if (this.picked === img) return this.#paintPick();
+      this.#unpick();
+      this.picked = img;
+      img.setAttribute("data-picked", "true");
+      this.#paintPick();
+    }
+
+    #unpick() {
+      this.pickAlt.hidden = true;
+      if (this.picked) this.picked.removeAttribute("data-picked");
+      this.picked = null;
+      if (this.pick) this.pick.hidden = true;
+    }
+
+    /** Ramka, pasek i uchwyt na swoje miejsca — nad obrazkiem, na ekranie. */
+    #paintPick() {
+      if (!this.picked) return;
+      // Obrazek mógł zniknąć razem z notatką albo z akapitem, w którym stał.
+      if (!this.root.contains(this.picked)) return void this.#unpick();
+
+      const box = this.picked.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) return void (this.pick.hidden = true);
+
+      this.pick.hidden = false;
+      this.pick.style.left = `${box.left}px`;
+      this.pick.style.top = `${box.top}px`;
+      this.pick.style.width = `${box.width}px`;
+      this.pick.style.height = `${box.height}px`;
+      this.pickSize.textContent = `${this.#widthOf(this.picked)}%`;
+    }
+
+    /** Co robią przyciski paska. Jedno miejsce, żeby żaden nie zapomniał zapisać. */
+    #imageDo(what) {
+      const img = this.picked;
+      if (!img) return;
+
+      if (what === "drop") return this.#dropPicked();
+      if (what === "alt") {
+        this.pickAlt.hidden = !this.pickAlt.hidden;
+        if (this.pickAlt.hidden) return;
+        this.pickAlt.value = img.getAttribute("alt") ?? "";
+        this.pickAlt.focus();
+        this.pickAlt.select();
+        return;
+      }
+
+      const now = this.#widthOf(img);
+      const next = what === "full" ? 100 : what === "bigger" ? now + 10 : now - 10;
+      this.#setWidth(img, next);
+      this.#paintPick();
+      this.#changed();
+    }
+
+    #applyAlt() {
+      if (this.pickAlt.hidden || !this.picked) return;
+      this.picked.setAttribute("alt", this.pickAlt.value);
+      this.pickAlt.hidden = true;
+      this.#changed();
+    }
+
+    /**
+     * Obrazek znika, a razem z nim akapit, w którym stał sam.
+     *
+     * Pusty akapit po skasowanym zrzucie jest pustą linią w środku notatki,
+     * której nikt nie prosił — i której nie widać, więc nie wiadomo, skąd
+     * się wzięła.
+     */
+    #dropPicked() {
+      const img = this.picked;
+      if (!img) return;
+      const block = img.closest("p, li, blockquote, h1, h2, h3");
+      this.#unpick();
+      img.remove();
+      if (block && this.root.contains(block) && !block.textContent.trim() && !block.querySelector("img")) {
+        // Poza listą kasujemy blok; punkt listy zostaje, bo lista bez punktu
+        // rozsypałaby się bardziej, niż kosztuje pusty punkt.
+        if (block.tagName !== "LI") block.remove();
+      }
+      this.root.focus();
+      this.#changed();
+    }
+
+    /* ── Skalowanie ciągnięciem za róg ── */
+
+    #resizeStart(event) {
+      if (!this.picked || event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const doc = this.root.ownerDocument;
+      this.sizing = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        // Szerokość liczymy względem KOLUMNY notatki, bo w takich jednostkach
+        // rozmiar idzie do pliku — inaczej ten sam gest znaczyłby co innego
+        // w oknie głównym i na wąskiej kartce z pulpitu.
+        column: this.#column(),
+        from: this.picked.getBoundingClientRect().width,
+      };
+      doc.body.classList.add("is-sizing-image");
+      doc.addEventListener("pointermove", this.onResizeMove, true);
+      doc.addEventListener("pointerup", this.onResizeEnd, true);
+      doc.addEventListener("pointercancel", this.onResizeEnd, true);
+      doc.addEventListener("selectstart", this.onNoSelect, true);
+    }
+
+    #resizeMove(event) {
+      if (!this.sizing || !this.picked) return;
+      const width = this.sizing.from + (event.clientX - this.sizing.startX);
+      this.#setWidth(this.picked, (width / this.sizing.column) * 100);
+      this.#paintPick();
+    }
+
+    #resizeEnd() {
+      if (!this.sizing) return;
+      const doc = this.root.ownerDocument;
+      this.sizing = null;
+      doc.body.classList.remove("is-sizing-image");
+      doc.removeEventListener("pointermove", this.onResizeMove, true);
+      doc.removeEventListener("pointerup", this.onResizeEnd, true);
+      doc.removeEventListener("pointercancel", this.onResizeEnd, true);
+      doc.removeEventListener("selectstart", this.onNoSelect, true);
+      this.#paintPick();
+      this.#changed();
+    }
+
+    /**
+     * Wciśnięcie na obrazku: zaznacza go, a ruch z wciśniętym przyciskiem
+     * przenosi cały akapit.
+     *
+     * Przenoszenie idzie tą samą drogą co uchwyt przy punkcie listy —
+     * i to nie jest oszczędność kodu, tylko warunek zgodności: kreska
+     * pokazująca miejsce upuszczenia, klawisz Escape przerywający gest
+     * i reguła „pojemnikiem staje się pojemnik linii obok" mają znaczyć
+     * przy obrazku dokładnie to samo, co przy każdej innej linii.
+     *
+     * Samo wciśnięcie bez ruchu kończy się niczym: #dragEnd nie ma wtedy
+     * szczeliny, do której miałby przełożyć — więc gest jest po prostu
+     * zaznaczeniem.
+     */
+    #imageDown(event) {
+      const img = this.#imageAt(event.target);
+      if (!img) {
+        if (this.picked && !this.pick.contains(event.target)) this.#unpick();
+        return;
+      }
+      if (event.button !== 0) return;
+
+      this.#pick(img);
+      /* ══ FOKUS TRZEBA WZIĄĆ RĘCZNIE ══
+
+         Za chwilę #dragStart odmówi domyślnej obsługi wciśnięcia (bez tego
+         przeglądarka zaczyna zaznaczać tekst) — a razem z nią odmawia
+         USTAWIENIA FOKUSU na notatce. Notatka bez fokusu nie dostaje
+         klawiszy: zaznaczony obrazek nie dawał się skasować Backspace'em
+         ani przesunąć ⌥↑, bo klawisze szły do okna, a nie do edytora.
+         Wciśnięcie na obrazku jest wejściem w notatkę tak samo jak
+         wciśnięcie na zdaniu, więc fokus bierzemy wprost. */
+      this.root.focus({ preventScroll: true });
+      const line = this.#lineFor(img);
+      if (!line) return;
+      this.gripLine = line;
+      this.#dragStart(event);
+    }
+
     /* Odhaczanie: pole jest rysowane przez CSS, więc kliknięcie w nie
        jest kliknięciem w lewy skraj punktu listy. */
     #click(event) {
+      // Obrazek obsłużyło już wciśnięcie (#imageDown) — tutaj kliknięcie
+      // w niego mogłoby najwyżej trafić w odhaczanie punktu listy, w którym
+      // zrzut stoi.
+      if (this.#imageAt(event.target)) return;
+
       // Strzałka nagłówka składanego. Jest przed odhaczaniem, bo nagłówek
       // nie jest punktem listy i te dwa obszary nigdy się nie spotkają.
       // Sam gest siedzi w shared/richtext.js — ten sam, co w podglądzie
@@ -1098,6 +1453,35 @@
     }
 
     #keydown(event) {
+      /* ══ ZAZNACZONY OBRAZEK PRZEJMUJE KLAWISZE ══
+
+         Idzie to PRZED wszystkim innym, bo obrazek zaznaczony kliknięciem
+         nie ma w sobie kursora — Backspace bez tego trafiałby w miejsce,
+         w którym kursor stał ostatnio, czyli kasowałby literę gdzie indziej
+         w notatce. */
+      if (this.picked) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          this.#unpick();
+          return;
+        }
+        if (event.key === "Backspace" || event.key === "Delete") {
+          event.preventDefault();
+          this.#dropPicked();
+          return;
+        }
+        if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          // Obrazek jeździ po notatce tak samo jak każda inna linia.
+          const line = this.#lineFor(this.picked);
+          if (line) {
+            event.preventDefault();
+            this.#moveLine(line, event.key === "ArrowUp" ? -1 : 1);
+            this.#paintPick();
+            return;
+          }
+        }
+      }
+
       /* Przenoszenie linii idzie na ⌥ ze strzałką — przed sprawdzeniem ⌘,
          bo nie ma z nim nic wspólnego. macOS przypisuje temu skrótowi skok
          o akapit; przejmujemy go tylko wtedy, gdy naprawdę było co ruszyć. */
@@ -1119,11 +1503,124 @@
     }
 
     /* Wklejanie zawsze jako czysty tekst: notatka ma jeden krój i jeden
-       rozmiar, a ze strony WWW przyjechałoby wszystko naraz. */
+       rozmiar, a ze strony WWW przyjechałoby wszystko naraz.
+
+       WYJĄTKIEM JEST OBRAZEK. Zrzut ekranu w schowku to nie jest
+       formatowanie, które trzeba zdjąć — to jest treść, której inaczej nie
+       da się do notatki wstawić w ogóle. */
     #paste(event) {
       event.preventDefault();
+
+      const image = this.#imageInClipboard(event.clipboardData);
       const text = event.clipboardData?.getData("text/plain") ?? "";
+      /* Obrazek ma pierwszeństwo, ale tylko wtedy, gdy NIE MA tekstu.
+         Kopiując fragment strony, dostaje się jedno i drugie — i wtedy
+         chodziło o tekst; nikt nie kopiuje akapitu po to, żeby wkleić
+         ikonkę, która akurat w nim stała. */
+      if (image && !text.trim()) {
+        void this.#pasteImage(image);
+        return;
+      }
+
+      /* Pusty schowek zdarzenia wklejania nie znaczy pusty schowek systemu.
+         Zrzut zrobiony ⌃⌘⇧4 potrafi nie pojawić się w `clipboardData`
+         wcale — a to najczęstszy sposób robienia zrzutów. Pytamy więc
+         jeszcze proces główny, który widzi schowek w całości. */
+      if (!image && !text) {
+        void this.#pasteImage(null);
+        return;
+      }
+
       document.execCommand("insertText", false, text);
+    }
+
+    /** Obrazek w schowku, o ile jest — jako element, z którego da się czytać. */
+    #imageInClipboard(data) {
+      for (const item of data?.items ?? []) {
+        if (item.kind === "file" && String(item.type).startsWith("image/")) {
+          const file = item.getAsFile?.();
+          if (file) return file;
+        }
+      }
+      for (const file of data?.files ?? []) {
+        if (String(file.type).startsWith("image/")) return file;
+      }
+      return null;
+    }
+
+    /**
+     * Obrazek ze schowka do notatki.
+     *
+     * Bajtów NIE trzymamy w treści. Obrazek wklejony jako `data:` wchodzi
+     * do Markdownu w całości — kilkaset kilobajtów base64 w jednej linii
+     * pliku, który ma się dać przeczytać w cudzym edytorze, wysłać do
+     * Notatek Apple i zsynchronizować. Zapisuje go więc proces główny obok
+     * pozostałych zrzutów, a notatka trzyma sam adres — dokładnie tak, jak
+     * przy „Tekście z ekranu" (patrz main/shot.js).
+     */
+    async #pasteImage(file) {
+      const bridge = window.cribro?.notes?.pasteImage;
+      if (!bridge) return; // okno bez mostu (podgląd, test) — nie ma dokąd zapisać
+
+      let dataUrl = null;
+      if (file) {
+        dataUrl = await new Promise((done) => {
+          const reader = new FileReader();
+          reader.onload = () => done(String(reader.result ?? ""));
+          reader.onerror = () => done(null);
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const result = await bridge(dataUrl).catch(() => null);
+      if (!result?.markdown) return;
+
+      this.insertImage(result.markdown);
+    }
+
+    /**
+     * Gotowy znacznik obrazka w miejsce kursora, jako OSOBNY BLOK.
+     *
+     * Nie przez insertText: obrazek wstawiony w środek zdania zostawiałby
+     * w pliku znacznik Markdowna wciśnięty między słowa, a na ekranie —
+     * kafelek w połowie akapitu. Zrzut jest rzeczą osobną i wchodzi jako
+     * własny akapit, tak samo jak wchodzi z „Tekstu z ekranu".
+     */
+    insertImage(markdown) {
+      const html = markdownToHtml(markdown);
+      const block = this.#blockAt(this.#anchor());
+      const top = block && block.parentElement !== this.root
+        ? (block.closest("ul, ol, blockquote") ?? this.root.lastElementChild)
+        : block;
+
+      const holder = this.root.ownerDocument.createElement("div");
+      holder.innerHTML = html;
+      const blocks = [...holder.children];
+      if (!blocks.length) return;
+
+      /* Pusty akapit, w którym stał kursor, ustępuje miejsca obrazkowi —
+         inaczej po każdym wklejeniu zostaje nad nim pusta linia. */
+      if (top && !top.textContent.trim() && !top.querySelector("img")) {
+        top.replaceWith(...blocks);
+      } else if (top) {
+        top.after(...blocks);
+      } else {
+        this.root.append(...blocks);
+      }
+
+      // Kursor pod obrazkiem: po wklejeniu zrzutu prawie zawsze pisze się
+      // do niego zdanie.
+      const after = this.root.ownerDocument.createElement("p");
+      after.appendChild(this.root.ownerDocument.createElement("br"));
+      blocks[blocks.length - 1].after(after);
+      const range = this.root.ownerDocument.createRange();
+      range.setStart(after, 0);
+      range.collapse(true);
+      const selection = this.root.ownerDocument.defaultView.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      this.#changed();
     }
   }
 

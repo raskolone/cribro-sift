@@ -27,8 +27,20 @@
 
 (function () {
   const api = window.cribro;
-  const { titleOf, rawTitle, retitle, countWords, colorOf, NOTE_COLORS, renameInPlace } =
-    window.NotesCore;
+  const {
+    titleOf,
+    rawTitle,
+    retitle,
+    countWords,
+    colorOf,
+    NOTE_COLORS,
+    renameInPlace,
+    ensureIcons,
+    actionBar,
+    paintActions,
+    runAction,
+    runShare,
+  } = window.NotesCore;
   const $ = (selector) => document.querySelector(selector);
 
   const params = new URLSearchParams(location.search);
@@ -43,6 +55,12 @@
   let runtime = "idle";
 
   const editor = window.CribroEditor.create($("#text"), { onInput: () => scheduleSave() });
+
+  /* Pasek czynności — ten sam, co pod notatką w Notatniku. Bez „Na pulpit":
+     kartka już na nim leży, a zdejmuje ją krzyżyk w nagłówku, więc drugi
+     przycisk od tego samego byłby pytaniem, czym się różnią. */
+  ensureIcons(document);
+  $("#acts").outerHTML = actionBar({ skip: ["desktop"] });
 
   /* ── Skala ekranu ───────────────────────────────────────────── */
 
@@ -108,6 +126,7 @@
   }
 
   function paint() {
+    paintActions(document, note);
     const color = colorOf(note);
     card.dataset.color = color;
     $("#paint").dataset.color = color;
@@ -326,8 +345,56 @@
     if (event.target.closest("#dismiss")) {
       await flushSave();
       if (note) await api.deck.dismiss(note.id);
+      return;
+    }
+
+    /* ── Pasek czynności ──
+       Zapis idzie PRZED czynnością i nie jest to ostrożność na wyrost:
+       kartka zapisuje się z opóźnieniem (SAVE_DELAY), więc „Udostępnij"
+       naciśnięte zaraz po dopisaniu zdania wysłałoby notatkę bez niego,
+       a „Przesiej" przesiałoby wersję sprzed pół sekundy. */
+    const shareTo = event.target.closest("[data-share]");
+    if (shareTo) {
+      closeShare();
+      await flushSave();
+      try {
+        await runShare(shareTo.dataset.share, note, { api, say: (text) => text && setState(text) });
+      } catch (problem) {
+        setState(String(problem.message || problem), "error");
+      }
+      return;
+    }
+
+    const act = event.target.closest("[data-act]")?.dataset.act;
+    if (act === "share") {
+      const menu = document.querySelector('[data-acts-menu="share"]');
+      if (menu) menu.hidden = !menu.hidden;
+      return;
+    }
+    closeShare();
+    if (!act || !note) return;
+
+    await flushSave();
+    try {
+      /* Skasowanie zamyka to okno — ale nie stąd. Kartkę niszczy proces
+         główny w obsłudze `notes:delete`, razem z jej wpisem w talii;
+         zamykanie jej jeszcze raz z tej strony byłoby wyścigiem z kodem,
+         który już to robi. Dlatego wynik `runAction` nas tu nie obchodzi. */
+      await runAction(act, note, {
+        api,
+        say: (text) => text && setState(text),
+        after: () => paint(),
+      });
+    } catch (problem) {
+      setState(String(problem.message || problem), "error");
     }
   });
+
+  /** Menu „Udostępnij" zamyka się tak samo jak paleta kolorów: byle czym. */
+  function closeShare() {
+    const menu = document.querySelector('[data-acts-menu="share"]');
+    if (menu) menu.hidden = true;
+  }
 
   /* Escape zdejmuje po jednej warstwie, od wierzchu — tak samo jak
      w Notatniku i w widgecie: najpierw trwające nagranie, potem cała

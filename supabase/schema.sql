@@ -569,6 +569,229 @@ select u.id, split_part(u.email, '@', 1), 'pro', null
 on conflict (id) do update set plan = 'pro', plan_until = null;
 
 
+-- ════════════════════════════════════════════════════════════════════════
+--  PANEL ADMINA — kto to widzi i co może włączyć
+--
+--  Powstało na czas wdrażania: aplikacja idzie do ludzi z funkcjami, które
+--  są jeszcze w becie, i musi być sposób, żeby je WYŁĄCZYĆ bez wydawania
+--  nowej wersji. Notatki ze spotkań są pierwszą taką funkcją.
+--
+--  ── DLACZEGO W BAZIE, A NIE W USTAWIENIACH APLIKACJI ──
+--
+--  Bo ustawienie w aplikacji zmienia ten, kto ją ma. Przełącznik „notatki
+--  ze spotkań: włączone", który stoi u użytkownika, jest przełącznikiem
+--  użytkownika — a chodzi dokładnie o odwrotność: o decyzję podejmowaną
+--  raz, po naszej stronie, obowiązującą wszystkich naraz i zmienialną bez
+--  aktualizacji.
+--
+--  ── TRZY STANY, NIE DWA ──
+--
+--    on       widzą wszyscy
+--    off      nie widzi nikt (poza adminem — on musi mieć czym testować)
+--    invited  widzą ci, którym nadano to imiennie
+--
+--  Trzeciego nie da się zastąpić dwoma: „wpuść na razie pięć osób" to
+--  najczęstszy stan wdrożenia i bez niego trzeba wybierać między „nikt"
+--  a „wszyscy".
+-- ════════════════════════════════════════════════════════════════════════
+
+
+-- ── Kto jest adminem ───────────────────────────────────────────────────
+--
+-- Adresem, nie identyfikatorem: konto da się skasować i założyć od nowa,
+-- a wtedy uuid jest inny, a człowiek ten sam. Tabela zamiast stałej
+-- w funkcji, bo adres bywa więcej niż jeden i dopisanie drugiego nie ma
+-- wymagać zmiany kodu.
+
+create table if not exists public.admins (
+  email      text primary key,
+  added_at   timestamptz not null default now()
+);
+
+alter table public.admins enable row level security;
+
+-- Spisu adminów NIE CZYTA NIKT z aplikacji. Nie jest sekretem w sensie
+-- bezpieczeństwa (i tak wynika z zachowania panelu), ale nie ma powodu,
+-- żeby lista adresów jechała komukolwiek na komputer.
+-- Polityk brak = przy włączonym RLS nie przeczyta go klient żaden.
+
+insert into public.admins (email) values ('maciej.wyrozumski@gmail.com')
+on conflict (email) do nothing;
+
+-- Czy TEN, kto właśnie pyta, jest adminem.
+--
+-- Adres bierzemy z tokenu (`auth.jwt()`), a nie z tabeli profili — token
+-- podpisuje Supabase i nie da się go przepisać po drodze. `security definer`,
+-- bo wołający nie ma prawa czytać tabeli adminów; sprawdzenie ma działać,
+-- a spis ma zostać niewidoczny.
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.admins a
+     where lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', ''))
+  );
+$$;
+
+grant execute on function public.is_admin() to authenticated;
+
+
+-- ── Funkcje pod przełącznikiem ─────────────────────────────────────────
+
+create table if not exists public.features (
+  code        text primary key,
+  label       text not null,
+  note        text,
+  state       text not null default 'on' check (state in ('on', 'off', 'invited')),
+  updated_at  timestamptz not null default now()
+);
+
+insert into public.features (code, label, note, state) values
+  ('meetings', 'Notatki ze spotkań',
+   'Nagrywanie rozmowy, transkrypcja i podsumowanie. W becie.', 'invited'),
+  ('briefing', 'Poranek',
+   'Podsumowanie dnia z kalendarza i poczty.', 'on'),
+  ('cloud', 'Notatki w chmurze',
+   'Synchronizacja notatek między komputerami.', 'on')
+on conflict (code) do nothing;   -- stan zostaje taki, jaki ustawiono w panelu
+
+alter table public.features enable row level security;
+
+-- Każdy zalogowany czyta spis: aplikacja musi wiedzieć, co pokazać.
+-- Sam spis nie jest tajemnicą — tajemnicą byłoby, kto ma co nadane.
+drop policy if exists "funkcje: każdy zalogowany czyta" on public.features;
+create policy "funkcje: każdy zalogowany czyta"
+  on public.features for select
+  to authenticated
+  using (true);
+
+drop policy if exists "funkcje: pisze admin" on public.features;
+create policy "funkcje: pisze admin"
+  on public.features for update
+  to authenticated
+  using (public.is_admin())
+  with check (public.is_admin());
+
+-- Kolumna `state` i nic więcej. Nazwa i opis funkcji należą do aplikacji,
+-- nie do panelu — przepisane w bazie rozjechałyby się z tym, co pokazuje
+-- okno, i nikt by nie wiedział, które jest prawdziwe.
+revoke update on public.features from anon, authenticated;
+grant update (state, updated_at) on public.features to authenticated;
+
+
+-- ── Nadania imienne ────────────────────────────────────────────────────
+
+create table if not exists public.feature_grants (
+  feature    text not null references public.features (code) on delete cascade,
+  user_id    uuid not null references auth.users (id) on delete cascade,
+  granted_at timestamptz not null default now(),
+  primary key (feature, user_id)
+);
+
+alter table public.feature_grants enable row level security;
+
+-- Swoje nadania widzi każdy — z nich aplikacja liczy, co pokazać.
+-- Cudzych nie widzi nikt poza adminem.
+drop policy if exists "nadania: swoje albo admin" on public.feature_grants;
+create policy "nadania: swoje albo admin"
+  on public.feature_grants for select
+  to authenticated
+  using (user_id = auth.uid() or public.is_admin());
+
+drop policy if exists "nadania: nadaje admin" on public.feature_grants;
+create policy "nadania: nadaje admin"
+  on public.feature_grants for insert
+  to authenticated
+  with check (public.is_admin());
+
+drop policy if exists "nadania: odbiera admin" on public.feature_grants;
+create policy "nadania: odbiera admin"
+  on public.feature_grants for delete
+  to authenticated
+  using (public.is_admin());
+
+
+-- ── Co widzi TEN użytkownik ────────────────────────────────────────────
+--
+-- Jedno pytanie, jedna odpowiedź: lista kodów funkcji, które wolno mu
+-- pokazać. Aplikacja nie liczy tego sama — inaczej reguła „invited"
+-- mieszkałaby w dwóch miejscach i rozjechała się przy pierwszej zmianie.
+--
+-- ADMIN WIDZI WSZYSTKO, także wyłączone. Musi mieć czym sprawdzić funkcję,
+-- zanim ją komukolwiek włączy.
+
+create or replace function public.my_features()
+returns setof text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select f.code
+    from public.features f
+   where public.is_admin()
+      or f.state = 'on'
+      or (f.state = 'invited'
+          and exists (select 1
+                        from public.feature_grants g
+                       where g.feature = f.code
+                         and g.user_id = auth.uid()));
+$$;
+
+grant execute on function public.my_features() to authenticated;
+
+
+-- ── Spis użytkowników dla panelu ───────────────────────────────────────
+--
+-- `auth.users` należy do Supabase i klientowi nie wolno go czytać — także
+-- adminowi, bo RLS nie ma tam nic do rzeczy. Dlatego jedna funkcja
+-- `security definer`, która ODMAWIA, gdy pyta nie-admin.
+--
+-- Oddaje tylko to, co panel naprawdę pokazuje. Bez tokenów, bez haseł,
+-- bez metadanych logowania.
+
+create or replace function public.admin_users()
+returns table (
+  id            uuid,
+  email         text,
+  display_name  text,
+  plan          text,
+  created_at    timestamptz,
+  last_sign_in  timestamptz,
+  confirmed     boolean,
+  features      text[]
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select u.id,
+         u.email::text,
+         p.display_name,
+         coalesce(public.effective_plan(u.id), 'free') as plan,
+         u.created_at,
+         u.last_sign_in_at,
+         (u.email_confirmed_at is not null) as confirmed,
+         coalesce(
+           (select array_agg(g.feature order by g.feature)
+              from public.feature_grants g
+             where g.user_id = u.id),
+           '{}'::text[]) as features
+    from auth.users u
+    left join public.profiles p on p.id = u.id
+   where public.is_admin()
+   order by u.created_at desc;
+$$;
+
+revoke all on function public.admin_users() from public, anon;
+grant execute on function public.admin_users() to authenticated;
+
+
 -- ── KOMU CO NADANO ─────────────────────────────────────────────────────
 --
 -- Ostatnie zapytanie w pliku, więc to jego wynik zostaje na ekranie po

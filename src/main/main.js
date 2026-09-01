@@ -23,6 +23,7 @@ const {
 
 const { Store } = require("./store");
 const { Supabase } = require("./supabase");
+const admin = require("./admin");
 const { signInWithProvider, PORTS: OAUTH_PORTS, CALLBACK: OAUTH_CALLBACK } = require("./oauth");
 const { syncNotes } = require("./sync");
 const { HotkeyEngine } = require("./hotkeys");
@@ -32,10 +33,10 @@ const { detect: detectCommand, byId: commandById } = require("./commands");
 const { keyFor, STT, SIEVE, OCR } = require("./providers");
 const { deliver, frontmostApp } = require("./paste");
 const { toAppleNotes, toMarkdown } = require("./share");
-const { noteToPdf } = require("./pdf");
+const { noteToPdf, folderToPdf } = require("./pdf");
 const { sendNote: sendToNotion, check: checkNotion } = require("./notion");
 const { detectConflicts } = require("./shortcuts");
-const { grabRegion, readText, compose, stampName } = require("./shot");
+const { grabRegion, readText, compose, stampName, imageLink } = require("./shot");
 const { Meetings } = require("./meeting");
 const { Watcher: MeetingWatcher, spot: spotMeeting } = require("./detect");
 const { speakerFor } = require("./merge");
@@ -526,19 +527,29 @@ function closeShotWindow() {
  */
 const SHOT_STALE_MS = 120_000;
 
-async function grabScreenText() {
-  /* ══ JEDNO ZAZNACZANIE NARAZ — ALE NIE NA WIEKI ══
-
-     `shot` trzyma obrazek w trakcie odczytu i strzeże przed drugim
-     zaznaczaniem w środku pierwszego. Zapomniany zostawał tu na zawsze
-     i skrót przestawał robić COKOLWIEK — cicho, bez komunikatu, do
-     następnego uruchomienia aplikacji. Wystarczył jeden wyjątek na drodze
-     zapisu albo odczyt, który nigdy nie wrócił.
-
-     Stąd data przy wpisie: po dwóch minutach to nie jest już „trwa
-     zaznaczanie", tylko ślad po czymś, co się nie udało. */
+/**
+ * ══ JEDNO CZYTANIE NARAZ — ALE NIE NA WIEKI ══
+ *
+ * `shot` trzyma obrazek w trakcie odczytu i strzeże przed drugim czytaniem
+ * w środku pierwszego. Zapomniany zostawał tu na zawsze i skrót przestawał
+ * robić COKOLWIEK — cicho, bez komunikatu, do następnego uruchomienia
+ * aplikacji. Wystarczył jeden wyjątek na drodze zapisu albo odczyt, który
+ * nigdy nie wrócił.
+ *
+ * Stąd data przy wpisie: po dwóch minutach to nie jest już „trwa czytanie",
+ * tylko ślad po czymś, co się nie udało.
+ *
+ * Straż stoi PRZED wyborem obrazka, nie po nim: dwa krzyżyki na ekranie
+ * albo dwa okna wyboru pliku naraz byłyby gorsze niż jedno odrzucone
+ * wywołanie.
+ */
+function shotBusy() {
   if (shot && Date.now() - (shot.at ?? 0) > SHOT_STALE_MS) shot = null;
-  if (shot) return false;
+  return !!shot;
+}
+
+async function grabScreenText() {
+  if (shotBusy()) return false;
   const t = translator(store.getSettings().uiLanguage);
 
   if (process.platform === "darwin") {
@@ -561,10 +572,64 @@ async function grabScreenText() {
   const grabbed = await grabRegion();
   if (!grabbed) return false; // Escape w trakcie zaznaczania
 
-  const settings = store.getSettings();
-  shot = { image: grabbed.buffer, reading: true, text: "", missingKey: false, error: null, at: Date.now() };
+  return readShot(grabbed.buffer, "image/png");
+}
 
-  const reading = readText(grabbed.buffer, settings)
+/**
+ * Obrazek z pliku — druga droga do tego samego odczytu.
+ *
+ * Zaznaczanie ekranu jest dobre, kiedy rzecz do przeczytania jest właśnie
+ * na ekranie. Nie jest dobre, kiedy przyszła załącznikiem albo leży
+ * w Pobranych — a wtedy jedynym wyjściem było dotąd otworzyć plik
+ * i zrobić zrzut z podglądu, czyli przepisać obrazek przez ekran.
+ *
+ * Zgody na nagrywanie ekranu ta droga NIE potrzebuje: nikt tu niczego nie
+ * podgląda, plik wskazuje sam człowiek. Dlatego działa też wtedy, gdy
+ * tamtej zgody nie ma.
+ *
+ * @param {string|null} filePath gotowa ścieżka albo null — wtedy pytamy
+ */
+async function readImageFile(filePath = null) {
+  if (shotBusy()) return false;
+  const t = translator(store.getSettings().uiLanguage);
+
+  let chosen = filePath;
+  if (!chosen) {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: t("Wybierz obrazek do przeczytania"),
+      properties: ["openFile"],
+      filters: [{ name: t("Obrazki"), extensions: ["png", "jpg", "jpeg", "gif", "webp"] }],
+    });
+    if (canceled || !filePaths?.length) return false;
+    chosen = filePaths[0];
+  }
+
+  /* Odmowa jest tu zwykłym wynikiem, nie awarią: człowiek wskazał plik,
+     który nie jest obrazkiem albo jest za duży, i ma o tym usłyszeć
+     zdaniem, które mówi co dalej. */
+  let picked;
+  try {
+    picked = imageFromFile(chosen);
+  } catch (problem) {
+    tellError("zrzut", problem.message);
+    return false;
+  }
+
+  return readShot(picked.buffer, picked.mime);
+}
+
+/**
+ * Odczyt i to, co z nim dalej — wspólne dla obu wejść.
+ *
+ * Skąd przyszedł obrazek, przestaje mieć znaczenie w tym miejscu: dalej
+ * jest jeden tor — pytanie albo zapis bez pytania, okno z podglądem,
+ * zwolnienie `shot` na każdej drodze wyjścia.
+ */
+async function readShot(image, mime) {
+  const settings = store.getSettings();
+  shot = { image, reading: true, text: "", missingKey: false, error: null, at: Date.now() };
+
+  const reading = readText(image, settings, { mime })
     .then((result) => ({ text: result.text, missingKey: !!result.missingKey, error: null }))
     .catch((error) => ({ text: "", missingKey: false, error: String(error.message || error) }));
 
@@ -2074,7 +2139,8 @@ async function toggleMeeting(about = null) {
       // Cokolwiek kończy to nagranie, po jego końcu nie ma już czego
       // kończyć razem ze zniknięciem okna rozmowy.
       startedFromSpot = false;
-      const { discarded, meeting, seconds } = await meetings.stop();
+      disarmRoomGone();
+      const { discarded, meeting, seconds, coverage } = await meetings.stop();
       if (discarded) {
         broadcast("pipeline:error", {
           stage: "spotkanie",
@@ -2086,20 +2152,65 @@ async function toggleMeeting(about = null) {
            rozmowy już jest, a to on zastępuje skasowane nagranie. Gdy
            podsumowanie dojdzie, ta sama notatka je do siebie przyjmie. */
         keepMeetingNote(meeting.id);
-        /* Podsumowanie leci SAMO i leci w tle. Czekanie na nie zablokowałoby
+        /* Reszta leci SAMA i leci w tle. Czekanie na nią zablokowałoby
            przycisk „Koniec" na kilkanaście sekund — a to jest ta jedna
            chwila, w której człowiek właśnie wstaje od biurka. */
-        if (store.getSettings().meetings?.summarize !== false) {
-          void summarizeMeeting(meeting.id);
-        }
+        void finishMeeting(meeting.id, coverage);
       }
       return;
     }
     /* Nagranie z menu też zasługuje na nazwę. Najpierw pytamy ekran —
        karta Google Meet niesie nazwę pokoju — a dopiero potem kalendarz. */
     await meetings.start(about ?? aboutMeeting(await roomOnScreen()));
+    /* Od tej chwili pilnowanie ekranu odpowiada na inne pytanie niż przed
+       chwilą: nie „czy zaczęła się rozmowa", tylko „czy ta jeszcze trwa".
+       Na to drugie nie wolno odpowiadać co pół minuty. */
+    watcher?.hurry();
   } catch (problem) {
     tellError("spotkanie", problem.message);
+  }
+}
+
+/**
+ * Co się dzieje PO rozmowie — po kolei i bez pomijania kroków.
+ *
+ * ══ NAJPIERW CAŁY ZAPIS, POTEM WNIOSEK Z NIEGO ══
+ *
+ * Kolejność jest tu treścią, a nie porządkiem. Podsumowanie policzone
+ * z dziurawego zapisu nie wygląda na dziurawe: model dostaje dwie linijki
+ * z godziny zajęć i pisze z nich gładki wniosek, po którym nikt się nie
+ * domyśli, że pięćdziesiąt sześć minut rozmowy nie weszło. Właśnie tak
+ * wyglądały zajęcia z 31 sierpnia — notatka z porządnym podsumowaniem
+ * ostatnich stu sekund i bez śladu po reszcie.
+ *
+ * Dlatego gdy przepisywanie w biegu czegoś nie dowiozło, rusza przebieg
+ * z pliku (nagranie zostaje właśnie na tę okoliczność, patrz stop
+ * w main/meeting.js) i dopiero po nim liczy się podsumowanie.
+ */
+async function finishMeeting(id, coverage) {
+  if (coverage && !coverage.complete) {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (meeting?.tracks?.mic) {
+      broadcast("pipeline:error", {
+        stage: "spotkanie",
+        message: `Zapis obejmuje ${Math.round(coverage.writtenSeconds / 60)} z ${Math.round(
+          coverage.spokenSeconds / 60,
+        )} minut — dopisuję resztę z nagrania.`,
+      });
+      try {
+        await meetings.retranscribe(id);
+        keepMeetingNote(id);
+      } catch (problem) {
+        // Przebieg naprawczy się nie udał — nagranie zostaje, więc jest do
+        // czego wrócić. Podsumowanie liczymy mimo to: lepszy wniosek
+        // z części rozmowy niż brak wniosku, o ile wiadomo, że to część.
+        tellError("transkrypcja", problem.message);
+      }
+    }
+  }
+
+  if (store.getSettings().meetings?.summarize !== false) {
+    await summarizeMeeting(id);
   }
 }
 
@@ -2256,9 +2367,38 @@ async function roomOnScreen() {
 /** Rozmowa wykryta, o którą jeszcze nie zapytano (albo zapytano i czeka). */
 let spotted = null;
 let watcher = null;
-/* Czy trwające nagranie ruszyło od WYKRYTEJ rozmowy. Tylko takie wolno
-   zakończyć razem ze zniknięciem jej okna — patrz meetingSpotted. */
+/* ══ CZY TO NAGRANIE NALEŻY DO WYKRYTEJ ROZMOWY ══
+
+   Tylko takie wolno zakończyć razem ze zniknięciem jej okna.
+
+   Wcześniej znaczyło to „ruszyło OD wykrytej rozmowy" i była to granica
+   za wąska. Kto włączył nagranie ręką — z menu albo skrótem — w trakcie
+   rozmowy, którą aplikacja miała na oku, nie dostawał zakończenia razem
+   z nią: rozmowa się kończyła, okno znikało, a nagranie szło dalej do
+   wieczora. A to jest najczęstszy sposób, w jaki się tu nagrywa.
+
+   Dziś liczy się WSPÓŁBIEŻNOŚĆ: jeżeli w trakcie nagrywania na ekranie
+   stała rozmowa, to nagranie jest jej nagraniem — nieważne, co je włączyło.
+   Nagranie zrobione bez żadnej rozmowy na ekranie (dyktafon na spotkaniu
+   przy stole) nie jest niczyje i nikt go nie zgasi. */
 let startedFromSpot = false;
+/* Odliczanie od zniknięcia okna rozmowy do zakończenia nagrania. */
+let roomGoneTimer = null;
+
+/**
+ * Ile czekamy od zniknięcia okna rozmowy do zakończenia nagrania.
+ *
+ * Watcher melduje zniknięcie dopiero za drugim spojrzeniem, czyli po
+ * kilkunastu sekundach — i to wystarcza na przeładowaną kartę. Nie
+ * wystarcza na to, co zdarza się naprawdę: wyjście do poczekalni, przejście
+ * do pokoju pobocznego, przelogowanie się na inne konto Google w trakcie
+ * rozmowy. Wtedy okno znika i wraca po pół minuty.
+ *
+ * Nagranie ucięte w środku rozmowy jest jedyną stratą w tej aplikacji,
+ * której nie da się cofnąć, więc czekamy na drugie potwierdzenie. Minuta
+ * nagrania pustego pokoju kosztuje kilka groszy i jedno zdanie w zapisie.
+ */
+const GRACE = 60_000;
 
 /** Wszystko, co znaczek i okno wiedzą o spotkaniach — jedną wiadomością.
 
@@ -2316,27 +2456,32 @@ async function meetingSpotted(meeting) {
   if (!meeting) {
     /* ══ KONIEC ROZMOWY ══
 
-       Okno rozmowy zniknęło. Jeżeli to MY je widzieliśmy, gdy nagranie
-       ruszało, to jest właśnie ten moment, w którym rozmowa się skończyła
-       — i nagranie ma się skończyć razem z nią. Bez tego spotkanie wykryte
-       samo nagrywałoby się do wieczora.
+       Okno rozmowy zniknęło. Jeżeli nagranie należy do tej rozmowy, to
+       jest właśnie ten moment, w którym się skończyła — i nagranie ma się
+       skończyć razem z nią. Bez tego wykryte spotkanie nagrywałoby się do
+       wieczora.
 
-       Warunek `startedFromSpot` jest tu istotny: nagranie włączone ręką
-       z menu, w trakcie rozmowy, której nie wykryliśmy, nie ma prawa
-       zgasnąć dlatego, że komuś zamknęła się karta w przeglądarce. */
+       ALE NIE OD RAZU. Zniknięcie okna potwierdzamy minutą (patrz GRACE):
+       poczekalnia, pokój poboczny i przeładowana karta wyglądają z tej
+       strony dokładnie tak samo jak wyjście z rozmowy, a nagranie ucięte
+       w połowie jest stratą nieodwracalną. */
     if (meetings.recording && startedFromSpot) {
-      if (store.getSettings().meetings?.stopWithMeeting !== false) {
-        startedFromSpot = false;
-        await toggleMeeting();
-      }
+      if (store.getSettings().meetings?.stopWithMeeting !== false) armRoomGone();
     }
     if (!spotted) return;
     spotted = null;
     tellMeetings();
     return;
   }
-  // Nagrywamy już — nie ma o co pytać.
-  if (meetings.recording) return;
+
+  /* Rozmowa stoi na ekranie — więc jeżeli cokolwiek się nagrywa, nagrywa
+     się WŁAŚNIE JĄ. Nieważne, czy nagranie włączyło wykrywanie, czy ręka:
+     od tej chwili skończy się razem z nią. */
+  disarmRoomGone();
+  if (meetings.recording) {
+    startedFromSpot = true;
+    return; // nagrywamy już — nie ma o co pytać
+  }
 
   const how = store.getSettings().meetings?.detect ?? "ask";
   if (how === "auto") {
@@ -2350,6 +2495,70 @@ async function meetingSpotted(meeting) {
   if (how !== "ask") return;
   spotted = meeting;
   tellMeetings();
+}
+
+/**
+ * Odliczanie po zniknięciu okna rozmowy.
+ *
+ * ══ DLACZEGO ZEGAR, A NIE KOLEJNY MELDUNEK ══
+ *
+ * Watcher mówi o zniknięciu DOKŁADNIE RAZ: po drugim nieudanym spojrzeniu
+ * zeruje swój stan i od tej chwili milczy, bo nie ma już czego zgubić.
+ * Karencja odmierzana z meldunków nigdy by więc nie dobiegła końca —
+ * drugi meldunek nie przyszedłby nigdy.
+ *
+ * Zegar zagląda więc na ekran SAM, jeden raz, po minucie. I to jest lepsze
+ * niż liczenie meldunków także z drugiego powodu: sprawdza stan faktyczny
+ * w chwili decyzji, a nie to, co było widać minutę wcześniej.
+ */
+function armRoomGone() {
+  if (roomGoneTimer) return; // odliczanie już biegnie
+  roomGoneTimer = setTimeout(async () => {
+    roomGoneTimer = null;
+    if (!meetings.recording || !startedFromSpot) return;
+    if (await roomStillOnScreen()) return; // wrócili z poczekalni
+    await endWithRoom("okno rozmowy zniknęło");
+  }, GRACE);
+}
+
+function disarmRoomGone() {
+  clearTimeout(roomGoneTimer);
+  roomGoneTimer = null;
+}
+
+/**
+ * Czy rozmowa NADAL stoi na ekranie — pytane wprost, bez pamięci.
+ *
+ * Niepewność liczy się tu na korzyść nagrania: gdy nie wolno nam patrzeć
+ * albo spis okien się wywrócił, odpowiadamy „stoi". Nagranie ucięte przez
+ * odmowę zgody byłoby stratą wywołaną brakiem wiedzy, a nie wiedzą.
+ */
+async function roomStillOnScreen() {
+  if (!canSeeScreen()) return true;
+  try {
+    return !!spotMeeting(await screenWindows());
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Koniec nagrania, o którym zdecydowała rozmowa, a nie człowiek.
+ *
+ * Trzy drogi prowadzą tutaj i wszystkie znaczą to samo — „rozmowy już nie
+ * ma": zniknęło jej okno, zamilkły oba tory na dziesięć minut albo komputer
+ * poszedł spać. Meldunek jest jeden i mówi, po czym poznaliśmy, bo
+ * nagranie, które kończy się samo, musi umieć powiedzieć dlaczego.
+ */
+async function endWithRoom(why) {
+  if (!meetings.recording) return;
+  disarmRoomGone();
+  startedFromSpot = false;
+  broadcast("pipeline:error", {
+    stage: "spotkanie",
+    message: `Spotkanie zakończone samo — ${why}.`,
+  });
+  await toggleMeeting();
 }
 
 /**
@@ -2497,6 +2706,10 @@ function buildAppMenu() {
            z przodu jest Cribro. Klawisze, które działają zawsze, ustawia
            się w Ustawieniach (patrz bindShotHotkey). */
         { label: `${t("Tekst z ekranu")}…`, click: () => grabScreenText() },
+        /* Ta sama funkcja, drugie wejście — i dlatego stoi tuż obok,
+           a nie w osobnym miejscu menu. Obrazek, który już leży na dysku,
+           nie ma powodu przechodzić przez ekran. */
+        { label: `${t("Tekst z obrazka")}…`, click: () => readImageFile() },
         { type: "separator" },
         { label: t("Notatnik"), accelerator: "Command+Shift+O", click: () => createNotesWindow() },
         { type: "separator" },
@@ -2588,6 +2801,7 @@ function refreshTrayMenu() {
       { label: t("Notatnik"), click: () => createNotesWindow() },
       { label: t("Szybka notatka"), click: () => quickNote() },
       { label: `${t("Tekst z ekranu")}…`, click: () => grabScreenText() },
+      { label: `${t("Tekst z obrazka")}…`, click: () => readImageFile() },
       meetingMenuItem(t),
       /* Poranek pokazuje się sam raz dziennie, ale bywa zamknięty odruchowo
          razem z resztą okien — a wtedy jedyną drogą z powrotem byłoby
@@ -3175,10 +3389,41 @@ function engineReady(stage, settings = store.getSettings()) {
  * `store.getSettings()` wysłane wprost jest wyciekiem klucza, a klucz
  * w odpowiedzi mostu leży w oknie, którego nikt już potem nie sprawdza.
  */
+/* ══ CO WOLNO POKAZAĆ TEMU KONTU ══
+
+   Kody funkcji, które serwer wpuścił dla zalogowanego użytkownika (patrz
+   main/admin.js). `null` znaczy „nie pytaliśmy albo nie było jak zapytać"
+   i wtedy widać wszystko — decyzją jest wyłączenie, nie milczenie. */
+let myFeatures = null;
+
+/**
+ * Ponowne pytanie serwera, co temu kontu wolno.
+ *
+ * Woła się to przy starcie, po zalogowaniu i po przestawieniu przełącznika
+ * w panelu — czyli w tych trzech chwilach, w których odpowiedź może się
+ * zmienić. Nie w kółko: to jest żądanie sieciowe, a stan zmienia się raz
+ * na tygodnie.
+ */
+async function refreshFeatures() {
+  const before = JSON.stringify(myFeatures);
+  myFeatures = await admin.mine(cloud);
+  if (JSON.stringify(myFeatures) !== before) tellSettings();
+  return myFeatures;
+}
+
 function visibleSettings(settings = store.getSettings()) {
-  return ownership.publicSettings(settings, ownerHere(), (stage) =>
+  const shown = ownership.publicSettings(settings, ownerHere(), (stage) =>
     engineReady(stage, settings),
   );
+  return {
+    ...shown,
+    /* Czego w tym oknie nie ma. Renderer dostaje gotową odpowiedź, a nie
+       regułę do policzenia — reguła („on / off / tylko zaproszeni") mieszka
+       w bazie i ma mieszkać w jednym miejscu. */
+    features: Object.fromEntries(
+      admin.FEATURES.map((item) => [item.code, admin.allowed(myFeatures, item.code)]),
+    ),
+  };
 }
 
 /** Zmiana ustawień do wszystkich okien — zawsze w postaci publicznej. */
@@ -3496,9 +3741,10 @@ function bindHotkeys() {
   });
   const backend = hotkeys.start(store.getSettings().hotkey);
   /* Kolejność ma znaczenie: silnik skrótu zaczyna od unregisterAll(),
-     więc skrót do zrzutu rejestrujemy PO nim. Odwrotnie zniknąłby przy
+     więc skróty własne rejestrujemy PO nim. Odwrotnie znikałyby przy
      każdym przepięciu klawiszy dyktowania — cicho, bez śladu. */
   bindShotHotkey();
+  bindQuickNoteHotkey();
   broadcast("hotkey:backend", { backend });
   return backend;
 }
@@ -3544,6 +3790,45 @@ function bindShotHotkey() {
   return held;
 }
 
+/**
+ * Skrót do szybkiej notatki.
+ *
+ * Domyślnie nie ma go wcale, tak samo jak przy zrzucie i z tego samego
+ * powodu: klawisze wybrane za użytkownika byłyby albo zajęte, albo o włos
+ * od zajętych. ⌘⇧N zostaje w menu i działa, gdy Cribro jest z przodu —
+ * ten skrót jest po to, żeby działało, gdy nie jest.
+ *
+ * @returns {boolean} czy klawisze udało się zająć
+ */
+/** Czy klawisze do szybkiej notatki są w tej chwili nasze. */
+let quickNoteHotkeyHeld = null;
+
+function bindQuickNoteHotkey() {
+  const accelerator = store.getSettings().hotkey?.quickNote;
+  quickNoteHotkeyHeld = null;
+  if (!accelerator) return false;
+
+  let held = false;
+  try {
+    held = globalShortcut.register(accelerator, () => quickNote());
+  } catch {
+    // Zapis, którego Electron nie rozumie („Cmd+", sam modyfikator).
+    held = false;
+  }
+  quickNoteHotkeyHeld = held;
+
+  /* Zajęte klawisze to jedyny sposób, w jaki ten skrót może umrzeć po
+     cichu — mówimy o tym raz, zamiast zostawiać człowieka z pytaniem,
+     czemu nic się nie dzieje. Menu działa dalej, więc funkcja nie ginie. */
+  if (!held) {
+    broadcast("pipeline:error", {
+      stage: "notatka",
+      message: `Skrót ${accelerator} do szybkiej notatki jest zajęty przez inną aplikację — wybierz inny w Ustawieniach. Z menu (⌘⇧N) działa dalej.`,
+    });
+  }
+  return held;
+}
+
 /* ── Zgody systemowe ──────────────────────────────────────────── */
 
 /** Jedno źródło prawdy o zgodach — dla IPC i dla obserwatora poniżej. */
@@ -3552,6 +3837,7 @@ function permissionSnapshot() {
     backend: hotkeys?.backend ?? "none",
     // null = skrótu nie ma wcale; false = klawisze zajął ktoś inny.
     shotHotkey: shotHotkeyHeld,
+    quickNoteHotkey: quickNoteHotkeyHeld,
     accessibility:
       process.platform === "darwin" ? systemPreferences.isTrustedAccessibilityClient(false) : true,
     microphone:
@@ -3712,6 +3998,7 @@ function registerIpc() {
 
   /* ── Tekst z ekranu ── */
   ipcMain.handle("shot:grab", () => grabScreenText());
+  ipcMain.handle("shot:file", (_e, filePath = null) => readImageFile(filePath));
   /* Okno melduje się samo, gdy jest gotowe je przyjąć. Wysyłanie zrzutu
      w chwili tworzenia okna trafiałoby w dokument, który jeszcze nie ma
      nasłuchu — a zrzut jest jeden i nie ma go skąd powtórzyć. */
@@ -3800,6 +4087,52 @@ function registerIpc() {
   });
 
   /**
+   * Cała szuflada jako jeden PDF.
+   *
+   * JEDEN PLIK, NIE KATALOG. Szuflada wyeksportowana w całości jedzie
+   * zwykle dalej — do skrzynki albo na papier — a tam jeden załącznik jest
+   * jedną rzeczą do otwarcia. Notatki zostają osobnymi kartkami, każda
+   * z własną metryczką i od nowej strony (patrz toBook w main/pdf.js).
+   *
+   * Kolejność jest TA SAMA, co na liście w Notatniku: od najnowszej.
+   * Kolejność inna niż na ekranie byłaby niespodzianką w gotowym pliku,
+   * czyli wtedy, kiedy najtrudniej ją poprawić.
+   *
+   * Puste notatki wypadają po drodze, ale ich obecność nie jest błędem —
+   * w szufladzie z dwudziestoma notatkami jedna pusta nie ma prawa
+   * przerwać eksportu pozostałych dziewiętnastu.
+   *
+   * @param {string|null} folder nazwa szuflady; null znaczy „bez szuflady"
+   */
+  ipcMain.handle("notes:exportFolder", async (_e, folder) => {
+    const wanted = folder === null || folder === undefined ? "" : String(folder).trim();
+    const items = store
+      .getNotes()
+      .filter((note) => String(note.folder ?? "").trim() === wanted)
+      .filter((note) => String(note.text ?? "").trim())
+      .sort((a, b) => Date.parse(b.updatedAt ?? b.at ?? 0) - Date.parse(a.updatedAt ?? a.at ?? 0))
+      .map((note) => ({ note, title: noteTitle(note) }));
+
+    if (!items.length) throw new Error("W tej szufladzie nie ma nic do zapisania.");
+
+    const label = wanted || "Bez szuflady";
+    const safeName = label.slice(0, 60).replace(/[\\/:*?"<>|]/g, "-");
+    const { canceled, filePath } = await dialog.showSaveDialog(notesWindow ?? mainWindow, {
+      title: "Zapisz szufladę jako PDF",
+      defaultPath: `${safeName}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (canceled || !filePath) return { canceled: true };
+
+    await folderToPdf(items, {
+      filePath,
+      documentTitle: label,
+      locale: store.getSettings().uiLanguage === "en" ? "en-GB" : "pl-PL",
+    });
+    return { canceled: false, filePath, notes: items.length };
+  });
+
+  /**
    * Notatka na stronę w Notion.
    *
    * Ta sama notatka wysłana drugi raz odświeża swoją stronę, a nie zakłada
@@ -3833,6 +4166,42 @@ function registerIpc() {
    * na wejściu jest gotowy tekst zamiast transkrypcji. Przydaje się, gdy
    * notatka powstała w biegu i jest posklejana z urywków.
    */
+  /**
+   * Zrzut ze schowka → plik na dysku → znacznik do wstawienia w notatce.
+   *
+   * ══ DWIE DROGI DO TEGO SAMEGO OBRAZKA ══
+   *
+   * Zwykłe ⌘V w notatce niesie obrazek w zdarzeniu wklejania i renderer
+   * podaje go tutaj jako `data:`. Ale zrzut zrobiony systemowym ⌃⌘⇧4 ląduje
+   * w schowku jako obraz, którego zdarzenie wklejania w Chromium czasem nie
+   * pokazuje wcale — a to jest DOKŁADNIE ten sposób, w jaki ludzie robią
+   * zrzuty. Dlatego przy pustym wejściu zaglądamy do schowka systemowego
+   * sami, przez Electrona, który widzi go w całości.
+   *
+   * Obrazek zapisujemy tam, gdzie zrzuty z „Tekstu z ekranu" (`zrzuty/`) —
+   * jedno miejsce na obrazki notatek, a nie drugie obok pierwszego. Notatka
+   * trzyma do niego adres, tak samo jak tamte.
+   */
+  ipcMain.handle("notes:pasteImage", (_event, dataUrl = null) => {
+    let image = null;
+    if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/")) {
+      image = nativeImage.createFromDataURL(dataUrl);
+    }
+    if (!image || image.isEmpty()) image = clipboard.readImage();
+    if (!image || image.isEmpty()) return { error: "W schowku nie ma obrazka." };
+
+    try {
+      const file = path.join(shotsDir(), stampName());
+      fs.writeFileSync(file, image.toPNG());
+      /* Oddajemy gotowy znacznik Markdowna, a nie samą ścieżkę: zakodowanie
+         adresu (katalog „Application Support" ma spację w nazwie) siedzi
+         w main/shot.js i ma zostać w jednym miejscu. */
+      return { markdown: imageLink(file, "wklejony obrazek"), file };
+    } catch (problem) {
+      return { error: `Nie udało się zapisać obrazka: ${problem.message}` };
+    }
+  });
+
   ipcMain.handle("notes:sift", async (event, id) => {
     const note = store.getNotes().find((item) => item.id === id);
     if (!note?.text.trim()) throw new Error("Notatka jest pusta.");
@@ -4662,6 +5031,9 @@ function registerIpc() {
     await cloud.signIn(email, password);
     cloudChanged();
     scheduleSync(500);
+    // Co temu kontu wolno zobaczyć, wie serwer — a od tej chwili jest kogo
+    // spytać (patrz main/admin.js).
+    void refreshFeatures();
     return cloudState();
   });
 
@@ -4674,11 +5046,54 @@ function registerIpc() {
     // Kursor idzie razem z sesją: po ponownym zalogowaniu ma się policzyć
     // wszystko od nowa, bo w międzyczasie mogło się zmienić po obu stronach.
     store.saveCloudState({ userId: null, cursor: null });
+    /* Bez konta nie ma kogo pytać — a „nie wiadomo" znaczy „pokaż
+       wszystko". Aplikacja bez zalogowania ma działać tak samo jak przed
+       wprowadzeniem przełączników. */
+    myFeatures = null;
     cloudChanged();
+    tellSettings();
     return cloudState();
   });
 
   ipcMain.handle("cloud:reset", (_e, email) => cloud.resetPassword(email));
+
+  /* ── Panel admina ───────────────────────────────────────────────
+     Bramka jest DWUKROTNA i to nie jest nadmiar. Tutaj sprawdzamy, czy
+     w ogóle wysyłać pytanie — żeby okno nie próbowało czegoś, na co i tak
+     nie ma prawa, i żeby odmowa brzmiała po ludzku. Prawdziwa granica leży
+     w bazie: `admin_users` i polityki zapisu pytają o adres z tokenu
+     i cudzemu oddają pustkę (patrz supabase/schema.sql). Zdjęcie tej
+     bramki tutaj niczego nie odblokowuje. */
+  const asAdmin = (what) => async (...args) => {
+    if (!ownerHere()) throw new Error("Panel admina nie należy do tego konta.");
+    if (!cloud.signedIn) throw new Error("Panel admina wymaga zalogowania w chmurze.");
+    return what(...args);
+  };
+
+  ipcMain.handle(
+    "admin:state",
+    asAdmin(async () => ({
+      users: await admin.users(cloud),
+      features: await admin.features(cloud),
+      me: cloud.user?.email ?? null,
+    })),
+  );
+
+  ipcMain.handle(
+    "admin:setFeature",
+    asAdmin(async (_e, { code, state } = {}) => {
+      const done = await admin.setState(cloud, code, state);
+      // Właściciel widzi wszystko, więc jemu samemu nic to nie zmienia —
+      // ale okno rysuje z tego stan przełącznika, a ten ma być świeży.
+      await refreshFeatures();
+      return done;
+    }),
+  );
+
+  ipcMain.handle(
+    "admin:grant",
+    asAdmin(async (_e, { code, userId, on } = {}) => admin.grant(cloud, code, userId, on)),
+  );
 
   /* Logowanie przez Google (a kiedyś przez Apple).
 
@@ -4702,6 +5117,7 @@ function registerIpc() {
       oauthPending = null;
       cloudChanged();
       scheduleSync(500);
+      void refreshFeatures();
       return cloudState();
     } catch (error) {
       oauthPending = null;
@@ -4861,6 +5277,21 @@ if (!app.requestSingleInstanceLock()) {
               ? "Od pięciu minut nie słychać Twojego mikrofonu — sprawdź, czy nie jest wyciszony."
               : "Od pięciu minut nie słychać drugiej strony — sprawdź, czy dźwięk rozmowy nie idzie do słuchawek Bluetooth.",
         }),
+      /* ══ DRUGA DROGA DO KOŃCA ROZMOWY ══
+
+         Okno rozmowy bywa nieśmiertelne: karta Meet zostaje otwarta po
+         wyjściu wszystkich, Zoom potrafi wisieć w pokoju z jedną osobą,
+         a spotkanie przy stole nie ma okna w ogóle. Wtedy jedynym śladem
+         końca jest to, że OD DZIESIĘCIU MINUT NIKT NIC NIE MÓWI.
+
+         Kończymy tym tylko nagrania należące do wykrytej rozmowy — z tego
+         samego powodu, dla którego robi to zniknięcie okna: dyktafon
+         położony na stole ma prawo przeleżeć kwadrans w ciszy. */
+      onIdle: () => {
+        if (!startedFromSpot) return;
+        if (store.getSettings().meetings?.stopWithMeeting === false) return;
+        void endWithRoom("od dziesięciu minut nikt nic nie mówi");
+      },
       onError: (message) => tellError("spotkanie", message),
     });
 
@@ -4904,7 +5335,14 @@ if (!app.requestSingleInstanceLock()) {
          projektu żadnej sesji i tak nie ma do czego przyłożyć, a okienko
          systemu pytające o hasło do czegoś, czego się nie używa, jest
          samym niepokojem. */
-      if (cloud.configured && cloud.restore()) cloudChanged();
+      if (cloud.configured && cloud.restore()) {
+        cloudChanged();
+        /* Co temu kontu wolno zobaczyć — pytamy RAZ, przy starcie. Odpowiedź
+           trzyma się do końca uruchomienia; przełącznik przestawiony
+           w panelu działa u ludzi od następnego otwarcia aplikacji i tak
+           jest to pomyślane (patrz main/admin.js). */
+        void refreshFeatures();
+      }
       watchCloud();
     }, 400);
     if (store.getSettings().widget?.enabled) showWidget(true);
@@ -4920,6 +5358,34 @@ if (!app.requestSingleInstanceLock()) {
        odsłania się pulpit — wtedy wygląda jak usterka, a nie jak coś,
        co ktoś położył na wierzchu. */
     watchBriefing();
+    /* ══ TRZECIA DROGA: KOMPUTER POSZEDŁ SPAĆ ══
+
+       Zamknięta klapa kończy każdą rozmowę, jaka na niej trwała — a przy
+       uśpieniu program nagrywający i tak przestaje dostawać dźwięk. Bez
+       tego wpis zostawał w stanie „recording" do rana i domykał go dopiero
+       ratunek przy następnym starcie (patrz recover w main/meeting.js),
+       czyli z błędem zamiast z podsumowaniem.
+
+       Zamykamy PORZĄDNIE i od razu: zapis, notatka, podsumowanie — tak samo
+       jak po naciśnięciu „Koniec". Uśpienie daje na to chwilę, a nagranie
+       domknięte ma nagłówek WAV i da się je otworzyć. */
+    powerMonitor.on("suspend", () => {
+      if (meetings?.recording) void endWithRoom("komputer poszedł spać");
+      /* Uśpiony komputer nie ma okien do oglądania, a spis okien kosztuje
+         kilkadziesiąt milisekund procesu głównego. Budzenie maszyny co osiem
+         sekund po to, żeby usłyszeć „nic tu nie ma", jest wydatkiem bez
+         odbiorcy — i widać go na baterii. */
+      watcher?.stop();
+    });
+    powerMonitor.on("resume", () => applyDetect());
+    /* Zablokowany ekran to nie to samo co uśpiony komputer — rozmowa potrafi
+       trwać dalej, gdy blokada zapadła sama. Dlatego przy blokadzie nagrania
+       NIE KOŃCZYMY; zwalniamy tylko pilnowanie, a nagranie chroni cisza
+       w obu torach (onIdle) i zniknięcie okna. */
+    powerMonitor.on("lock-screen", () => {
+      if (!meetings?.recording) watcher?.stop();
+    });
+    powerMonitor.on("unlock-screen", () => applyDetect());
     powerMonitor.on("unlock-screen", () => setTimeout(() => void showBriefing(), 2500));
     powerMonitor.on("resume", () => setTimeout(() => void showBriefing(), 4000));
 

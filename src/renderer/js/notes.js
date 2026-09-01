@@ -28,7 +28,19 @@ const {
   cleanTag,
   foldersOf,
   renameInPlace,
+  ensureIcons,
+  actionBar,
+  paintActions,
+  runAction,
+  runShare: shareNote,
+  specialsMenu,
 } = window.NotesCore;
+
+/* Pasek czynności i znaki specjalne powstają z kodu, nie z szablonu —
+   ten sam kod, co w zakładce Notatki i na kartce na pulpicie. */
+ensureIcons(document);
+document.getElementById("acts").outerHTML = actionBar();
+document.getElementById("charsMenu").innerHTML = specialsMenu();
 
 const GROUPS_KEY = "cribro:notepad-groups";
 
@@ -133,16 +145,6 @@ function renderList() {
  * być. Synchronizacja pomija to pole z samej swojej budowy — przyjmuje
  * z serwera tylko te pola, które zna (patrz toNote w main/sync.js).
  */
-async function toggleWidget(note) {
-  if (!note) return;
-  note.widget = !note.widget;
-  await api.notes.update(note.id, { widget: note.widget });
-  if (note.id === state.selected) {
-    $("#widgetPin").setAttribute("aria-pressed", String(!!note.widget));
-  }
-  flash(note.widget ? t("Notatka jest na wierzchu") : t("Notatka zeszła z wierzchu"));
-}
-
 async function togglePin(id) {
   const note = state.notes.find((item) => item.id === id);
   if (!note) return;
@@ -151,7 +153,7 @@ async function togglePin(id) {
   await api.notes.update(note.id, { pinned: note.pinned });
   // Sam pasek narzędzi, nie całe renderEditor: przełożenie pinezki nie ma
   // prawa przestawić kursora w tekście, który się właśnie pisze.
-  if (note.id === state.selected) $("#pin").setAttribute("aria-pressed", String(!!note.pinned));
+  if (note.id === state.selected) paintActions(document, note);
   renderList();
   translateTree();
 }
@@ -386,8 +388,7 @@ function renderEditor() {
     hour: "2-digit",
     minute: "2-digit",
   })}`;
-  $("#pin").setAttribute("aria-pressed", String(!!note.pinned));
-  $("#widgetPin").setAttribute("aria-pressed", String(!!note.widget));
+  paintActions(document, note);
   $("#words").textContent = t("{n} słów", { n: countWords(note.text) });
 
   // Cofnięcie pokazujemy tylko wtedy, gdy naprawdę jest do czego wracać.
@@ -580,29 +581,7 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  if (event.target.closest("#pin")) {
-    await togglePin(note.id);
-    return;
-  }
-
-  if (event.target.closest("#widgetPin")) {
-    await toggleWidget(note);
-    return;
-  }
-
   if (event.target.closest("#stamp")) return insertStamp();
-
-  if (event.target.closest("#siftNote")) {
-    flash(t("Przesiewam notatkę…"));
-    try {
-      const updated = await api.notes.sift(note.id);
-      Object.assign(note, updated);
-      render();
-    } catch (error) {
-      flash(String(error.message || error));
-    }
-    return;
-  }
 
   if (event.target.closest('[data-act="undo-sift"]')) {
     const restored = await api.notes.undoSift(note.id);
@@ -658,18 +637,49 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  if (event.target.closest("#share")) {
-    toggleMenu("#shareMenu", "#share");
+  /* Znak specjalny wchodzi jak wpisany z klawiatury. Menu zostaje otwarte:
+     znaki wstawia się seriami, a zamykanie po każdym kazałoby otwierać je
+     od nowa. */
+  const glyph = event.target.closest("[data-char]");
+  if (glyph) {
+    editor.insertText(glyph.dataset.char);
+    return;
+  }
+  if (event.target.closest("#chars")) {
+    toggleMenu("#charsMenu", "#chars");
     return;
   }
 
-  if (event.target.closest("#del")) {
-    await api.notes.remove(note.id);
-    state.notes = state.notes.filter((item) => item.id !== note.id);
-    state.selected = state.notes[0]?.id ?? null;
-    if (state.solo) return api.notes.closeWindow();
-    if (!state.notes.length) await newNote();
-    else render();
+  /* ── Dolny pasek czynności ──
+     `data-act` niosą też inne rzeczy w tym oknie (cofnięcie sita, etykiety,
+     szuflada), więc pytamy o KONKRETNE nazwy, a nie o sam atrybut. */
+  const act = event.target.closest("[data-act]")?.dataset.act;
+  if (act === "share") {
+    toggleMenu('[data-acts-menu="share"]', '[data-act="share"]');
+    return;
+  }
+  if (["pin", "desktop", "sift", "delete"].includes(act)) {
+    closeMenus();
+    try {
+      const gone = await runAction(act, note, {
+        api,
+        say: flash,
+        after: () => {
+          paintActions(document, note);
+          renderList();
+          if (act === "sift") render();
+        },
+      });
+      if (gone) {
+        state.notes = state.notes.filter((item) => item.id !== note.id);
+        state.selected = state.notes[0]?.id ?? null;
+        if (state.solo) return api.notes.closeWindow();
+        if (!state.notes.length) await newNote();
+        else render();
+      }
+    } catch (error) {
+      flash(String(error.message || error));
+    }
   }
 });
 
@@ -685,7 +695,8 @@ document.addEventListener("click", async (event) => {
 const BAR_MENUS = [
   ["#formatMenu", "#format"],
   ["#alignMenu", "#align"],
-  ["#shareMenu", "#share"],
+  ["#charsMenu", "#chars"],
+  ['[data-acts-menu="share"]', '[data-act="share"]'],
   ["#folderMenu", '[data-act="folder-menu"]'],
 ];
 
@@ -870,29 +881,11 @@ function flash(message) {
   flash.timer = setTimeout(() => renderEditor(), 2600);
 }
 
+/* Wysyłka siedzi w js/notes-core.js — tam, gdzie pasek, który ją wywołuje.
+   Trzy okna pokazują tę samą notatkę i mają wysyłać ją tak samo. */
 async function runShare(what, note) {
   try {
-    if (what === "apple") {
-      flash(t("Wysyłam do Notatek Apple…"));
-      await api.notes.toAppleNotes(note.id);
-      flash(t("Wysłane do Notatek Apple"));
-    } else if (what === "text") {
-      await api.system.copy(note.text);
-      flash(t("Tekst skopiowany"));
-    } else if (what === "md") {
-      await api.system.copy(await api.notes.markdown(note.id));
-      flash(t("Markdown skopiowany"));
-    } else if (what === "file") {
-      const result = await api.notes.export(note.id);
-      flash(result.canceled ? "" : t("Zapisane do pliku"));
-    } else if (what === "pdf") {
-      const result = await api.notes.pdf(note.id);
-      flash(result.canceled ? "" : t("Zapisane jako PDF"));
-    } else if (what === "notion") {
-      flash(t("Wysyłam do Notion…"));
-      const result = await api.notes.toNotion(note.id);
-      flash(result.updated ? t("Zaktualizowane w Notion") : t("Wysłane do Notion"));
-    }
+    await shareNote(what, note, { api, say: flash });
   } catch (error) {
     flash(String(error.message || error));
   }

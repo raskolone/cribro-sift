@@ -109,8 +109,76 @@ function grabRegion({ dir = os.tmpdir(), run = execFile } = {}) {
   });
 }
 
+/**
+ * Obrazki, które model umie przeczytać — i jak je rozpoznać.
+ *
+ * PO ZAWARTOŚCI, NIE PO ROZSZERZENIU. Plik nazwany `.png`, który w środku
+ * jest JPEG-iem, to nie przypadek szczególny — tak wychodzi z połowy
+ * narzędzi do zrzutów i z każdego „zapisz jako". Wysłany z nagłówkiem
+ * `data:image/png` bywa odrzucany przez dostawcę, a błąd, który wtedy
+ * wraca, mówi o czymkolwiek innym niż o prawdziwej przyczynie.
+ *
+ * Pierwsze bajty nie kłamią, więc pytamy ich. WEBP wymaga dwóch spojrzeń:
+ * `RIFF` na początku ma też plik dźwiękowy, więc dopiero znacznik na
+ * dwunastym bajcie mówi, że to obrazek.
+ */
+const MAGIC = [
+  { mime: "image/png", head: [0x89, 0x50, 0x4e, 0x47] },
+  { mime: "image/jpeg", head: [0xff, 0xd8, 0xff] },
+  { mime: "image/gif", head: [0x47, 0x49, 0x46, 0x38] },
+];
+
+function sniffImage(buffer) {
+  for (const { mime, head } of MAGIC) {
+    if (head.every((byte, i) => buffer[i] === byte)) return mime;
+  }
+  if (buffer.slice(0, 4).toString("latin1") === "RIFF" && buffer.slice(8, 12).toString("latin1") === "WEBP") {
+    return "image/webp";
+  }
+  return null;
+}
+
+/**
+ * Obrazek z pliku na dysku — druga droga do tej samej funkcji.
+ *
+ * Zaznaczanie ekranu (`grabRegion`) jest dobre, kiedy rzecz do przeczytania
+ * jest właśnie na ekranie. Nie jest dobre, kiedy przyszła załącznikiem,
+ * leży w Pobranych albo ktoś przysłał ją telefonem — a to jest równie
+ * częste. Sam odczyt jest w obu wypadkach ten sam, więc różnią się
+ * wyłącznie wejściem.
+ *
+ * Odmowy są tu jawne i osobne, bo mają osobne wyjścia: za duży plik da się
+ * przyciąć, a pliku, który nie jest obrazkiem, nie da się nic zrobić.
+ *
+ * @returns {{buffer: Buffer, bytes: number, mime: string}}
+ * @throws {Error} gdy pliku nie da się przeczytać, nie jest obrazkiem
+ *                 albo jest większy niż to, co przyjmuje dostawca
+ */
+function imageFromFile(filePath) {
+  let buffer;
+  try {
+    buffer = fs.readFileSync(filePath);
+  } catch (problem) {
+    throw new Error(`Nie udało się otworzyć pliku: ${problem.code ?? problem.message}`);
+  }
+
+  const mime = sniffImage(buffer);
+  if (!mime) {
+    throw new Error(
+      `To nie jest obrazek, który da się przeczytać — model przyjmuje PNG, JPEG, GIF i WEBP.`,
+    );
+  }
+  if (buffer.length > MAX_BYTES) {
+    throw new Error(
+      `Obrazek jest za duży (${Math.round(buffer.length / 1024 / 1024)} MB, najwyżej ${Math.round(MAX_BYTES / 1024 / 1024)} MB).`,
+    );
+  }
+
+  return { buffer, bytes: buffer.length, mime };
+}
+
 /** Żądanie do OpenAI. Osobno od wysyłki, żeby dało się sprawdzić bez sieci. */
-function buildRequest(image, model) {
+function buildRequest(image, model, mime = "image/png") {
   return {
     model,
     messages: [
@@ -123,7 +191,7 @@ function buildRequest(image, model) {
             // „high" tnie obrazek na kafle 512 px i czyta każdy z osobna.
             // Przy zrzucie fragmentu to kilka kafli, czyli grosze — a bez
             // tego drobny druk (stopka, przypis, kod) wychodzi zgadywanką.
-            image_url: { url: `data:image/png;base64,${image.toString("base64")}`, detail: "high" },
+            image_url: { url: `data:${mime};base64,${image.toString("base64")}`, detail: "high" },
           },
         ],
       },
@@ -141,7 +209,7 @@ function buildRequest(image, model) {
  *
  * @returns {Promise<{text: string, provider: string, model: string, missingKey?: boolean}>}
  */
-async function readText(image, settings) {
+async function readText(image, settings, { mime = "image/png" } = {}) {
   const config = settings.shot ?? {};
   const provider = config.provider ?? "openai";
   const model = config.model || "gpt-5.6-luna";
@@ -165,7 +233,7 @@ async function readText(image, settings) {
   const response = await fetch(OPENAI_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(buildRequest(image, model)),
+    body: JSON.stringify(buildRequest(image, model, mime)),
   });
 
   if (!response.ok) throw new Error(await describeError(response, "OpenAI"));
@@ -240,6 +308,8 @@ module.exports = {
   grabRegion,
   readText,
   buildRequest,
+  imageFromFile,
+  sniffImage,
   compose,
   imageLink,
   fileUrl,

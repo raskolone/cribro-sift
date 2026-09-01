@@ -61,11 +61,48 @@
   const IMAGE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
   const SLOT = "\u0000";
 
+  /* ── Rozmiar obrazka ──────────────────────────────────────────
+     Zrzut wchodzi do notatki w pełnej szerokości kolumny i przez długi
+     czas nie dało się z nim zrobić NIC WIĘCEJ: ani zmniejszyć, ani
+     przesunąć, ani skasować. Rozmiar musi więc gdzieś zamieszkać — i musi
+     to być PLIK, nie okno, bo notatka zamknięta i otwarta jutro ma
+     wyglądać tak samo jak dziś.
+
+     Zapisujemy go w opisie obrazka, za kreską: `![zrzut|60%](adres)`.
+     Trzy powody akurat tak:
+
+       1. Notatka zostaje Markdownem. Cudzy edytor pokaże obrazek
+          normalnie, a w opisie zobaczy „zrzut|60%" — dziwne, ale nie
+          zepsute. Własny atrybut w HTML-u nie przeżyłby zapisu do .md.
+       2. Procent, a nie piksele. Notatkę czyta się w oknie głównym, na
+          kartce na pulpicie i w PDF-ie, a te mają różne szerokości —
+          „600 px" znaczy w każdym z nich co innego, „60% kolumny" znaczy
+          wszędzie to samo.
+       3. Pełna szerokość NIE ZAPISUJE SIĘ WCALE. Dzięki temu wszystkie
+          notatki, które już leżą na dysku, zostają co do znaku takie,
+          jakie są — a obrazek nietknięty nie ma po sobie żadnego śladu. */
+  const IMAGE_WIDTH = /^([\s\S]*?)\s*\|\s*(\d{1,3})\s*%?\s*$/;
+  /** Poniżej dziesięciu procent kolumny zrzut przestaje być czymkolwiek. */
+  const MIN_WIDTH = 10;
+
+  const clampWidth = (value) => Math.max(MIN_WIDTH, Math.min(100, Math.round(value)));
+
   /** Znaczniki wewnątrz linii. Ucieczka znaków idzie pierwsza, zawsze. */
   function inlineToHtml(text) {
     const images = [];
     let out = escapeHtml(text).replace(IMAGE, (_all, alt, src) => {
-      images.push(`<img src="${src}" alt="${alt}" />`);
+      const sized = IMAGE_WIDTH.exec(alt);
+      const label = sized ? sized[1] : alt;
+      const width = sized ? clampWidth(Number(sized[2])) : null;
+      /* Szerokość stoi i w atrybucie, i w stylu. Atrybut jest tym, co
+         wraca do pliku (patrz inlineToMarkdown); styl jest tym, co widać.
+         Rozdzielone, bo edytor przestawia rozmiar ciągnięciem za róg
+         i musi mieć gdzie zapisać liczbę bez zaglądania w CSS. */
+      images.push(
+        width === null
+          ? `<img src="${src}" alt="${label}" />`
+          : `<img src="${src}" alt="${label}" data-width="${width}" style="width:${width}%" />`,
+      );
       return `${SLOT}${images.length - 1}${SLOT}`;
     });
     out = out.replace(/`([^`\n]+)`/g, "<code>$1</code>");
@@ -231,7 +268,14 @@
     // pętla niżej składa dzieci, a ich tu nie ma.
     if (tag === "img") {
       const src = attr(node, "src");
-      return src ? `![${attr(node, "alt") ?? ""}](${src})` : "";
+      if (!src) return "";
+      const alt = attr(node, "alt") ?? "";
+      const width = Number(attr(node, "data-width"));
+      // Pełna szerokość nie zapisuje się wcale — patrz IMAGE_WIDTH wyżej.
+      const size = Number.isFinite(width) && width > 0 && width < 100
+        ? `|${clampWidth(width)}%`
+        : "";
+      return `![${alt}${size}](${src})`;
     }
 
     const inner = childrenOf(node).map(inlineToMarkdown).join("");

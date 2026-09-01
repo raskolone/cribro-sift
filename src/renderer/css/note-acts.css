@@ -1,0 +1,222 @@
+/* ─────────────────────────────────────────────────────────────
+   Pasek czynności pod notatką — i menu, które z niego wychodzą.
+
+   Osobny arkusz, bo ten sam pasek stoi w TRZECH oknach o trzech różnych
+   szkieletach: zakładka Notatki w oknie głównym (app.css), osobne okno
+   Notatnika (notes.css) i kartka na pulpicie (własne style w sticky.html).
+   Dopisany do któregokolwiek z tych trzech byłby niewidoczny w dwóch
+   pozostałych — a rozkopiowany do wszystkich rozjechałby się przy
+   pierwszej poprawce.
+
+   Markup składa actionBar w js/notes-core.js. Stąd klasy bez przedrostka
+   okna: `note-act`, a nie `notes__act`.
+   ───────────────────────────────────────────────────────────── */
+
+/* ══ ILE MIEJSCA MA PASEK ══
+
+   Stopka notatki bywa szeroka na całe okno i bywa wąska na pół kafla —
+   w zakładce Notatki połowę zabiera lista, a kartka na pulpicie miewa
+   trzysta pikseli. Pięć podpisanych przycisków nie mieści się w żadnej
+   z tych dwóch węższych sytuacji: przy pierwszej próbie „Usuń" wychodziło
+   poza krawędź kafla, czyli przycisk BYŁ, ale nie dało się w niego trafić.
+
+   Pasek pyta więc o szerokość SWOJEJ stopki, a nie okna. Okno bywa szerokie
+   przy wąskim panelu notatki i pytanie o nie odpowiadałoby na co innego.
+   Poniżej progu zostają same znaczki z dymkami — mniej czytelne, ale
+   widoczne w całości, a to jest ważniejsze.
+
+   Trzy nazwy, bo stopka nazywa się inaczej w każdym z trzech okien. */
+.notes__foot,
+.editor__foot,
+.foot {
+  container-type: inline-size;
+}
+
+/* Próg zmierzony, nie zgadnięty: pięć podpisanych przycisków to około
+   550 px, stan zapisu i licznik słów kolejne 180. Poniżej siedmiuset
+   czterdziestu pasek zaczyna wychodzić poza kafel. */
+@container (max-width: 740px) {
+  .note-act span {
+    display: none;
+  }
+  .note-act {
+    padding: 0 8px;
+  }
+}
+
+/* ── Przyciski ─────────────────────────────────
+   Przypnij · Na pulpit · Przesiej · Udostępnij · Usuń.
+
+   Ikona Z PODPISEM, a nie sama ikona. Górny pasek może sobie pozwolić na
+   same znaczki, bo pogrubienie i lista mają rysunki, które wszyscy znają
+   z każdego edytora na świecie. Tutaj żaden nie jest oczywisty — „na
+   pulpit" nie ma powszechnego symbolu, a „przesiej" nie ma go w ogóle,
+   bo to czynność tej jednej aplikacji. Trzy litery obok znaczka kosztują
+   mniej niż zgadywanka, a przy „Usuń" zgadywanka kosztuje notatkę.
+
+   Klasy bez przedrostka `notes__`, bo ten sam pasek stoi na kartce na
+   pulpicie, w oknie o zupełnie innym szkielecie (patrz sticky.html). */
+.note-acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.note-acts__slot {
+  position: relative;
+}
+.note-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  /* Podpis w JEDNEJ linii. Bez tego „Zdejmij z pulpitu" łamał się na trzy
+     wiersze i rozpychał całą stopkę na wysokość akapitu. */
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--t),
+    color var(--t);
+}
+.note-act svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.note-act:hover {
+  background: var(--accent-08);
+  color: var(--accent);
+}
+
+/* Włączone znaczy WIDOCZNIE włączone: notatka przypięta i notatka leżąca
+   na pulpicie to stany, które trwają — a przycisk jest jedynym miejscem,
+   w którym widać, że trwają. */
+.note-act[aria-pressed="true"] {
+  background: var(--accent-12);
+  color: var(--accent);
+}
+
+/* Kasowanie czerwienieje dopiero pod kursorem. Czerwony przycisk stojący
+   tak przez cały czas ściąga oko do jedynej czynności w tym pasku, której
+   nikt nie szuka. */
+.note-act--danger:hover {
+  background: var(--danger-12, rgb(240 114 111 / 0.14));
+  color: var(--danger);
+}
+
+/* Menu „Udostępnij" wychodzi W GÓRĘ — pasek stoi przy dolnej krawędzi
+   okna i menu opuszczone w dół wyszłoby poza nie. */
+.note-acts__menu {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  min-width: 218px;
+  padding: 5px;
+  border-radius: var(--r-md);
+  background-color: var(--glass);
+  background-image: var(--glass-fill);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.note-acts__menu[hidden] {
+  display: none;
+}
+.note-acts__menu button {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  transition:
+    background var(--t),
+    color var(--t);
+}
+.note-acts__menu button:hover {
+  background: var(--accent-08);
+  color: var(--accent);
+}
+.note-acts__sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--line-soft);
+}
+
+/* ── Znaki specjalne ─────────────────────────────────────────────
+   Myślnik, polski cudzysłów, strzałka, stopień. Rzeczy, których nie ma na
+   klawiaturze, a które w notatce padają co chwilę — i po które dziś szło
+   się do przeglądarki po skopiowanie. */
+/* Dwie nazwy, bo menu paska nazywa się inaczej w oknie głównym
+   (`.notes__menu`) i w osobnym Notatniku (`.menu`) — a zawartość jest ta
+   sama i pochodzi z jednego miejsca (specialsMenu w js/notes-core.js). */
+.notes__menu--chars,
+.menu--chars {
+  min-width: 296px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 10px;
+  gap: 10px;
+}
+.chars__group b {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  font-weight: 400;
+}
+.chars__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.chars__row button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  /* Krój tekstowy, nie interfejsowy: te przyciski POKAZUJĄ znak, który
+     zaraz wejdzie do notatki, więc ma wyglądać tak, jak będzie wyglądał
+     w niej. */
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--t),
+    border-color var(--t);
+}
+.chars__row button:hover {
+  background: var(--accent-08);
+  border-color: var(--accent-25);
+  color: var(--accent);
+}

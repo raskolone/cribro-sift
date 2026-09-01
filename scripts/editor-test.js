@@ -56,6 +56,31 @@ const toHtml = [
     "<p>30*40 i snake_case_nazwa</p>",
   ],
   ["Znaki HTML w treści są bezpieczne", "a < b & c", "<p>a &lt; b &amp; c</p>"],
+  [
+    "Zrzut bez rozmiaru zostaje w pełnej szerokości",
+    "![zrzut ekranu](file:///a/b.png)",
+    '<p><img src="file:///a/b.png" alt="zrzut ekranu" /></p>',
+  ],
+  [
+    "Zrzut zmniejszony niesie swój rozmiar",
+    "![zrzut|60%](file:///a/b.png)",
+    '<p><img src="file:///a/b.png" alt="zrzut" data-width="60" style="width:60%" /></p>',
+  ],
+  [
+    "Rozmiar mniejszy od najmniejszego podciąga się do niego",
+    "![zrzut|2%](f.png)",
+    '<p><img src="f.png" alt="zrzut" data-width="10" style="width:10%" /></p>',
+  ],
+  [
+    "Kreska w opisie bez liczby zostaje opisem",
+    "![wykres|kwartał](f.png)",
+    '<p><img src="f.png" alt="wykres|kwartał" /></p>',
+  ],
+  [
+    "Podkreślenie w nazwie pliku nie robi kursywy",
+    "![](file:///a/moj_zrzut_ekranu.png)",
+    '<p><img src="file:///a/moj_zrzut_ekranu.png" alt="" /></p>',
+  ],
   ["Lista", "- pierwszy\n- drugi", "<ul><li>pierwszy</li><li>drugi</li></ul>"],
   [
     "Lista zadań ze stanem",
@@ -88,6 +113,26 @@ const toMarkdown = [
     "Znacznik obejmuje słowo, nie spację obok niego",
     root(el("p", {}, [text("koniec "), el("strong", {}, [text("zdania ")])])),
     "koniec **zdania**",
+  ],
+  [
+    "Zmieniony rozmiar wraca do pliku",
+    root(el("p", {}, [el("img", { src: "f.png", alt: "zrzut", "data-width": "45" })])),
+    "![zrzut|45%](f.png)",
+  ],
+  [
+    "Pełna szerokość nie zapisuje się wcale",
+    root(el("p", {}, [el("img", { src: "f.png", alt: "zrzut", "data-width": "100" })])),
+    "![zrzut](f.png)",
+  ],
+  [
+    "Obrazek bez adresu nie zostawia po sobie nawiasów",
+    root(el("p", {}, [el("img", { alt: "nic" })])),
+    "",
+  ],
+  [
+    "Opis obrazka wraca taki, jaki wpisano",
+    root(el("p", {}, [el("img", { src: "f.png", alt: "tablica po zajęciach", "data-width": "70" })])),
+    "![tablica po zajęciach|70%](f.png)",
   ],
   [
     "Puste pogrubienie nie zostawia gwiazdek",
@@ -191,6 +236,10 @@ const NOTE = [
   "",
   "> Ania:",
   "> zróbmy to w czwartek",
+  "",
+  "![tablica po zajęciach|55%](file:///Users/x/Application%20Support/zrzut.png)",
+  "",
+  "![zrzut bez rozmiaru](file:///Users/x/inny.png)",
 ].join("\n");
 
 const once = htmlToMarkdown(parse(markdownToHtml(NOTE)));

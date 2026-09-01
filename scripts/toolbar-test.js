@@ -75,20 +75,46 @@ ok("Każdy rysunek niesie fill albo stroke — żaden nie wyjdzie czarną plamą
 
 const REF = /href="#([^"]+)"/g;
 
+/* Nazwa składana w kodzie (`href="#${act.icon}"`) nie jest nazwą symbolu
+   i nie da się jej sprawdzić czytaniem tekstu. Pilnuje jej za to sprawdzenie
+   niżej: te ikony pochodzą ze spisu, a spis porównujemy z listą czynności. */
+const literal = (name) => !name.includes("${");
+
+/**
+ * Symbole, które kod DOKŁADA w locie.
+ *
+ * Pasek czynności pod notatką stoi w trzech oknach o trzech różnych
+ * szkieletach, a jego ikon nie ma w żadnym z nich — wstrzykuje je
+ * `ensureIcons` z js/notes-core.js przy montażu. Z punktu widzenia tego
+ * testu są zdefiniowane wszędzie tam, gdzie okno wczytuje ten plik; gdyby
+ * nie były, przycisk byłby pusty i nikt by tego nie zgłosił.
+ */
+const CORE = read("js/notes-core.js");
+const INJECTED = [...CORE.matchAll(/^\s{4}"([\w-]+)":$/gm)].map((match) => match[1]);
+assert.ok(INJECTED.length >= 5, "nie znalazłem spisu ikon w js/notes-core.js — zmieniła się jego postać");
+
+function scriptsOf(page) {
+  return [...read(page).matchAll(/<script src="([^"]+)"/g)]
+    .map(([, src]) => path.join(RENDERER, src))
+    .filter((file) => fs.existsSync(file));
+}
+
 function drawnBy(page) {
   const source = read(page);
   const names = [...source.matchAll(REF)].map((match) => match[1]);
-  for (const [, src] of source.matchAll(/<script src="([^"]+)"/g)) {
-    const file = path.join(RENDERER, src);
-    if (!fs.existsSync(file)) continue;
+  for (const file of scriptsOf(page)) {
     names.push(...[...fs.readFileSync(file, "utf8").matchAll(REF)].map((match) => match[1]));
   }
-  return new Set(names);
+  return new Set(names.filter(literal));
 }
 
 for (const page of PAGES) {
   const source = read(page);
   const defined = new Set([...source.matchAll(/<symbol id="([^"]+)"/g)].map((match) => match[1]));
+  // Okno, które wczytuje notes-core.js, dostaje jego ikony w locie.
+  if (scriptsOf(page).some((file) => file.endsWith("notes-core.js"))) {
+    for (const name of INJECTED) defined.add(name);
+  }
   const used = drawnBy(page);
 
   for (const name of used) {
@@ -97,9 +123,32 @@ for (const page of PAGES) {
 }
 ok("Każde odwołanie trafia w symbol z tego samego okna");
 
-/* ── 3. Pasek notatki czyta się w grupach ─────────────────────────
-   Kreski nie są ozdobą: to po nich widać, gdzie kończy się „piszę",
-   a zaczyna „cała notatka" — i dlaczego kosz stoi sam. */
+/* ── Pasek czynności: każda czynność ma swój rysunek ──────────────
+   Ikony paska są składane z nazwy (`href="#${act.icon}"`), więc powyższe
+   sprawdzenie ich nie widzi. Literówka w nazwie zostawiłaby pusty przycisk,
+   który dalej działa — czyli dokładnie ten rodzaj usterki, dla którego ten
+   plik powstał. Pytamy więc wprost: czy każda czynność wskazuje ikonę,
+   którą ensureIcons naprawdę dokłada. */
+{
+  const icons = [...CORE.matchAll(/\bicon:\s*"([\w-]+)"/g)].map((match) => match[1]);
+  assert.ok(icons.length >= 5, "spis czynności w js/notes-core.js zmienił postać");
+  for (const icon of icons) {
+    assert.ok(
+      INJECTED.includes(icon),
+      `pasek czynności rysuje „#${icon}", a ensureIcons takiej ikony nie dokłada`,
+    );
+  }
+  ok("Każda czynność w pasku ma rysunek, który naprawdę powstaje");
+}
+
+/* ── 3. Górny pasek pisze, dolny decyduje ────────────────────────
+   Podział, który powstał po tym, jak wszystko stało w jednym rzędzie:
+   pogrubienie obok kasowania, przypinanie obok kursywy. Dwie różne rzeczy
+   wyglądały tam na jedną — a przy „Usuń" pomyłka kosztuje notatkę.
+
+   GÓRA to narzędzia PISANIA. Sięga się po nie w trakcie pisania, dziesiątki
+   razy. DÓŁ to czynności NA CAŁEJ NOTATCE: przypnij, na pulpit, przesiej,
+   udostępnij, usuń. Robi się je raz, kiedy notatka jest już napisana. */
 
 const notes = read("notes.html");
 const tools = notes.slice(
@@ -109,21 +158,51 @@ const tools = notes.slice(
 
 assert.equal(
   (tools.match(/class="editor__sep"/g) ?? []).length,
-  3,
-  "pasek notatki ma trzy kreski: za dyktowaniem, za pisaniem i przed koszem",
+  2,
+  "górny pasek ma dwie kreski: za dyktowaniem i za narzędziami pisania",
 );
-ok("Pasek notatki jest rozdzielony na grupy trzema kreskami");
+ok("Górny pasek jest rozdzielony na grupy dwiema kreskami");
 
-/* Kosz jest ostatni i za własną kreską. Sąsiadujący z pinezką był jedną
-   pomyłką od skasowania notatki, którą chciało się tylko przypiąć. */
-const lastSep = tools.lastIndexOf('class="editor__sep"');
-const trash = tools.indexOf('id="del"');
-assert.ok(trash > lastSep, "kosz ma stać za ostatnią kreską");
-assert.ok(
-  !/id="(pin|widgetPin|share)"/.test(tools.slice(lastSep)),
-  "za ostatnią kreską ma być sam kosz — nic, w co da się trafić zamiast niego",
-);
-ok("Kosz stoi sam, za własną kreską, na końcu paska");
+/* Czynności na całej notatce NIE MAJĄ prawa stać w górnym pasku. Kasowanie
+   sąsiadujące z kursywą było jedną pomyłką od skasowania notatki, którą
+   chciało się tylko pochylić. */
+for (const [id, co] of [
+  ["del", "kosz"],
+  ["pin", "pinezka"],
+  ["widgetPin", "kartka na pulpicie"],
+  ["share", "udostępnianie"],
+  ["siftNote", "sito"],
+]) {
+  assert.ok(
+    !new RegExp(`id="${id}"`).test(tools),
+    `${co} nie ma czego szukać w górnym pasku — czynności na notatce stoją na dole`,
+  );
+}
+ok("W górnym pasku nie ma żadnej czynności na całej notatce");
+
+/* Pasek czynności stoi w KAŻDYM oknie, które pokazuje notatkę. Notatka jest
+   jedna; okno, w którym nie da się jej przypiąć ani skasować, byłoby oknem
+   z inną notatką. */
+for (const page of ["notes.html", "sticky.html"]) {
+  assert.ok(
+    /id="acts"/.test(read(page)),
+    `${page}: nie ma miejsca na pasek czynności pod notatką`,
+  );
+}
+{
+  const core = read("js/notes-core.js");
+  const ids = [...core.matchAll(/\{ id: "([\w-]+)", icon:/g)].map((match) => match[1]);
+  assert.deepEqual(
+    ids,
+    ["pin", "desktop", "sift", "share", "delete"],
+    "pasek czynności ma pięć przycisków w tej kolejności — usuwanie jako ostatnie",
+  );
+  assert.ok(
+    /id: "delete"[^}]*danger: true/.test(core),
+    "kasowanie ma być oznaczone jako czynność nieodwracalna (danger)",
+  );
+}
+ok("Każde okno z notatką ma ten sam pasek czynności, z koszem na końcu");
 
 /* ── 4. Formaty z paska to formaty, które edytor zna ──────────────
    Przycisk z literówką w `data-format` nie robi nic i nie mówi nic. */

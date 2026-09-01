@@ -284,6 +284,62 @@ const EN = {
   Przypnij: "Pin",
   Odepnij: "Unpin",
   Usuń: "Delete",
+
+  /* Pasek czynności pod notatką — ten sam w Notatniku i na kartce
+     (patrz actionBar w renderer/js/notes-core.js). */
+  "Na pulpit": "To desktop",
+  "Z pulpitu": "Off the desktop",
+  Przesiej: "Sift",
+  Przypięta: "Pinned",
+  Odpięta: "Unpinned",
+
+  /* Znaki specjalne. Nazwy grup — same znaki tłumaczenia nie mają
+     i przebieg po drzewie ich nie tyka. */
+  "Znaki specjalne": "Special characters",
+  Interpunkcja: "Punctuation",
+  Strzałki: "Arrows",
+  "Liczby i miary": "Numbers and units",
+  Waluty: "Currency",
+  Znaki: "Symbols",
+  Greka: "Greek",
+
+  "Wklejam obrazek…": "Pasting image…",
+  "Obrazek wklejony": "Image pasted",
+
+  /* Panel admina — zakładka właściciela, na czas wdrażania. */
+  "Panel admina": "Admin panel",
+  Panel: "Panel",
+  "Kto się zarejestrował i co widzi. Na czas wdrażania.":
+    "Who signed up and what they see. For the rollout.",
+  Funkcje: "Features",
+  "Co widzą subskrybenci. Zmiana działa u nich od następnego uruchomienia aplikacji.":
+    "What subscribers see. The change reaches them on their next launch.",
+  Zarejestrowani: "Registered",
+  "Konta z bazy. Znaczek w kolumnie funkcji znaczy: nadane imiennie.":
+    "Accounts from the database. A tick in a feature column means: granted by name.",
+  "Jeszcze nikogo.": "Nobody yet.",
+  "Pytam serwer…": "Asking the server…",
+  "Panel nie odpowiada": "The panel is not answering",
+  "Spróbuj ponownie": "Try again",
+  Wszyscy: "Everyone",
+  Zaproszeni: "Invited",
+  Nikt: "Nobody",
+  "Funkcja jest widoczna dla każdego zalogowanego.":
+    "Visible to everyone signed in.",
+  "Widzą ją tylko ci, którym nadano ją imiennie.":
+    "Only people granted it by name can see it.",
+  "Nie widzi jej nikt poza Tobą — masz czym testować.":
+    "Nobody but you sees it — so you have something to test with.",
+  Adres: "Address",
+  Nazwa: "Name",
+  Plan: "Plan",
+  "Konto od": "Member since",
+  Ostatnio: "Last seen",
+  niepotwierdzony: "unconfirmed",
+  "brak w bazie — wgraj schemat": "missing in the database — load the schema",
+  "Nadaj dostęp": "Grant access",
+  "Odbierz dostęp": "Revoke access",
+  "Zapisane.": "Saved.",
   Przypięte: "Pinned",
   przypięta: "pinned",
   zostało: "kept",
@@ -446,8 +502,10 @@ const EN = {
   "Stuknij te same klawisze dwa razy pod rząd — nagrywanie zostaje włączone, ręce wolne. Kolejne stuknięcie kończy i przesiewa. Działa zawsze, obok trzymania: nie ma czego włączać, bo o sposobie decyduje gest, a nie ustawienie.":
     "Tap the same keys twice — recording stays on, hands free. Another tap ends it and sifts. Always on, alongside holding: there is nothing to switch, because the gesture decides, not a setting.",
   "Szybka notatka": "Quick note",
-  "Otwiera małe okno z jednym polem tekstowym. Z menu aplikacji: ⌘⇧N. Skrótu globalnego, działającego spoza Cribro, jeszcze nie ma.":
-    "Opens a small window with a single text field. From the app menu: ⌘⇧N. A global shortcut, working from outside Cribro, is not there yet.",
+  "Otwiera małe okno z jednym polem tekstowym. ⌘⇧N działa, gdy Cribro jest z przodu; własne klawisze działają zawsze — po to, żeby zdanie, które przyszło do głowy w cudzym oknie, nie musiało czekać.":
+    "Opens a small window with a single text field. ⌘⇧N works while Cribro is in front; your own keys work always — so that a sentence you thought of in someone else's window does not have to wait.",
+  "Te klawisze zajęła inna aplikacja. Z menu działa dalej.":
+    "Another app has taken these keys. It still works from the menu.",
   "nie ustawiono": "not set",
   Wypróbuj: "Try it",
   Konflikty: "Conflicts",
@@ -881,6 +939,27 @@ const EN = {
   "Czyta tekst z obrazka. Zadanie odtwórcze, więc domyślnie najtańszy model — różnicę widać na rachunku, nie w wyniku.":
     "Reads the text off the image. A copying task, so the cheapest model by default — the difference shows on the bill, not in the result.",
   "Skrót skasowany — zostaje menu.": "Shortcut cleared — the menu remains.",
+  "Skrót skasowany — zostaje ⌘⇧N przy Cribro z przodu.":
+    "Shortcut cleared — ⌘⇧N remains while Cribro is in front.",
+  "Wróciło ⌃⌥ — domyślny komplet.": "⌃⌥ is back — the default pair.",
+  "Tekst z obrazka": "Text from an image",
+  "Do PDF": "To PDF",
+  "Cała szuflada jako jeden PDF": "The whole drawer as a single PDF",
+  "Zapisane: {ile} notatek w jednym PDF-ie.": "Saved: {ile} notes in one PDF.",
+  "W tej szufladzie nie ma nic do zapisania.": "There is nothing to save in this drawer.",
+  "Wybierz plik…": "Choose a file…",
+  "Wybierz obrazek do przeczytania": "Choose an image to read",
+  "Obrazki": "Images",
+  "Zaznaczenie to krzyżyk na ekranie: spacja łapie całe okno, Escape przerywa. Obrazek, który już leży na dysku — załącznik, zdjęcie z telefonu, plik z Pobranych — nie musi przez ekran przechodzić: czyta się go wprost.":
+    "Selecting gives you a crosshair: space grabs the whole window, Escape cancels. An image already on disk — an attachment, a photo from your phone, a file in Downloads — does not have to go through the screen: it is read directly.",
+  "Przywróć ⌃⌥": "Restore ⌃⌥",
+  "Do trzymania biorą się same modyfikatory — bez litery.":
+    "Holding takes modifiers only — no letter.",
+  "Najwyżej trzy klawisze — czwarty nie zostawia ręki.":
+    "Three keys at most — a fourth leaves no hand free.",
+  "{skrót} ustawione do trzymania.": "{skrót} set for holding.",
+  "Przytrzymaj dwa albo trzy modyfikatory naraz — ⌘, ⌃, ⌥, ⇧. Sama litera tu nie wejdzie: trzymanie ⌥ i „S” wsypywałoby „s” do aplikacji, do której właśnie mówisz. Escape przerywa.":
+    "Hold two or three modifiers together — ⌘, ⌃, ⌥, ⇧. A letter will not go in here: holding ⌥ and “S” would pour “s” into the app you are talking to. Escape cancels.",
   "Skrót globalny potrzebuje ⌘, ⌃, ⌥ albo ⇧.": "A global shortcut needs ⌘, ⌃, ⌥ or ⇧.",
   "{skrót} jest zajęty: {kto}": "{skrót} is taken: {kto}",
   "{skrót} ustawiony.": "{skrót} set.",

@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/prose.css" />
     <link rel="stylesheet" href="css/notes.css" />
+    <link rel="stylesheet" href="css/note-acts.css" />
   </head>
   <body>
     <!-- Tło motywu — pierwszym dzieckiem body, reszta warstwę wyżej. -->
@@ -230,40 +231,22 @@
                 <button data-align="justify"><span>Wyjustowany</span><kbd>⌘⇧J</kbd></button>
               </div>
             </div>
+            <!-- Znaki, których nie ma na klawiaturze. Stoją między
+                 narzędziami pisania, bo wstawienie znaku JEST pisaniem. -->
+            <div class="menu-wrap">
+              <button class="icon-btn" id="chars" title="Znaki specjalne"
+                      aria-label="Znaki specjalne" aria-expanded="false">
+                <svg><use href="#i-omega" /></svg>
+              </button>
+              <div class="menu menu--chars" id="charsMenu" hidden></div>
+            </div>
             <button class="icon-btn" id="stamp" title="Wstaw godzinę (⌘T)"
                     aria-label="Wstaw godzinę"><svg><use href="#i-clock" /></svg></button>
 
             <span class="editor__sep"></span>
 
-            <button class="icon-btn" id="siftNote" title="Przesiej całą notatkę"
-                    aria-label="Przesiej całą notatkę"><svg><use href="#i-sieve" /></svg></button>
             <button class="icon-btn" id="detach" title="Otwórz w osobnym okienku"
                     aria-label="Otwórz w osobnym okienku"><svg><use href="#i-window" /></svg></button>
-            <button class="icon-btn" id="widgetPin" title="Widoczna w widgecie"
-                    aria-label="Widoczna w widgecie"><svg><use href="#i-sticky" /></svg></button>
-            <button class="icon-btn" id="pin" title="Przypnij"
-                    aria-label="Przypnij"><svg><use href="#i-pin" /></svg></button>
-            <div class="menu-wrap">
-              <button class="icon-btn" id="share" title="Udostępnij"
-                      aria-label="Udostępnij" aria-expanded="false">
-                <svg><use href="#i-share" /></svg>
-              </button>
-              <div class="menu" id="shareMenu" hidden>
-                <button data-share="apple">Wyślij do Notatek Apple</button>
-                <button data-share="notion">Wyślij do Notion</button>
-                <div class="menu__sep"></div>
-                <button data-share="text">Kopiuj tekst</button>
-                <button data-share="md">Kopiuj jako Markdown</button>
-                <div class="menu__sep"></div>
-                <button data-share="pdf">Zapisz jako PDF…</button>
-                <button data-share="file">Zapisz jako plik .md…</button>
-              </div>
-            </div>
-
-            <span class="editor__sep"></span>
-
-            <button class="icon-btn icon-btn--danger" id="del" title="Usuń notatkę"
-                    aria-label="Usuń notatkę"><svg><use href="#i-trash" /></svg></button>
           </div>
         </header>
 
@@ -281,12 +264,16 @@
           data-placeholder="Pisz albo naciśnij &#8222;Dyktuj&#8221; i mów.&#10;Notatka zapisuje się sama."
         ></div>
 
+        <!-- Czynności na notatce: przypnij, na pulpit, przesiej, udostępnij,
+             usuń. Na dole i z podpisami — ten sam pasek co w zakładce
+             Notatki i na kartce (patrz actionBar w js/notes-core.js). -->
         <footer class="editor__foot">
           <span id="status">Zapisane</span>
           <span class="dot">·</span>
           <span id="words">0 słów</span>
-          <span class="spacer"></span>
           <span class="hint" id="hint"></span>
+          <span class="spacer"></span>
+          <div id="acts"></div>
         </footer>
       </main>
     </div>

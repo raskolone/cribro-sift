@@ -73,6 +73,9 @@ if (!window.cribro) {
     hotkey: {
       hold: ["Ctrl", "Alt"],
       toggleAccelerator: "Control+Alt+Space",
+      /* Tak samo jak w store.js: miejsce jest, klawiszy nie ma.
+         `null` znaczy „nieprzypisany", nie „domyślny". */
+      quickNote: null,
     },
     mesh: "srednie",
     language: { mode: "bilingual", primary: "pl", secondary: "en" },
@@ -81,6 +84,10 @@ if (!window.cribro) {
        kroku „Silniki" wcale (patrz main/owner.js). Do obejrzenia go
        w przeglądarce wystarczy dopisać ?owner do adresu makiety. */
     owner: new URLSearchParams(location.search).has("owner"),
+    /* Wszystko widoczne. Makieta pokazuje aplikację, a nie stan wdrożenia —
+       a przełączniki funkcji są po to, żeby część okna CHOWAĆ (patrz
+       main/admin.js). Zrzuty mają pokazywać całość. */
+    features: { meetings: true, briefing: true, cloud: true },
     enginesReady: true,
     autoPaste: true,
     playSound: true,
@@ -375,6 +382,15 @@ if (!window.cribro) {
           return first ? [`# ${first}`, ...rest].join("\n") : "";
         },
         export: async () => ({ canceled: false }),
+        /* W przeglądarce nie ma gdzie zapisać pliku ani czym go wydrukować —
+           atrapa mówi, ile notatek BY poszło, żeby komunikat po kliknięciu
+           był prawdziwy co do liczby. */
+        exportFolder: async (folder) => ({
+          canceled: false,
+          notes: notes.filter(
+            (note) => String(note.folder ?? "").trim() === String(folder ?? "").trim(),
+          ).length,
+        }),
         sift: async (id) => {
           const note = notes.find((n) => n.id === id);
           if (note) Object.assign(note, { previousText: note.text });
@@ -724,6 +740,72 @@ if (!window.cribro) {
       onText: on("shot:text"),
     },
 
+    /* Panel admina. W makiecie nie ma bazy, więc konta stoją tu wpisane —
+       inaczej zakładki nie dałoby się ani obejrzeć, ani zrzucić. Adresy są
+       zmyślone i mają takie zostać. */
+    admin: {
+      state: async () => ({
+        me: "ty@example.com",
+        users: [
+          {
+            id: "u-1",
+            email: "ty@example.com",
+            display_name: "Ty",
+            plan: "pro",
+            created_at: "2026-06-01T09:00:00Z",
+            last_sign_in: "2026-08-31T07:20:00Z",
+            confirmed: true,
+            features: ["meetings"],
+          },
+          {
+            id: "u-2",
+            email: "ania@example.com",
+            display_name: "Ania",
+            plan: "free",
+            created_at: "2026-07-14T18:30:00Z",
+            last_sign_in: "2026-08-30T16:05:00Z",
+            confirmed: true,
+            features: [],
+          },
+          {
+            id: "u-3",
+            email: "kuba@example.com",
+            display_name: "Kuba",
+            plan: "free",
+            created_at: "2026-08-22T11:10:00Z",
+            last_sign_in: null,
+            confirmed: false,
+            features: ["meetings"],
+          },
+        ],
+        features: [
+          {
+            code: "meetings",
+            label: "Notatki ze spotkań",
+            note: "Nagrywanie rozmowy, transkrypcja i podsumowanie.",
+            state: "invited",
+            known: true,
+          },
+          {
+            code: "briefing",
+            label: "Poranek",
+            note: "Podsumowanie dnia z kalendarza i poczty.",
+            state: "on",
+            known: true,
+          },
+          {
+            code: "cloud",
+            label: "Notatki w chmurze",
+            note: "Synchronizacja notatek między komputerami.",
+            state: "on",
+            known: true,
+          },
+        ],
+      }),
+      setFeature: async (code, state) => ({ code, state }),
+      grant: async (code, userId, on) => ({ code, userId, on }),
+    },
+
     /* Poranek. W makiecie nie ma ani konta Google, ani kalendarza, więc
        treść stoi tu wpisana — bez niej okna poranka nie da się obejrzeć
        ani w przeglądarce, ani zrzutem z ukrytego okna. */
@@ -827,6 +909,9 @@ if (!window.cribro) {
       // sprowadza się do tego samego pokazu co przycisk demonstracyjny.
       capture: async () => window.cribro.system.demo(),
       openExternal: async () => true,
+      /* W przeglądarce nie ma okna wyboru pliku ani procesu głównego —
+         przycisk ma pokazać, że istnieje, a nie udawać, że czyta dysk. */
+      readShotFile: async () => false,
       /* Próba polecenia. Makieta nie ma procesu głównego, więc rozpoznanie
          jest tu odtworzone w skrócie — te same trzy reguły co w
          main/commands.js: krawędź wypowiedzi, granica zdania po frazie

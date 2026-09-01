@@ -181,6 +181,19 @@ textarea {
   flex-direction: column;
   gap: 2px;
 }
+/* ══ „hidden" MUSI TU BYĆ NAPISANE ══
+
+   Atrybut `hidden` daje `display: none` z arkusza PRZEGLĄDARKI, a każda
+   własna reguła `display` go bije. Zakładka schowana kodem zostawała więc
+   widoczna — i tak przez chwilę wyglądał Panel admina na cudzym koncie:
+   ustawiony `hidden`, a malowany dalej. Ten sam błąd złapano wcześniej przy
+   uchwycie przenoszenia linii (patrz komentarz przy __grip w
+   scripts/drag-test.js) i dlatego test pyta o `getComputedStyle`,
+   a nie o atrybut. */
+.nav__item[hidden] {
+  display: none;
+}
+
 .nav__item {
   display: flex;
   align-items: center;
@@ -2120,6 +2133,10 @@ input.tag-input:focus {
 .notes__foot .dot {
   opacity: 0.4;
 }
+/* Licznik słów łamał się na „25 / SŁÓW" i podnosił całą stopkę o wiersz. */
+.notes__foot > span {
+  white-space: nowrap;
+}
 .notes__hint {
   color: var(--accent);
 }
@@ -2930,4 +2947,141 @@ input.tag-input:focus {
   content: attr(data-placeholder);
   color: var(--text-faint);
   pointer-events: none;
+}
+
+/* ── Panel admina ────────────────────────────────────────────────
+   Widok na czas wdrażania: kto się zarejestrował i co widzi. Osobna
+   zakładka, więc i osobny kawałek arkusza — z Ustawieniami dzieli tylko
+   kafel i pastylkę, bo to są elementy całego okna. */
+
+.admin__features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+}
+.admin__feature {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line-soft);
+}
+.admin__feature b {
+  display: block;
+  color: var(--text-hi);
+}
+.admin__feature .muted {
+  font-size: var(--fs-xs);
+}
+
+/* Trzy stany obok siebie, nie przełącznik: „tylko zaproszeni" jest
+   równoprawnym stanem wdrożenia, a nie pozycją pośrednią między włączonym
+   a wyłączonym. Suwak z trzema położeniami kłamałby o tym. */
+.seg {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--ink-2);
+}
+.seg__btn {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background var(--t),
+    color var(--t);
+}
+.seg__btn:hover {
+  color: var(--text);
+}
+.seg__btn[aria-pressed="true"] {
+  background: var(--accent-12);
+  color: var(--accent);
+}
+.seg__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Spis kont bywa dłuższy niż okno jest szerokie — przewija się sam,
+   zamiast rozpychać cały widok. */
+.admin__scroll {
+  margin-top: var(--s-4);
+  overflow-x: auto;
+}
+.admin__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.admin__table th {
+  padding: 0 var(--s-4) var(--s-2) 0;
+  /* Nagłówki kolumn z nazwami funkcji bywają długie („Notatki ze
+     spotkań") i ucinały się o krawędź kafla. Same dane zostają w jednej
+     linii — to nagłówek ma się złamać, a nie adres. */
+  white-space: normal;
+  max-width: 120px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  font-weight: 400;
+  border-bottom: 1px solid var(--line-strong);
+}
+.admin__table td {
+  padding: var(--s-3) var(--s-4) var(--s-3) 0;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+.admin__cell {
+  text-align: center;
+}
+.admin__grant {
+  width: 30px;
+  height: 26px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition:
+    background var(--t),
+    color var(--t),
+    border-color var(--t);
+}
+.admin__grant[aria-pressed="true"] {
+  background: var(--accent-12);
+  border-color: var(--accent-25);
+  color: var(--accent);
+}
+.admin__grant:hover {
+  border-color: var(--accent-25);
+}
+
+/* Ostrzeżenie przy koncie i przy funkcji: to samo słowo znaczy tu zawsze
+   „coś jest nie tak, ale nic się nie pali". */
+.admin__warn {
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--warn-12, rgb(240 180 111 / 0.14));
+  color: var(--warn);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
 }

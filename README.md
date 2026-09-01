@@ -8,6 +8,30 @@ a czysty tekst ląduje pod kursorem i w schowku.
 
 `cribro` (łac.) — *przesiewam*.
 
+![Przesiane — historia dyktowań z podglądem różnicy](docs/screens/sifted.png)
+
+<p align="center">
+  <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-1c2333?style=flat-square" alt="macOS, Apple Silicon" />
+  <img src="https://img.shields.io/badge/Electron-43-1c2333?style=flat-square" alt="Electron 43" />
+  <img src="https://img.shields.io/badge/dostawcy-Gemini%20·%20OpenAI%20·%20Claude-1c2333?style=flat-square" alt="Gemini, OpenAI, Claude" />
+  <img src="https://img.shields.io/badge/chmura-opcjonalna-1c2333?style=flat-square" alt="Chmura opcjonalna" />
+</p>
+
+---
+
+## Spis treści
+
+| | |
+| --- | --- |
+| [Jak to działa w środku](#jak-to-działa-w-środku) | dwa modele, dwa wywołania, jedno sito |
+| [Rzut oka na aplikację](#rzut-oka-na-aplikację) | zrzuty ekranu — co jest gdzie i po co |
+| [Instalacja](#instalacja) | build, podpis, uprawnienia, klucze |
+| [Codzienne użycie](#codzienne-użycie) | gesty, języki, polecenia, notatki |
+| [Spotkania](#spotkania) | nagranie dwutorowe i notatka ze spotkania |
+| [Konto i notatki w chmurze](#konto-i-notatki-w-chmurze) | Supabase, RLS, uzgadnianie |
+| [Architektura](#architektura) | co siedzi w którym pliku |
+| [Kiedy coś nie działa](#kiedy-coś-nie-działa) | zgody, martwe wpisy, diagnostyka |
+
 ---
 
 ## Jak to działa w środku
@@ -32,6 +56,132 @@ a czysty tekst ląduje pod kursorem i w schowku.
 Dwa osobne wywołania do dwóch osobnych modeli — celowo. Transkrypcja ma być
 **wierna** (zostawia „yyy" i powtórzenia), a dopiero sito je usuwa. Dzięki temu
 w historii widać dokładnie, co odpadło.
+
+---
+
+## Rzut oka na aplikację
+
+Jedno okno z ośmioma zakładkami i kilka małych okien, które pojawiają się
+tylko wtedy, gdy są potrzebne. Poniżej — po kolei, co robi każde z nich.
+
+> Zrzuty robi `npm run screens` — z **atrapy mostu** (`src/renderer/js/mock-bridge.js`),
+> nie z czyjegoś dysku. Interfejs jest ten sam co w aplikacji, bo to ten sam
+> plik; dane są wymyślone i nie ma tu ani jednego prawdziwego zdania.
+
+### HUD — jedyne, co widać podczas mówienia
+
+![HUD: pigułka z falą głosu, napisem „Słucham" i zegarem](docs/screens/hud.png)
+
+Pigułka nad Dockiem, która nie przejmuje fokusu — inaczej ⌘V trafiłoby w nią,
+a nie w aplikację, do której mówisz. Przez pierwsze trzy sekundy pokazuje falę
+głosu, zegar i to, czym nagranie zakończyć; potem osuwa się w stronę widgetu
+i gaśnie, żeby nie zasłaniać okna, do którego się właśnie mówi. Fioletowy
+kolor należy do nagrywania i znaczy to samo na znaczku widgetu i na ikonie
+w pasku menu.
+
+### Przesiane — co powiedziałeś, a co z tego zostało
+
+![Zakładka Przesiane z rozwiniętą różnicą](docs/screens/sifted.png)
+
+Zapis każdego dyktowania: tekst gotowy do wklejenia, a pod przyciskiem
+**„Co odpadło"** — różnica słowo po słowie. Na czerwono to, co odsiało sito
+(„yyy", „to znaczy", powtórzenia), na zielono poprawki. Właśnie po to
+transkrypcja i sito to **dwa osobne wywołania**: pierwsze ma być wierne,
+drugie sprząta, a w historii widać dokładnie, gdzie przebiegła granica.
+Kafle na górze liczą, ile słów zostało, ile zniknęło i ile czasu to oddało
+wobec pisania na klawiaturze.
+
+### Start — cztery kroki i koniec konfiguracji
+
+![Zakładka Start z listą czterech kroków](docs/screens/start.png)
+
+Mikrofon, Dostępność, sito, pierwsze zdanie. Każdy krok mówi, w jakim jest
+stanie i co dokładnie kliknąć — a „Dostępność" jest **opcjonalna**: bez niej
+nagrywasz przyciskiem, a tekst ląduje w schowku zamiast pod kursorem.
+Kluczy API nie ma tu wcale; zwykły użytkownik dostaje odpowiedź na jedyne
+pytanie, jakie zadaje — czy to działa.
+
+### Sito — jedno pokrętło
+
+![Zakładka Sito: trzy gęstości oczek i ustawienia języka](docs/screens/sieve.png)
+
+Trzy gęstości oczek: **zgrubne** zdejmuje same zacięcia, **średnie** zostawia
+czystą wypowiedź twoim głosem, **drobne** oddaje tekst zwięzły i gotowy do
+wysłania. Niżej język — i tu dwujęzyczność to nie to samo co rozpoznawanie
+automatyczne: automat wybiera jeden język na całe nagranie, para języków
+pozwala przełączyć się w środku zdania i nie tłumaczy wtrąceń w żadną stronę.
+
+### Ziarna — słowa, których sito nigdy nie tknie
+
+![Zakładka Ziarna z listą słów chronionych](docs/screens/grains.png)
+
+Nazwiska, nazwy produktów, żargon. Przechodzą w niezmienionej formie — nawet
+wtedy, gdy transkrypcja usłyszała coś podobnie brzmiącego i „poprawiła" je
+po swojemu.
+
+### Polecenia — zdania, po których sito wie, co zrobić
+
+![Zakładka Polecenia: furtka i lista fraz](docs/screens/commands.png)
+
+„Zrób checklistę: mleko, chleb" ma dać listę, a nie zdanie o liście. Polecenia
+rozpoznaje się **lokalnie, bez modelu i bez sieci** — ruszają wyłącznie frazy
+zapisane tutaj, więc żaden model niczego nie zgaduje. Polecenie zmienia FORMĘ
+tego, co powiedziałeś, i nigdy nie dopisuje treści, której nie było.
+**Furtka** to fraza, po której polecenie się nie uruchamia — potrzebna wtedy,
+gdy chcesz podyktować „zrób checklistę" jako zwykły tekst.
+
+### Notatki — notatnik, który przyjmuje głos
+
+![Zakładka Notatki: lista po lewej, edytor po prawej](docs/screens/notes.png)
+
+Lista po lewej, notatka po prawej, podwójne kliknięcie otwiera ją w osobnym
+okienku. Edytor ma nagłówki, listy, zadania z polami do odhaczania i skróty
+klawiszowe; notatki zbierają się w szuflady i etykiety, a każdą można
+przypiąć na pulpit jako kartkę widgetu albo wysłać na zewnątrz — do PDF-a
+lub do Notion.
+
+### Meeting Notes — rozmowa, która sama zostaje notatką
+
+![Zakładka Spotkania z transkrypcją dwutorową](docs/screens/meetings.png)
+
+Nagranie **dwutorowe**: osobno mikrofon, osobno dźwięk systemu — dzięki temu
+w zapisie widać, kto co powiedział, zamiast jednej ściany tekstu. Z listy po
+lewej wchodzi się w podsumowanie, transkrypcję i własne notatki z rozmowy.
+Spotkania z kalendarza można **uzbroić przełącznikiem**: włączone nagra się
+samo, gdy nadejdzie jego godzina. Kalendarz czyta się przez EventKit,
+a gdy system tej drogi nie przepuszcza — pytaniem zadanym Kalendarzowi.app
+([dlaczego dwie drogi](#kalendarz-i-zgoda-na-niego)).
+
+### Poranek — plan dnia i to, co czeka na odpowiedź
+
+![Okno poranka: sprawy wymagające uwagi i plan dnia](docs/screens/briefing.png)
+
+Jedno okno raz dziennie, dla podłączonego konta Google: najpierw maile,
+które nie mogą czekać, potem plan dnia z kalendarza (z odhaczonym tym, co
+już minęło), a na końcu kanały RSS. Wyboru maili **nie robi model**:
+robią go reguły, tutaj, na tym komputerze — kilkaset maili tygodniowo nie
+ma po co wyjeżdżać na zewnątrz. Do sita jedzie dopiero kilkanaście
+wytypowanych, po jedno zdanie każdy. Dlatego pod nazwiskiem stoi powód
+(„jest dziś na Twoim spotkaniu · jest w nim pytanie · wisi 2 dni"),
+a nie ocena w rodzaju „ważne 87%" — z powodem da się pokłócić, z liczbą nie.
+
+### Szybka notatka — jedno pole, jedno zdanie
+
+![Okno szybkiej notatki](docs/screens/quick.png)
+
+Małe okno wywoływane z menu aplikacji: powiedz albo napisz jedno zdanie,
+⌘⏎ zapisuje, Esc zamyka. Bez wchodzenia w notatnik i bez szukania miejsca,
+w które to wpisać.
+
+### Ustawienia — skróty, konto, prywatność
+
+![Zakładka Ustawienia z konfiguracją skrótów](docs/screens/settings.png)
+
+Jeden komplet klawiszy obsługuje oba sposoby mówienia — trzymanie i tryb
+bez trzymania — bo o sposobie decyduje gest, a nie przełącznik. **Sprawdź
+konflikty** pyta system, czy skrót da się w ogóle zarejestrować, i mówi,
+co go zajmuje. Niżej: konto w chmurze, Notion, zrzuty ekranu i to, co
+aplikacja o sobie zapisuje.
 
 ---
 
@@ -186,6 +336,15 @@ było domyślić.
 Skrót to dwa **modyfikatory**, nie modyfikator plus znak: trzymanie ⌥+spacji
 wsypywałoby spacje do aplikacji, do której właśnie mówisz. ⌃+⌥ nie generują
 żadnego znaku. Bez zgody „Dostępność" zostaje przełącznik `⌃⌥Spacja`.
+
+**Klawisze do trzymania da się zmienić** — *Ustawienia → Skrót → Trzymanie*,
+przycisk *Zmień* i przytrzymanie nowego kompletu. Wchodzą wyłącznie
+modyfikatory (⌘, ⌃, ⌥, ⇧) i wyłącznie **dwa albo trzy**: jeden trzyma się przy
+zwykłym pisaniu dziesiątki razy na minutę, więc nagranie ruszałoby samo,
+a czwarty nie zostawia ręki na nic innego. Litera pod modyfikatorami odpada
+z powodu opisanego wyżej. *Przywróć ⌃⌥* wraca do domyślnego kompletu —
+bo bez żadnego kompletu funkcja nie wróciłaby do menu, tylko przestałaby
+istnieć.
 
 Podczas mówienia widać jedno okno — HUD nad Dockiem. Przez **pierwsze trzy
 sekundy** jest pełną pigułką: fala głosu, napis „Słucham", zegar i podpowiedź,
@@ -698,6 +857,16 @@ nagłówek nie zostaje sam na końcu strony, a punkt listy nie pęka w pół.
 Rysuje to osobne, niewidoczne okno — inaczej się nie da: `printToPDF` należy
 do zawartości okna, a okno aplikacji ma na ekranie swoją.
 
+**Cała szuflada też wychodzi — jednym plikiem.** Przy wybranej szufladzie
+w pasie nad listą stoi *Do PDF*: kreskowana obwódka i odstęp mówią, że to
+czynność, a nie kolejna szuflada. Wychodzi **jeden plik z kartką na notatkę**,
+nie katalog osobnych PDF-ów: szuflada wysyłana dalej jest jednym załącznikiem,
+a katalog z dwudziestoma plikami byłby dwudziestoma. Notatki zostają przy tym
+osobnymi kartkami — każda z własną metryczką i każda od nowej strony, bo
+szuflada to zbiór osobnych rzeczy, a nie jeden długi dokument. Kolejność jest
+ta sama, co na liście w Notatniku: od najnowszej. Puste notatki wypadają po
+drodze i nie przerywają eksportu pozostałych.
+
 #### Notion
 
 **Ustawienia → Notion.** Dwa pola i jeden przycisk. Notatka jedzie w jedną
@@ -709,6 +878,15 @@ zwykłe i numerowane, listy zadań ze stanem odhaczenia, cytaty, linia
 rozdzielająca, pogrubienie, kursywa i kod w linii. Nagłówek składany zostaje
 składany naprawdę (`is_toggleable`) — to jedno z niewielu miejsc, gdzie oba
 programy mają dokładnie to samo pojęcie.
+
+**Zrzut ekranu w notatce.** Notion pokaże obrazek tylko taki, po który sam
+sięgnie — spod adresu `http(s)`. Zrzuty Cribro leżą na tym dysku, pod
+`file://`, i Notion nie ma jak ich zobaczyć. Taka linia wpadała dotąd do worka
+„akapit" i lądowała w cudzej stronie jako **surowy Markdown**, w całości,
+razem z zakodowanymi spacjami w ścieżce: sto znaków ścieżki z czyjegoś dysku
+w miejscu, w którym miał być obrazek. Teraz obrazek spod adresu jedzie jako
+prawdziwy blok obrazka, a ten z dysku zostawia po sobie jedno zdanie kursywą —
+że był i gdzie został. Zdanie da się przeczytać; ścieżki z procentami nie.
 
 Co trzeba mieć po stronie Notion:
 
@@ -777,9 +955,15 @@ się do notatki. Zapisuje do tej samej szuflady, więc notatka czeka potem
 w Notatniku — we **własnej przegródce „Szybkie notatki"**, oddzielonej kreską
 od zwykłych notatek. Myśl rzucona w biegu ma inny ciężar niż notatka ze
 spotkania; w jednym ciągu dziesięć takich myśli spychało tę jedną, po którą
-się przyszło. Z klawiatury: **⌘⇧N** z menu aplikacji. Skrótu globalnego,
-działającego spoza Cribro, jeszcze nie ma; miejsce na niego czeka
-w *Ustawienia → Skrót*.
+się przyszło.
+
+Z klawiatury dwiema drogami. **⌘⇧N** z menu aplikacji działa, gdy Cribro jest
+z przodu. **Własne klawisze** — do ustawienia w *Ustawienia → Skrót → Szybka
+notatka* — działają zawsze, także wtedy, gdy patrzysz w cudze okno; a właśnie
+wtedy przychodzi do głowy zdanie, którego nie ma gdzie zapisać. Domyślnie nie
+ma ich wcale i nie jest to niedoróbka: klawisze wybrane za użytkownika byłyby
+albo zajęte, albo o włos od zajętych. Zajęte przez inną aplikację nie milczą
+po cichu — Ustawienia mówią o tym wprost, a menu działa dalej.
 
 **Notatki Apple** dostają pierwszą linię jako tytuł, resztę jako treść.
 Przy pierwszym wysłaniu macOS zapyta o zgodę na sterowanie aplikacją Notatki.
@@ -797,16 +981,36 @@ Zaznaczasz kawałek ekranu, a to, co na nim widać, staje się notatką: cudzy
 PDF, slajd z prezentacji, zrzut z rozmowy, paragon.
 
 ```
-   skrót (albo Plik → Tekst z ekranu…)
-        ↓
-   krzyżyk na ekranie                 ← systemowy; spacja łapie całe okno,
-        ↓                               Escape przerywa bez śladu
+   skrót (albo Plik → Tekst z ekranu…)      Plik → Tekst z obrazka…
+        ↓                                        ↓
+   krzyżyk na ekranie                       wybór pliku z dysku
+        ↓                                        ↓
+        └────────────────┬───────────────────────┘
+                         ↓
    odczyt                             ← tani model GPT, jedno wywołanie
         ↓
    okno z pytaniem: dokąd i w jakiej formie
         ↓
    nowa notatka  ·  dopisanie do istniejącej  ·  pod kursor
 ```
+
+**Dwa wejścia, jeden odczyt.** Zaznaczanie jest dobre, kiedy rzecz do
+przeczytania jest właśnie na ekranie; nie jest dobre, kiedy przyszła
+załącznikiem, leży w Pobranych albo przysłał ją ktoś telefonem. Wtedy jedynym
+wyjściem było otworzyć plik i zrobić zrzut z podglądu — czyli przepisać
+obrazek przez ekran. Teraz czyta się go wprost: *Plik → Tekst z obrazka…*
+albo *Wybierz plik…* w Ustawieniach.
+
+Ta druga droga **nie potrzebuje zgody „Nagrywanie ekranu"** — nikt tu niczego
+nie podgląda, plik wskazuje sam człowiek — więc działa też wtedy, gdy tamtej
+zgody nie ma.
+
+Typ obrazka bierze się z **zawartości, nie z nazwy**. Plik nazwany `.png`,
+który w środku jest JPEG-iem, wychodzi z połowy narzędzi do zrzutów, a wysłany
+z nagłówkiem `image/png` bywa odrzucany błędem mówiącym o czymkolwiek innym niż
+o prawdziwej przyczynie. Pierwsze bajty nie kłamią, więc pytamy ich; wchodzą
+PNG, JPEG, GIF i WEBP. Plik, który obrazkiem nie jest, dostaje odmowę zdaniem
+o tym, co wchodzi — a nie ciszę.
 
 **Krok jest jeden, nie dwa** — i to jest cała różnica wobec dyktowania. Mowa
 niesie szum, który trzeba potem odsiać; napis na obrazku jest już zredagowany
@@ -1314,7 +1518,7 @@ wierzch, bo pytanie systemu potrafi stanąć za nim.
 > sprawdź, czy Mac nie zdążył się zablokować — pomiary zrobione „na
 > zablokowanym" nie znaczą nic.
 
-#### Nazwa rozmowy#### Nazwa rozmowy
+#### Nazwa rozmowy
 
 Karta Google Meet nazywa się tak, jak nazwano pokój — „Meet – Przegląd
 tygodnia" — i **ta nazwa wygrywa**: to pod nią ludzie do rozmowy przyszli,
@@ -1648,6 +1852,7 @@ nie ma załączników i nie ma współdzielenia notatek z innym kontem.
 | Token Notion i zakładka stron | `settings.json`, gałąź `notion` — nie jedzie do chmury |
 | Schemat bazy do wklejenia | `supabase/schema.sql` w katalogu projektu |
 | Certyfikat do podpisu | `~/Library/Keychains/cribro-sign.keychain-db` |
+| Zrzuty do README | `docs/screens/` — robi je `npm run screens` |
 
 Projekt celowo **nie leży w iCloud Drive**. Dwa powody:
 
@@ -1957,14 +2162,14 @@ npm test          # dostawcy, skrót, notatki, edytor, synchronizacja, animacja
 - notaryzacji — aplikacja działa tylko na tym Macu
 - strumieniowania odpowiedzi sita
 - lokalnego `whisper.cpp` jako dostawcy offline
-- wybierania klawiszy skrótu myszką
-- globalnego skrótu do szybkiej notatki — z menu ⌘⇧N działa, spoza Cribro nie
 - synchronizacji notatek na żywo — uzgadnianie chodzi przebiegami, nie znak po znaku
 - logowania przez Apple — Google i adres z hasłem działają
 - zagnieżdżonych szuflad — szuflada jest jedna i płaska, bez drzewa
 - czytania z Notion — notatka jedzie tam w jedną stronę
-- eksportu całej szuflady naraz — PDF i Notion biorą jedną notatkę
-- zrzutów w chmurze i w Notion — obrazek zostaje na tym dysku, do którego
-  prowadzi jego adres; synchronizacja notatek wozi sam tekst notatki
-- odczytu z pliku graficznego — wchodzi się przez zaznaczenie ekranu,
-  a nie przez przeciągnięcie obrazka na okno
+- eksportu całej szuflady do Notion — PDF bierze już całą szufladę,
+  Notion nadal jedną notatkę
+- zrzutu w chmurze i w Notion — obrazek zostaje na tym dysku, do którego
+  prowadzi jego adres; synchronizacja notatek wozi sam tekst notatki, a strona
+  w Notion dostaje w tym miejscu zdanie o tym, że zrzut został na komputerze
+- przeciągania obrazka na okno — plik wybiera się z menu albo z Ustawień,
+  ale upuszczenie go na notatnik jeszcze nic nie robi

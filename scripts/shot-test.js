@@ -35,6 +35,8 @@ const {
   buildRequest,
   readText,
   grabRegion,
+  imageFromFile,
+  sniffImage,
   READ_PROMPT,
   MOCK_TEXT,
 } = require("../src/main/shot");
@@ -281,6 +283,76 @@ const settings = (patch = {}) => ({
     "Notatka z samym obrazkiem nie dostaje tytułu z nazwy pliku",
     titleOf({ text: imageLink(SHOT) }) === "Bez tytułu",
   );
+
+  /* ── Druga droga: obrazek z dysku ───────────────────────────── */
+
+  /* Typ obrazka bierze się z ZAWARTOŚCI, nie z nazwy. Plik nazwany .png,
+     który w środku jest JPEG-iem, wychodzi z połowy narzędzi do zrzutów —
+     a wysłany z nagłówkiem „image/png" bywa odrzucany przez dostawcę
+     błędem, który mówi o czymkolwiek innym niż o prawdziwej przyczynie. */
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  const GIF = Buffer.from("GIF89a");
+  const WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WEBP")]);
+
+  check("PNG rozpoznaje się po pierwszych bajtach", sniffImage(PNG) === "image/png");
+  check("JPEG też", sniffImage(JPEG) === "image/jpeg");
+  check("GIF też", sniffImage(GIF) === "image/gif");
+  check("WEBP wymaga drugiego spojrzenia, na dwunasty bajt", sniffImage(WEBP) === "image/webp");
+  check("Sam „RIFF\" to jeszcze nie obrazek", sniffImage(Buffer.from("RIFFxxxxWAVE")) === null);
+  check("Tekst nie udaje obrazka", sniffImage(Buffer.from("to nie jest obrazek")) === null);
+
+  const workdir = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-shot-test-"));
+  const jpegPodNazwaPng = path.join(workdir, "zrzut.png");
+  fs.writeFileSync(jpegPodNazwaPng, JPEG);
+
+  check(
+    "JPEG nazwany .png jedzie jako JPEG, bo liczy się zawartość",
+    imageFromFile(jpegPodNazwaPng).mime === "image/jpeg",
+  );
+
+  const nieObrazek = path.join(workdir, "notatka.png");
+  fs.writeFileSync(nieObrazek, "to nie jest obrazek");
+  check(
+    "Plik, który nie jest obrazkiem, odmawia zdaniem o tym, co wchodzi",
+    (() => {
+      try {
+        imageFromFile(nieObrazek);
+        return false;
+      } catch (problem) {
+        return /PNG, JPEG, GIF i WEBP/.test(problem.message);
+      }
+    })(),
+  );
+
+  check(
+    "Brak pliku to odmowa, a nie wywrotka bez wyjaśnienia",
+    (() => {
+      try {
+        imageFromFile(path.join(workdir, "nie-ma-mnie.png"));
+        return false;
+      } catch (problem) {
+        return /ENOENT|otworzyć/.test(problem.message);
+      }
+    })(),
+  );
+
+  /* Ten sam nagłówek, którego użyje dostawca — typ musi dojechać do
+     żądania, a nie zostać w połowie drogi. */
+  check(
+    "Typ z pliku dojeżdża do żądania, a nie gubi się po drodze",
+    buildRequest(JPEG, "gpt-5.6-luna", "image/jpeg").messages[1].content[0].image_url.url.startsWith(
+      "data:image/jpeg;base64,",
+    ),
+  );
+  check(
+    "Bez podanego typu zostaje PNG — tym jest zaznaczenie ekranu",
+    buildRequest(PNG, "gpt-5.6-luna").messages[1].content[0].image_url.url.startsWith(
+      "data:image/png;base64,",
+    ),
+  );
+
+  fs.rmSync(workdir, { recursive: true, force: true });
 
   console.log(`\nTekst z ekranu: ${passed} sprawdzeń przeszło. Odczyt czyta, a nie odpowiada.`);
 })();

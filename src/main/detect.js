@@ -118,14 +118,36 @@ class Watcher {
    * @param {number} [options.every]  co ile milisekund pytamy
    * @param {(problem: Error) => void} [options.onError]
    */
-  constructor({ list, onChange, every = 8000, onError } = {}) {
+  /**
+   * @param {number} [options.every]  co ile milisekund pytamy, gdy coś się dzieje
+   * @param {number} [options.idle]   …i co ile, gdy od dawna nic
+   * @param {number} [options.patience]  po ilu pustych spojrzeniach zwalniamy
+   */
+  constructor({ list, onChange, every = 8000, idle = 32_000, patience = 5, onError } = {}) {
     this.list = list;
     this.onChange = onChange ?? (() => {});
     this.onError = onError ?? (() => {});
     this.every = every;
+    /* ══ RYTM ZMIENNY, A NIE STAŁY ══
+
+       Spis okien nie jest darmowy: zmierzony na tej maszynie kosztuje 65 ms
+       przy jedenastu oknach, a w gorszej chwili ponad dwieście — i przez
+       ten czas proces główny NIE ROBI NIC INNEGO. Co osiem sekund przez całą
+       dobę to blisko trzydzieści sekund procesora na godzinę wydane na
+       pytanie, na które od rana pada ta sama odpowiedź.
+
+       Rytm dostosowuje się więc do tego, co widać. Gdy coś się dzieje —
+       stoi rozmowa albo właśnie zniknęła — pytamy co osiem sekund, bo wtedy
+       każda sekunda zwłoki jest widoczna. Gdy od kilku spojrzeń nie ma nic,
+       schodzimy do pół minuty: spotkanie zauważone pół minuty po otwarciu
+       okna wciąż jest zauważone na czas, bo w pierwszej minucie rozmowy
+       nikt jeszcze nic ważnego nie powiedział. */
+    this.idle = Math.max(idle, every);
+    this.patience = patience;
     this.timer = null;
     this.seen = null;
     this.misses = 0;
+    this.empty = 0;
     this.busy = false;
   }
 
@@ -133,16 +155,44 @@ class Watcher {
     return !!this.timer;
   }
 
+  /** Ile czekać do następnego spojrzenia — całe rozstrzygnięcie o rytmie. */
+  get pace() {
+    return this.empty >= this.patience ? this.idle : this.every;
+  }
+
   start() {
     if (this.timer) return;
     // Pierwsze spojrzenie od razu: spotkanie mogło trwać, zanim ktokolwiek
     // włączył tę opcję.
-    this.timer = setInterval(() => this.look(), this.every);
+    this.#tick();
     this.look();
   }
 
+  /** Następne spojrzenie za tyle, ile mówi rytm. Zegar jest jednorazowy,
+      bo odstęp zmienia się MIĘDZY spojrzeniami. */
+  #tick() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      this.#tick();
+      this.look();
+    }, this.pace);
+  }
+
+  /**
+   * Z powrotem na szybki rytm, natychmiast.
+   *
+   * Woła to ten, kto wie o czymś, czego spis okien jeszcze nie widzi —
+   * na przykład że właśnie ruszyło nagrywanie i od tej chwili liczy się
+   * pytanie „czy rozmowa jeszcze trwa".
+   */
+  hurry() {
+    if (this.empty < this.patience) return;
+    this.empty = 0;
+    if (this.timer) this.#tick();
+  }
+
   stop() {
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
     this.timer = null;
     // Stan czyścimy razem z pilnowaniem: po ponownym włączeniu spotkanie,
     // które nadal trwa, ma być zgłoszone jeszcze raz.
@@ -151,6 +201,7 @@ class Watcher {
       this.onChange(null);
     }
     this.misses = 0;
+    this.empty = 0;
   }
 
   /** Jedno spojrzenie na ekran. */
@@ -161,16 +212,22 @@ class Watcher {
       const found = spot(await this.list());
       if (found) {
         this.misses = 0;
+        this.empty = 0;
         if (!same(found, this.seen)) {
           this.seen = found;
           this.onChange(found);
         }
         return;
       }
-      if (!this.seen) return;
+      if (!this.seen) {
+        // Puste spojrzenie po pustym spojrzeniu — wolno zwolnić.
+        this.empty += 1;
+        return;
+      }
       this.misses += 1;
       if (this.misses < 2) return;
       this.seen = null;
+      this.empty = 0; // rozmowa właśnie zniknęła: teraz patrzymy uważnie
       this.onChange(null);
     } catch (problem) {
       this.onError(problem);

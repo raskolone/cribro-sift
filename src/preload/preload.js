@@ -55,7 +55,17 @@ contextBridge.exposeInMainWorld("cribro", {
     export: (id) => ipcRenderer.invoke("notes:export", id),
     // Notatka na zewnątrz: kartka do wydrukowania i strona w cudzym Notion.
     pdf: (id) => ipcRenderer.invoke("notes:pdf", id),
+    // Cała szuflada w jednym PDF-ie, kartka na notatkę.
+    exportFolder: (folder) => ipcRenderer.invoke("notes:exportFolder", folder),
     toNotion: (id) => ipcRenderer.invoke("notes:toNotion", id),
+    /* Zrzut ze schowka wprost do notatki.
+
+       Bajty jadą jako data: — most nie przepuszcza Buffera, a obrazek
+       ze schowka to i tak zwykle kilkaset kilobajtów. `null` znaczy
+       „w schowku nie ma obrazka" i wtedy proces główny zagląda do schowka
+       systemowego sam: zrzut zrobiony ⌃⌘⇧4 bywa tam, gdzie zdarzenie
+       wklejania go nie widzi. */
+    pasteImage: (dataUrl = null) => ipcRenderer.invoke("notes:pasteImage", dataUrl),
     sift: (id) => ipcRenderer.invoke("notes:sift", id),
     undoSift: (id) => ipcRenderer.invoke("notes:undoSift", id),
     onAppended: on("note:appended"),
@@ -229,6 +239,18 @@ contextBridge.exposeInMainWorld("cribro", {
     onData: on("briefing:data"),
   },
 
+  /* Panel admina — spis kont i przełączniki funkcji.
+
+     Most jest tu tylko drogą. O tym, czy wolno, decyduje najpierw proces
+     główny (czy to konto właściciela), a naprawdę — baza, sprawdzając adres
+     z tokenu (patrz supabase/schema.sql). Wywołanie z cudzego konta wraca
+     odmową albo pustką, nie danymi. */
+  admin: {
+    state: () => ipcRenderer.invoke("admin:state"),
+    setFeature: (code, state) => ipcRenderer.invoke("admin:setFeature", { code, state }),
+    grant: (code, userId, on) => ipcRenderer.invoke("admin:grant", { code, userId, on }),
+  },
+
   system: {
     copy: (text) => ipcRenderer.invoke("clipboard:copy", text),
     status: () => ipcRenderer.invoke("hotkey:status"),
@@ -248,6 +270,9 @@ contextBridge.exposeInMainWorld("cribro", {
     testShot: () => ipcRenderer.invoke("test:shot"),
     // Zaznaczanie ekranu wywołane z Ustawień („Przechwyć teraz").
     grabShot: () => ipcRenderer.invoke("shot:grab"),
+    /* Obrazek z dysku — bez ścieżki proces główny sam zapyta o plik.
+       Ścieżka przydaje się przy przeciągnięciu obrazka na okno. */
+    readShotFile: (filePath = null) => ipcRenderer.invoke("shot:file", filePath),
     demo: () => ipcRenderer.invoke("demo:run"),
     // Escape: nagranie ma zniknąć bez śladu, bez transkrypcji i bez wpisu.
     cancelCapture: () => ipcRenderer.invoke("capture:cancel"),

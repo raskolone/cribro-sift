@@ -48,6 +48,12 @@
     cleanTag,
     foldersOf,
     renameInPlace,
+    ensureIcons,
+    actionBar,
+    paintActions,
+    runAction,
+    runShare,
+    specialsMenu,
   } = window.NotesCore;
 
   const GROUPS_KEY = "cribro:notes-groups";
@@ -158,27 +164,21 @@
               <button data-align="justify"><span>Wyjustowany</span><kbd>⌘⇧J</kbd></button>
             </div>
           </div>
+          <!-- Znaki, których nie ma na klawiaturze. Stoją między
+               narzędziami pisania, bo wstawianie znaku JEST pisaniem —
+               a nie czynnością na notatce (te są na dole, patrz .notes__foot). -->
+          <div class="notes__menu-wrap">
+            <button class="icon-btn" data-note-act="chars-menu" title="Znaki specjalne">
+              <svg><use href="#i-omega" /></svg>
+            </button>
+            <div class="notes__menu notes__menu--chars" id="noteCharsMenu" hidden></div>
+          </div>
           <span class="notes__sep"></span>
           <button class="icon-btn" data-note-act="stamp" title="Wstaw godzinę (⌘T)"><svg><use href="#i-clock" /></svg></button>
-          <button class="icon-btn" data-note-act="sift" title="Przesiej całą notatkę"><svg><use href="#i-sieve" /></svg></button>
-          <span class="notes__spacer"></span>
+          <!-- Bez rozpychacza przed spodem. Pasek zawija się (flex-wrap),
+               a rozpychacz odsyłał ostatnią ikonę do drugiego rzędu — jedną
+               samotną ikonę pod całym paskiem. -->
           <button class="icon-btn" data-note-act="detach" title="Otwórz w osobnym okienku"><svg><use href="#i-window" /></svg></button>
-          <button class="icon-btn" data-note-act="widget" id="noteWidget" title="Widoczna w widgecie"><svg><use href="#i-sticky" /></svg></button>
-          <button class="icon-btn" data-note-act="pin" id="notePin" title="Przypnij"><svg><use href="#i-pin" /></svg></button>
-          <div class="notes__menu-wrap">
-            <button class="icon-btn" data-note-act="share-menu" title="Udostępnij"><svg><use href="#i-share" /></svg></button>
-            <div class="notes__menu" id="noteShareMenu" hidden>
-              <button data-share="apple">Wyślij do Notatek Apple</button>
-              <button data-share="notion">Wyślij do Notion</button>
-              <div class="notes__menu-sep"></div>
-              <button data-share="text">Kopiuj tekst</button>
-              <button data-share="md">Kopiuj jako Markdown</button>
-              <div class="notes__menu-sep"></div>
-              <button data-share="pdf">Zapisz jako PDF…</button>
-              <button data-share="file">Zapisz jako plik .md…</button>
-            </div>
-          </div>
-          <button class="icon-btn icon-btn--danger" data-note-act="delete" title="Usuń notatkę"><svg><use href="#i-trash" /></svg></button>
         </header>
 
         <!-- Szuflada i etykiety. Pod paskiem narzędzi, nad tekstem: to jest
@@ -195,12 +195,16 @@
           data-placeholder="Pisz albo naciśnij &#8222;Dyktuj&#8221; i mów.&#10;Notatka zapisuje się sama."
         ></div>
 
+        <!-- Czynności na notatce: przypięcie, pulpit, sito, wysyłka,
+             kasowanie. Na dole i z podpisami — dlaczego, patrz actionBar
+             w js/notes-core.js. -->
         <footer class="notes__foot">
           <span id="noteStatus">Zapisane</span>
           <span class="dot">·</span>
           <span id="noteWords">0 słów</span>
-          <span class="notes__spacer"></span>
           <span class="notes__hint" id="noteHint"></span>
+          <span class="notes__spacer"></span>
+          ${actionBar()}
         </footer>
       </section>
     </div>`;
@@ -322,13 +326,24 @@
         <span data-i18n="skip">${escape(label)}</span><b data-i18n="skip">${count}</b>
       </button>`;
 
+    /* Wyjście całej szuflady na papier pokazuje się TYLKO przy wybranej
+       szufladzie. Przy „Wszystkich" nie byłoby czego eksportować jako
+       szufladę — to jest cały notatnik, a to inna rzecz i inna nazwa. */
+    const exportButton = state.folder
+      ? `<button class="folder-chip folder-chip--act" data-note-act="folder-pdf"
+                 title="${escape(t("Cała szuflada jako jeden PDF"))}">
+           <span>${escape(t("Do PDF"))}</span>
+         </button>`
+      : "";
+
     rail.innerHTML =
       chip(null, t("Wszystkie"), state.notes.length) +
       folders
         .map((name) =>
           chip(name, name, state.notes.filter((note) => folderOf(note) === name).length),
         )
-        .join("");
+        .join("") +
+      exportButton;
   }
 
   /**
@@ -441,31 +456,16 @@
     await api.notes.update(note.id, { align });
   }
 
-  /** Przypięcie z listy i z paska narzędzi to jedno i to samo. */
-  /* Notatka „na wierzchu" — widoczna w pływającym widgecie. Flaga zostaje
-     na tym komputerze i nie jedzie do chmury: „mam to teraz przed oczami"
-     opisuje biurko, przy którym się siedzi, a nie treść notatki. */
-  async function toggleWidget(note) {
-    if (!note) return;
-    note.widget = !note.widget;
-    await api.notes.update(note.id, { widget: note.widget });
-    if (note.id === state.selected) {
-      root.querySelector("#noteWidget")?.setAttribute("aria-pressed", String(!!note.widget));
-    }
-    flash(note.widget ? t("Notatka jest na wierzchu") : t("Notatka zeszła z wierzchu"));
-  }
-
+  /** Przypięcie z listy i z dolnego paska to jedno i to samo. */
   async function togglePin(id) {
     const note = state.notes.find((item) => item.id === id);
     if (!note) return;
 
     note.pinned = !note.pinned;
     await api.notes.update(note.id, { pinned: note.pinned });
-    // Sam pasek narzędzi, nie całe renderNote: przełożenie pinezki nie ma
+    // Sam pasek czynności, nie całe renderNote: przełożenie pinezki nie ma
     // prawa przestawić kursora w tekście, który się właśnie pisze.
-    if (note.id === state.selected) {
-      root.querySelector("#notePin")?.setAttribute("aria-pressed", String(!!note.pinned));
-    }
+    if (note.id === state.selected) paintActions(root, note);
     renderCards();
     translateTree(root);
   }
@@ -530,8 +530,7 @@
     editor.setMarkdown(note.text);
     $("#noteText").setAttribute("data-align", note.align ?? "left");
     renderMeta();
-    $("#notePin").setAttribute("aria-pressed", String(!!note.pinned));
-    $("#noteWidget").setAttribute("aria-pressed", String(!!note.widget));
+    paintActions(root, note);
     $("#noteWords").textContent = t("{n} słów", { n: countWords(note.text) });
     $("#noteHint").innerHTML = state.hint
       ? escape(state.hint)
@@ -663,6 +662,11 @@
 
   function build() {
     root.innerHTML = SKELETON;
+    /* Znaki wypełniamy tutaj, a nie w szablonie: szablon jest stałą
+       policzoną raz przy wczytaniu pliku, a tych przycisków jest
+       osiemdziesiąt i nie ma powodu, żeby stały w kodzie widoku. */
+    const chars = $("#noteCharsMenu");
+    if (chars) chars.innerHTML = specialsMenu();
     editor = window.CribroEditor.create($("#noteText"), { onInput: scheduleSave });
     applySpellcheck();
   }
@@ -678,7 +682,13 @@
 
   /* Wszystkie menu paska są tym samym rodzajem rzeczy: wychodzą spod
      przycisku i zasłaniają tekst. Otwarte może być jedno. */
-  const MENUS = ["#noteShareMenu", "#noteBlockMenu", "#noteAlignMenu", "#noteFolderMenu"];
+  const MENUS = [
+    "#noteBlockMenu",
+    "#noteAlignMenu",
+    "#noteFolderMenu",
+    "#noteCharsMenu",
+    '[data-acts-menu="share"]',
+  ];
 
   function closeMenus(except = null) {
     for (const id of MENUS) {
@@ -696,29 +706,12 @@
     menu.hidden = !open;
   }
 
-  async function runShare(what, note) {
+  /* Wysyłka siedzi w js/notes-core.js — tam, gdzie pasek czynności, który
+     ją wywołuje. Kartka na pulpicie ma ten sam pasek i tę samą wysyłkę;
+     dwie kopie rozjechałyby się przy pierwszej zmianie w Notion. */
+  async function share(what, note) {
     try {
-      if (what === "apple") {
-        flash(t("Wysyłam do Notatek Apple…"));
-        await api.notes.toAppleNotes(note.id);
-        flash(t("Wysłane do Notatek Apple"));
-      } else if (what === "text") {
-        await api.system.copy(note.text);
-        flash(t("Tekst skopiowany"));
-      } else if (what === "md") {
-        await api.system.copy(await api.notes.markdown(note.id));
-        flash(t("Markdown skopiowany"));
-      } else if (what === "file") {
-        const result = await api.notes.export(note.id);
-        if (!result.canceled) flash(t("Zapisane do pliku"));
-      } else if (what === "pdf") {
-        const result = await api.notes.pdf(note.id);
-        if (!result.canceled) flash(t("Zapisane jako PDF"));
-      } else if (what === "notion") {
-        flash(t("Wysyłam do Notion…"));
-        const result = await api.notes.toNotion(note.id);
-        flash(result.updated ? t("Zaktualizowane w Notion") : t("Wysłane do Notion"));
-      }
+      await runShare(what, note, { api, say: flash });
     } catch (error) {
       flash(String(error.message || error));
     }
@@ -778,11 +771,53 @@
       return;
     }
 
-    const share = event.target.closest("[data-share]");
-    if (share) {
+    /* Znak specjalny wchodzi jak wpisany z klawiatury: w miejsce kursora,
+       do cofnięcia jednym ⌘Z. Menu zostaje otwarte — znaki wstawia się
+       seriami („→" i zaraz „×"), a zamykanie po każdym kazałoby otwierać
+       je od nowa. */
+    const glyph = event.target.closest("[data-char]");
+    if (glyph) {
+      editor.insertText(glyph.dataset.char);
+      return;
+    }
+
+    /* Dolny pasek czynności. Idzie PRZED `data-note-act`, bo „Udostępnij"
+       ma tam własne menu, a nie pozycję w pasku narzędzi. */
+    const act = event.target.closest("[data-act]")?.dataset.act;
+    if (act) {
+      if (act === "share") {
+        toggleMenu('[data-acts-menu="share"]');
+        return;
+      }
       closeMenus();
       const note = current();
-      if (note) await runShare(share.dataset.share, note);
+      if (!note) return;
+      try {
+        const gone = await runAction(act, note, {
+          api,
+          say: flash,
+          after: () => {
+            paintActions(root, note);
+            renderCards();
+            if (act === "sift") renderNote();
+          },
+        });
+        if (gone) {
+          state.notes = state.notes.filter((item) => item.id !== note.id);
+          state.selected = state.notes.length ? sortNotes(state.notes)[0].id : null;
+          render();
+        }
+      } catch (error) {
+        flash(String(error.message || error));
+      }
+      return;
+    }
+
+    const shareTo = event.target.closest("[data-share]");
+    if (shareTo) {
+      closeMenus();
+      const note = current();
+      if (note) await share(shareTo.dataset.share, note);
       return;
     }
 
@@ -803,12 +838,25 @@
       translateTree(root);
       return;
     }
-    if (["share-menu", "block-menu", "align-menu", "folder-menu"].includes(action)) {
+    if (action === "folder-pdf") {
+      /* Odmowa jest tu zwykłym wynikiem: szuflada może mieć w środku same
+         puste notatki, a wtedy proces główny mówi o tym zdaniem. Bez tego
+         przycisk milczałby tak samo, jak przy udanym zapisie. */
+      try {
+        const result = await api.notes.exportFolder(state.folder);
+        if (result?.canceled) return;
+        flash(t("Zapisane: {ile} notatek w jednym PDF-ie.", { ile: result?.notes ?? 0 }));
+      } catch (problem) {
+        flash(problem.message);
+      }
+      return;
+    }
+    if (["block-menu", "align-menu", "folder-menu", "chars-menu"].includes(action)) {
       toggleMenu({
-        "share-menu": "#noteShareMenu",
         "block-menu": "#noteBlockMenu",
         "align-menu": "#noteAlignMenu",
         "folder-menu": "#noteFolderMenu",
+        "chars-menu": "#noteCharsMenu",
       }[action]);
       return;
     }
@@ -853,22 +901,6 @@
           `${new Date().toLocaleTimeString(uiLocale(), { hour: "2-digit", minute: "2-digit" })} — `,
         );
         break;
-      case "pin":
-        await togglePin(note.id);
-        break;
-      case "widget":
-        await toggleWidget(note);
-        break;
-      case "sift":
-        flash(t("Przesiewam notatkę…"));
-        try {
-          Object.assign(note, await api.notes.sift(note.id));
-          state.hint = "";
-          render();
-        } catch (error) {
-          flash(String(error.message || error));
-        }
-        break;
       case "undo-sift":
         Object.assign(note, await api.notes.undoSift(note.id), { previousText: null });
         render();
@@ -884,12 +916,6 @@
         if (field) startFolderName(field, note);
         break;
       }
-      case "delete":
-        await api.notes.remove(note.id);
-        state.notes = state.notes.filter((item) => item.id !== note.id);
-        state.selected = state.notes.length ? sortNotes(state.notes)[0].id : null;
-        render();
-        break;
     }
   }
 
@@ -898,6 +924,10 @@
   const NotesView = {
     mount(element) {
       root = element;
+      /* Symbole paska czynności. Okno główne ma je w swoim HTML-u, kartka
+         na pulpicie nie ma żadnego — a pasek ma wyglądać wszędzie tak samo
+         (patrz ensureIcons w js/notes-core.js). */
+      ensureIcons(element.ownerDocument);
       root.addEventListener("click", (event) => {
         onClick(event).catch((error) => flash(String(error.message || error)));
       });

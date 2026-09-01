@@ -126,12 +126,23 @@ function trimRepeat(before, after, cap = 40) {
 }
 
 /**
- * Na ile `quiet` jest echem `loud` — udział słów cichszego toru, które
- * padły też w głośniejszym, w tej samej kolejności.
+ * Na ile `quiet` jest echem `loud` — długość NAJDŁUŻSZEGO CIĄGU słów, który
+ * w obu tekstach stoi pod rząd, w stosunku do długości cichszego.
  *
- * Nie porównujemy zbiorów słów, tylko CIĄGI. Dwie osoby mówiące o tym samym
- * używają tych samych słów w różnej kolejności; echo powtarza kolejność
- * co do słowa, bo to jest fizycznie to samo nagranie.
+ * ══ DLACZEGO POD RZĄD, A NIE „W TEJ SAMEJ KOLEJNOŚCI" ══
+ *
+ * Wcześniej liczyło się to jako podciąg: ile słów cichszego toru da się
+ * odnaleźć w głośniejszym, byle po kolei — z dowolnymi dziurami. Brzmi
+ * ostrożnie, a jest siatką o oczkach wielkości rozmowy: przy jednym odcinku
+ * mikrofonu filtr ogląda kilka minut cudzego tekstu, a w kilku minutach
+ * dowolnej mowy „the … you … about … the … next … week" stoi po kolei
+ * ZAWSZE. Zmierzone na zajęciach z angielskiego: przy stu siedemdziesięciu
+ * słowach drugiej strony wypadało co czwarte prawdziwe zdanie ucznia,
+ * a przy pełnym oknie — większość. Tor potrafił zniknąć w całości.
+ *
+ * Echo jest zaś fizycznie tym samym nagraniem, więc powtarza słowa
+ * NIEPRZERWANIE. Ciąg pod rząd trafia w nie tak samo pewnie, a nie trafia
+ * w dwie osoby mówiące o tym samym.
  *
  * @returns {number} 0…1
  */
@@ -140,15 +151,25 @@ function echoRatio(quiet, loud) {
   const theirs = words(loud);
   if (!mine.length || !theirs.length) return 0;
 
-  let matched = 0;
-  let at = 0;
-  for (const word of mine) {
-    const found = theirs.indexOf(word, at);
-    if (found === -1) continue;
-    matched += 1;
-    at = found + 1;
+  /* Najdłuższy wspólny ciąg — klasyczna tabelka, ale w dwóch wierszach:
+     zdanie ma kilkanaście słów, a druga strona bywa ma ich kilkaset i pełna
+     tabela byłaby megabajtem na każde porównanie. */
+  let previous = new Uint16Array(theirs.length + 1);
+  let current = new Uint16Array(theirs.length + 1);
+  let best = 0;
+
+  for (let a = 1; a <= mine.length; a += 1) {
+    for (let b = 1; b <= theirs.length; b += 1) {
+      current[b] = mine[a - 1] === theirs[b - 1] ? previous[b - 1] + 1 : 0;
+      if (current[b] > best) best = current[b];
+    }
+    const swap = previous;
+    previous = current;
+    current = swap;
+    current.fill(0);
   }
-  return matched / mine.length;
+
+  return best / mine.length;
 }
 
 const overlaps = (a, b, slack) => a.from < b.to + slack && b.from < a.to + slack;
@@ -178,6 +199,14 @@ const sentences = (text) =>
 const MIN_ECHO_WORDS = 4;
 
 /**
+ * Jak długa może być jedna wypowiedź w zapisie, w sekundach.
+ *
+ * Cztery minuty: tyle, żeby zdanie przecięte granicą odcinka zostało jednym
+ * zdaniem, i nie tyle, żeby znacznik czasu przestał cokolwiek znaczyć.
+ */
+const MAX_SPAN = 240;
+
+/**
  * Odcinki w jeden zapis rozmowy.
  *
  * @param {Array<{lane, from, to, text}>} pieces
@@ -185,9 +214,10 @@ const MIN_ECHO_WORDS = 4;
  * @param {number} [options.echo]  od jakiego udziału uznajemy przesłuch
  * @param {number} [options.slack] o ile sekund tory mogą się rozjechać
  * @param {number} [options.gap]   przerwa, po której zaczyna się nowa wypowiedź
+ * @param {number} [options.maxSpan] jak długa może być jedna wypowiedź w zapisie
  * @returns {Array<{speaker, lane, at, text}>}
  */
-function splice(pieces, { echo = 0.6, slack = 2, gap = 12, speakers } = {}) {
+function splice(pieces, { echo = 0.6, slack = 2, gap = 12, maxSpan = MAX_SPAN, speakers } = {}) {
   // Podpisy mówiących wchodzą z zewnątrz, o ile ktoś je zna — patrz
   // speakerFor wyżej i main/meeting.js.
   const who = { ...SPEAKER, ...(speakers ?? {}) };
@@ -234,11 +264,32 @@ function splice(pieces, { echo = 0.6, slack = 2, gap = 12, speakers } = {}) {
   }
 
   /* 3. Sklejanie w wypowiedzi. Ten sam tor bez długiej przerwy to dalej
-        ta sama wypowiedź, choćby padła na przestrzeni trzech odcinków. */
+        ta sama wypowiedź, choćby padła na przestrzeni trzech odcinków.
+
+        ══ ALE NIE BEZ KOŃCA ══
+
+        Odcinki jednego toru stykają się z definicji (następny zaczyna się
+        o zakładkę PRZED końcem poprzedniego), więc „przerwa" między nimi
+        jest zawsze ujemna i warunek niżej był spełniony ZAWSZE. Dopóki
+        druga strona coś mówiła, sklejanie przerywała zmiana toru i nikt
+        tego nie widział. Gdy druga strona zamilkła — albo gdy wycięło ją
+        echo — cała godzina zlewała się w JEDNĄ wypowiedź ze znacznikiem
+        0:00. Tak wyglądał w zapisie wykład i tak wyglądały zajęcia, na
+        których mówi głównie jedna osoba.
+
+        Wypowiedź ma więc górną długość. Nie dlatego, że po czterech
+        minutach ktoś przestaje mówić, tylko dlatego, że znacznik czasu ma
+        do czegoś służyć: zapisu, w którym jeden znacznik obejmuje godzinę,
+        nie da się z niczym zestawić — ani z nagraniem, ani z pamięcią. */
   const lines = [];
   for (const piece of kept) {
     const previous = lines[lines.length - 1];
-    if (previous && previous.lane === piece.lane && piece.from - previous.to <= gap) {
+    if (
+      previous &&
+      previous.lane === piece.lane &&
+      piece.from - previous.to <= gap &&
+      piece.to - previous.at <= maxSpan
+    ) {
       previous.text = `${previous.text} ${piece.text}`.trim();
       previous.to = piece.to;
       continue;
@@ -265,4 +316,5 @@ module.exports = {
   speakerFor,
   SPEAKER,
   MIN_ECHO_WORDS,
+  MAX_SPAN,
 };

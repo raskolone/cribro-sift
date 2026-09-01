@@ -26,6 +26,10 @@ const VIEWS = {
   grains: { title: "Ziarna", subtitle: "Słowa, których sito nigdy nie tknie." },
   commands: { title: "Polecenia", subtitle: "Zdania, po których sito wie, co zrobić." },
   settings: { title: "Ustawienia", subtitle: "Skróty, dostawcy, prywatność." },
+  admin: {
+    title: "Panel admina",
+    subtitle: "Kto się zarejestrował i co widzi. Na czas wdrażania.",
+  },
 };
 
 const KEY_GLYPH = { Alt: "⌥", Ctrl: "⌃", Shift: "⇧", Meta: "⌘", Space: "␣" };
@@ -68,10 +72,16 @@ const state = {
      na pytanie zadane przed chwilą i znika razem z oknem. */
   probeText: "",
   probe: null,
-  /* Nasłuch klawiszy do zrzutu ekranu. Poza `settings`, bo to nie jest
-     ustawienie, tylko chwila między kliknięciem „Ustaw klawisze"
-     a naciśnięciem ich — jak formularz konta i próba polecenia. */
-  shotKeys: false,
+  /* Nasłuch klawiszy. Poza `settings`, bo to nie jest ustawienie, tylko
+     chwila między kliknięciem „Ustaw klawisze" a naciśnięciem ich — jak
+     formularz konta i próba polecenia.
+
+     Trzyma ŚCIEŻKĘ ustawienia, do którego łapiemy, a nie samo „tak/nie":
+     skrótów wybieranych ręką jest więcej niż jeden i muszą się nawzajem
+     wypychać. Dwa nasłuchy naraz zapisałyby te same klawisze w dwóch
+     miejscach — a raz ustawiony skrót nie ma prawa zależeć od tego, który
+     przycisk kliknięto pierwszy. */
+  keysFor: null,
 };
 
 /* ── Pomocnicze ───────────────────────────────────────────────── */
@@ -276,10 +286,7 @@ function renderStart() {
                ${escape(timeAgo(last.at))} · ${t("{n} słów na wejściu, {out} na wyjściu", {
                  n: last.rawWords ?? 0,
                  out: last.siftedWords ?? 0,
-               })}
-               ${last.siftedWords ?? 0} na wyjściu${
-                 last.timings?.total ? ` · ${(last.timings.total / 1000).toFixed(1)} s` : ""
-               }
+               })}${last.timings?.total ? ` · ${(last.timings.total / 1000).toFixed(1)} s` : ""}
              </p>
              <div class="entry__text" data-i18n="skip">${escape(last.text)}</div>
              ${last.raw ? renderDiff(last) : ""}
@@ -854,6 +861,8 @@ function renderConflicts() {
 function renderSettings() {
   const { settings, status } = state;
   const hold = settings.hotkey.hold.map((key) => KEY_GLYPH[key] ?? key);
+  const quickKeys = state.keysFor === KEYS.quickNote.path;
+  const holdKeys = state.keysFor === KEYS.hold.path;
 
   const toggle = (path, label, hint, value) => `
     <div class="field">
@@ -874,10 +883,27 @@ function renderSettings() {
       <div class="field">
         <div class="field__label">
           <strong>Trzymanie</strong>
-          <span>Przytrzymaj klawisze i mów. Puszczasz — sito pracuje. Do jednego zdania w biegu.</span>
+          <span>
+            ${
+              holdKeys
+                ? `Przytrzymaj dwa albo trzy modyfikatory naraz — ⌘, ⌃, ⌥, ⇧. Sama litera
+                   tu nie wejdzie: trzymanie ⌥ i „S” wsypywałoby „s” do aplikacji, do
+                   której właśnie mówisz. Escape przerywa.`
+                : "Przytrzymaj klawisze i mów. Puszczasz — sito pracuje. Do jednego zdania w biegu."
+            }
+          </span>
         </div>
         <div class="field__control" style="display: flex; gap: 6px; align-items: center">
           ${hold.map((key) => `<kbd>${key}</kbd>`).join('<span style="color:var(--text-mute)">+</span>')}
+          <button class="btn btn--sm${holdKeys ? " btn--amber" : ""}"
+                  data-act="keys-record" data-keys="hold" style="margin-left: var(--s-2)">
+            ${holdKeys ? "Czekam na klawisze…" : "Zmień"}
+          </button>
+          ${
+            hold.join("") === "⌃⌥"
+              ? ""
+              : `<button class="btn btn--sm" data-act="keys-clear" data-keys="hold">Przywróć ⌃⌥</button>`
+          }
         </div>
       </div>
 
@@ -900,13 +926,38 @@ function renderSettings() {
       <div class="field">
         <div class="field__label">
           <strong>Szybka notatka</strong>
-          <span>Otwiera małe okno z jednym polem tekstowym. Z menu aplikacji: ⌘⇧N. Skrótu globalnego, działającego spoza Cribro, jeszcze nie ma.</span>
+          <span>
+            ${
+              quickKeys
+                ? "Naciśnij klawisze razem z modyfikatorem. Escape przerywa."
+                : `Otwiera małe okno z jednym polem tekstowym. ⌘⇧N działa, gdy Cribro
+                   jest z przodu; własne klawisze działają zawsze — po to, żeby zdanie,
+                   które przyszło do głowy w cudzym oknie, nie musiało czekać.`
+            }
+          </span>
+          ${
+            /* Zajęte klawisze wyglądają dokładnie jak brak klawiszy, więc
+               mówimy o tym wprost — inaczej jedyną informacją byłoby to,
+               że nic się nie dzieje. */
+            settings.hotkey.quickNote && status.quickNoteHotkey === false
+              ? `<div class="setup__result is-bad">Te klawisze zajęła inna aplikacja. Z menu działa dalej.</div>`
+              : ""
+          }
         </div>
         <div class="field__control" style="display: flex; gap: var(--s-2); align-items: center">
           ${
             settings.hotkey.quickNote
-              ? `<kbd>${escape(settings.hotkey.quickNote)}</kbd>`
+              ? `<kbd>${escape(glyphs(settings.hotkey.quickNote))}</kbd>`
               : `<span class="pill">nie ustawiono</span>`
+          }
+          <button class="btn btn--sm${quickKeys ? " btn--amber" : ""}"
+                  data-act="keys-record" data-keys="quickNote">
+            ${quickKeys ? "Czekam na klawisze…" : settings.hotkey.quickNote ? "Zmień" : "Ustaw klawisze"}
+          </button>
+          ${
+            settings.hotkey.quickNote
+              ? `<button class="btn btn--sm" data-act="keys-clear" data-keys="quickNote">Skasuj</button>`
+              : ""
           }
           <button class="btn btn--sm" data-act="quick-note">Wypróbuj</button>
         </div>
@@ -1006,6 +1057,52 @@ function renderSettings() {
     </div>`;
 }
 
+/**
+ * Skróty, które wybiera się ręką — jedno miejsce dla wszystkich.
+ *
+ * Każdy z nich ma tę samą mechanikę (kliknij, naciśnij klawisze, sprawdź
+ * czy wolne) i tę samą pułapkę: skrót, którego nie udało się zarejestrować,
+ * milczy dokładnie tak jak skrót, którego nie ma. Trzymanie ich w katalogu,
+ * a nie w dwóch bliźniaczych gałęziach kodu, znaczy, że dołożenie trzeciego
+ * jest jednym wpisem, a nie kolejną kopią obsługi klawiatury.
+ *
+ * `cleared` mówi, co zostaje po skasowaniu klawiszy — bo w obu wypadkach
+ * funkcja nie ginie, tylko wraca do menu, i człowiek ma o tym usłyszeć.
+ */
+const KEYS = {
+  shot: {
+    path: "shot.hotkey",
+    label: "Tekst z ekranu",
+    cleared: "Skrót skasowany — zostaje menu.",
+  },
+  quickNote: {
+    path: "hotkey.quickNote",
+    label: "Szybka notatka",
+    cleared: "Skrót skasowany — zostaje ⌘⇧N przy Cribro z przodu.",
+  },
+  /* Trzymanie ma INNY KSZTAŁT niż dwa powyżej i dlatego ma własny rodzaj.
+     Tam zapisujemy jeden napis dla systemu („Control+Alt+N"); tutaj listę
+     modyfikatorów, którą czyta silnik skrótu (patrz KEY w main/hotkeys.js),
+     bo trzymanie nie jest skrótem systemowym — jest stanem klawiatury. */
+  hold: {
+    path: "hotkey.hold",
+    label: "Trzymanie",
+    kind: "hold",
+    /* Nie „skasuj", a „przywróć": bez klawiszy do trzymania funkcja nie
+       wraca do menu, tylko przestaje istnieć. Zawsze musi być jakiś komplet. */
+    fallback: ["Ctrl", "Alt"],
+    cleared: "Wróciło ⌃⌥ — domyślny komplet.",
+  },
+};
+
+/** Modyfikatory w kolejności, w jakiej je zapisujemy — zawsze tej samej. */
+const HOLD_KEYS = [
+  ["ctrlKey", "Ctrl"],
+  ["altKey", "Alt"],
+  ["shiftKey", "Shift"],
+  ["metaKey", "Meta"],
+];
+
 /* Zapis skrótu w klawiszach, nie w nazwach: „Control+Alt+S" to zapis dla
    systemu, a „⌃⌥S" — dla oczu. */
 const ACCEL_GLYPH = {
@@ -1037,7 +1134,7 @@ const glyphs = (accelerator) =>
  */
 function renderShotCard() {
   const shot = state.settings.shot ?? {};
-  const listening = state.shotKeys;
+  const listening = state.keysFor === KEYS.shot.path;
 
   return `
     <div class="card">
@@ -1065,20 +1162,26 @@ function renderShotCard() {
               ? `<kbd>${escape(glyphs(shot.hotkey))}</kbd>`
               : `<span class="pill">nie ustawiono</span>`
           }
-          <button class="btn btn--sm${listening ? " btn--amber" : ""}" data-act="shot-record">
+          <button class="btn btn--sm${listening ? " btn--amber" : ""}"
+                  data-act="keys-record" data-keys="shot">
             ${listening ? "Czekam na klawisze…" : shot.hotkey ? "Zmień" : "Ustaw klawisze"}
           </button>
-          ${shot.hotkey ? `<button class="btn btn--sm" data-act="shot-clear">Skasuj</button>` : ""}
+          ${shot.hotkey ? `<button class="btn btn--sm" data-act="keys-clear" data-keys="shot">Skasuj</button>` : ""}
         </div>
       </div>
 
       <div class="field">
         <div class="field__label">
           <strong>Przechwyć teraz</strong>
-          <span>To samo, co robi skrót: krzyżyk na ekranie, spacja łapie całe okno, Escape przerywa.</span>
+          <span>
+            Zaznaczenie to krzyżyk na ekranie: spacja łapie całe okno, Escape przerywa.
+            Obrazek, który już leży na dysku — załącznik, zdjęcie z telefonu, plik
+            z Pobranych — nie musi przez ekran przechodzić: czyta się go wprost.
+          </span>
         </div>
-        <div class="field__control">
+        <div class="field__control" style="display: flex; gap: var(--s-2); align-items: center">
           <button class="btn btn--sm" data-act="shot-grab">Zaznacz obszar</button>
+          <button class="btn btn--sm" data-act="shot-file">Wybierz plik…</button>
         </div>
       </div>
 
@@ -1866,6 +1969,192 @@ function renderBanner() {
      </div>`;
 }
 
+
+/* ── Panel admina ──────────────────────────────────────────────────
+   Kto się zarejestrował i co ma widzieć. Osobna zakładka, nie karta
+   w Ustawieniach — dlaczego, mówi komentarz przy pozycji w nawigacji
+   (index.html).
+
+   Widok jest CIENKI z założenia: pyta proces główny o stan i odsyła mu
+   kliknięcia. Reguła „on / off / tylko zaproszeni" mieszka w bazie
+   (supabase/schema.sql), opisy funkcji w main/admin.js, a tutaj zostaje
+   sam rysunek. */
+
+const ADMIN_STATES = [
+  ["on", "Wszyscy", "Funkcja jest widoczna dla każdego zalogowanego."],
+  ["invited", "Zaproszeni", "Widzą ją tylko ci, którym nadano ją imiennie."],
+  ["off", "Nikt", "Nie widzi jej nikt poza Tobą — masz czym testować."],
+];
+
+const admin = { users: [], features: [], loading: false, error: null, busy: null };
+
+async function renderAdmin() {
+  const root = $("#view-admin");
+
+  if (!admin.users.length && !admin.error && !admin.loading) {
+    admin.loading = true;
+    root.innerHTML = `<div class="card"><p class="muted">Pytam serwer…</p></div>`;
+    try {
+      const state = await api.admin.state();
+      admin.users = state.users ?? [];
+      admin.features = state.features ?? [];
+      admin.error = null;
+    } catch (problem) {
+      admin.error = String(problem.message ?? problem);
+    } finally {
+      admin.loading = false;
+    }
+  }
+
+  if (admin.error) {
+    /* Najczęstsza przyczyna nie jest awarią, tylko brakiem: schematu nie
+       wgrano jeszcze do bazy. Mówimy o tym wprost i podajemy plik, bo to
+       jest cała robota do wykonania. */
+    root.innerHTML = `
+      <div class="card">
+        <h3>Panel nie odpowiada</h3>
+        <p class="muted">${escape(admin.error)}</p>
+        <p class="muted">Jeśli to pierwszy raz: wklej <code>supabase/schema.sql</code>
+           do SQL Editora w panelu Supabase i naciśnij Run.</p>
+        <button class="btn" data-admin="reload">Spróbuj ponownie</button>
+      </div>`;
+    return translateTree(root);
+  }
+
+  root.innerHTML = `
+    <div class="card">
+      <h3>Funkcje</h3>
+      <p class="muted">Co widzą subskrybenci. Zmiana działa u nich od następnego uruchomienia aplikacji.</p>
+      <div class="admin__features">${admin.features.map(featureRow).join("")}</div>
+    </div>
+
+    <div class="card">
+      <h3>Zarejestrowani <span class="pill">${admin.users.length}</span></h3>
+      <p class="muted">Konta z bazy. Znaczek w kolumnie funkcji znaczy: nadane imiennie.</p>
+      ${admin.users.length ? usersTable() : '<p class="muted">Jeszcze nikogo.</p>'}
+    </div>`;
+  translateTree(root);
+}
+
+function featureRow(feature) {
+  const buttons = ADMIN_STATES.map(
+    ([value, label, why]) => `
+      <button class="seg__btn" data-admin="state" data-code="${feature.code}"
+              data-value="${value}" aria-pressed="${String(feature.state === value)}"
+              title="${escape(why)}">${label}</button>`,
+  ).join("");
+  return `
+    <div class="admin__feature">
+      <div>
+        <b>${escape(feature.label)}</b>
+        <span class="muted">${escape(feature.note ?? "")}</span>
+        ${feature.known ? "" : '<span class="admin__warn">brak w bazie — wgraj schemat</span>'}
+      </div>
+      <div class="seg">${buttons}</div>
+    </div>`;
+}
+
+function usersTable() {
+  /* Kolumna na funkcję, ale tylko na te wpuszczane imiennie. Przełącznik
+     przy funkcji widocznej dla wszystkich nic by nie zmieniał, a wyglądał
+     na coś, co zmienia. */
+  const invited = admin.features.filter((item) => item.state === "invited");
+  const head = invited.map((item) => `<th title="${escape(item.note ?? "")}">${escape(item.label)}</th>`).join("");
+
+  const rows = admin.users
+    .map((user) => {
+      const cells = invited
+        .map((item) => {
+          const on = (user.features ?? []).includes(item.code);
+          return `<td class="admin__cell">
+            <button class="admin__grant" data-admin="grant" data-code="${item.code}"
+                    data-user="${user.id}" aria-pressed="${String(on)}"
+                    title="${on ? "Odbierz dostęp" : "Nadaj dostęp"}">${on ? "✓" : "—"}</button>
+          </td>`;
+        })
+        .join("");
+      return `
+        <tr>
+          <td>
+            <b>${escape(user.email ?? "—")}</b>
+            ${user.confirmed ? "" : '<span class="admin__warn">niepotwierdzony</span>'}
+          </td>
+          <td class="muted">${escape(user.display_name ?? "")}</td>
+          <td><span class="pill">${escape(user.plan ?? "free")}</span></td>
+          <td class="muted">${shortDate(user.created_at)}</td>
+          <td class="muted">${user.last_sign_in ? shortDate(user.last_sign_in) : "—"}</td>
+          ${cells}
+        </tr>`;
+    })
+    .join("");
+
+  return `
+    <div class="admin__scroll">
+      <table class="admin__table">
+        <thead><tr>
+          <th>Adres</th><th>Nazwa</th><th>Plan</th><th>Konto od</th><th>Ostatnio</th>${head}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+/** Data w postaci, którą czyta się bez liczenia. */
+function shortDate(iso) {
+  const at = Date.parse(iso ?? "");
+  if (!Number.isFinite(at)) return "—";
+  return new Date(at).toLocaleDateString(uiLocale(), {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+async function onAdminClick(event) {
+  const button = event.target.closest("[data-admin]");
+  if (!button) return;
+  const what = button.dataset.admin;
+
+  if (what === "reload") {
+    admin.error = null;
+    admin.users = [];
+    return void render();
+  }
+
+  /* Podwójne kliknięcie w trakcie żądania wysłałoby drugie, sprzeczne
+     z pierwszym — a wynik zależałby od tego, które wróci później. */
+  if (admin.busy) return;
+  admin.busy = what;
+  button.disabled = true;
+
+  try {
+    if (what === "state") {
+      const { code, value } = button.dataset;
+      await api.admin.setFeature(code, value);
+      const feature = admin.features.find((item) => item.code === code);
+      if (feature) feature.state = value;
+      toast(t("Zapisane."));
+    } else if (what === "grant") {
+      const { code, user } = button.dataset;
+      const on = button.getAttribute("aria-pressed") !== "true";
+      await api.admin.grant(code, user, on);
+      const person = admin.users.find((item) => item.id === user);
+      if (person) {
+        const have = new Set(person.features ?? []);
+        if (on) have.add(code);
+        else have.delete(code);
+        person.features = [...have];
+      }
+    }
+    await renderAdmin();
+  } catch (problem) {
+    toast(String(problem.message ?? problem));
+    button.disabled = false;
+  } finally {
+    admin.busy = null;
+  }
+}
+
 /* ── Render ───────────────────────────────────────────────────── */
 
 function render() {
@@ -1889,9 +2178,38 @@ function render() {
     ? t("Sito {mesh}", { mesh: t(MESH[state.settings.mesh].name) })
     : "";
 
+  /* ══ CZEGO W TYM OKNIE NIE MA ══
+
+     Dwie różne granice, oba razy chowające całą zakładkę, a nie blokujące
+     ją napisem „niedostępne":
+
+       PANEL należy do właściciela (main/owner.js). Zwykły użytkownik nie ma
+       się dowiedzieć, że taka zakładka istnieje.
+
+       NOTATKI ZE SPOTKAŃ są w becie i wolno je wyłączyć zdalnie, bez
+       wydawania nowej wersji (main/admin.js). Odpowiedź przychodzi
+       z serwera; gdy nie przyszła, widać wszystko — wyłączenie jest
+       decyzją, milczenie nie.
+
+     Zakładka schowana, a nie wyszarzona, bo wyszarzona nadal mówi, co
+     w niej stało — a przy funkcji w becie to jest obietnica, której nikt
+     nie składał. */
+  const showFeature = (code) => state.settings?.features?.[code] !== false;
+  const visible = (view) =>
+    view === "admin" ? !!state.settings?.owner : showFeature(view);
+
   document.querySelectorAll(".nav__item").forEach((item) => {
-    item.setAttribute("aria-selected", String(item.dataset.view === state.view));
+    const shown = visible(item.dataset.view);
+    item.hidden = !shown;
+    item.setAttribute("aria-selected", String(shown && item.dataset.view === state.view));
   });
+
+  /* Zakładka mogła zniknąć pod ręką — po wylogowaniu albo po zdalnym
+     wyłączeniu funkcji. Stanie na niej znaczyłoby puste okno bez wyjścia. */
+  if (!visible(state.view)) {
+    state.view = "sifted";
+    return render();
+  }
   document.querySelectorAll(".view").forEach((section) => {
     section.hidden = section.id !== `view-${state.view}`;
   });
@@ -1909,6 +2227,7 @@ function render() {
   if (state.view === "grains") renderGrains();
   if (state.view === "commands") renderCommands();
   if (state.view === "settings") renderSettings();
+  if (state.view === "admin") void renderAdmin();
 
   const hold = state.settings?.hotkey.hold.map((key) => KEY_GLYPH[key] ?? key) ?? [];
   $("#keycap").innerHTML =
@@ -1941,6 +2260,10 @@ async function save(path, value) {
 }
 
 document.addEventListener("click", async (event) => {
+  // Panel admina ma własny obieg — idzie pierwszy, bo jego przyciski nie
+  // przypominają niczego innego w tym oknie i nie ma z czym kolidować.
+  if (event.target.closest("[data-admin]")) return void onAdminClick(event);
+
   const link = event.target.closest('[data-act="open-link"]');
   if (link) {
     event.preventDefault();
@@ -1973,20 +2296,32 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  if (event.target.closest('[data-act="shot-file"]')) {
+    await api.system.readShotFile();
+    return;
+  }
+
   /* Nasłuch klawiszy. Zapisujemy dopiero przy klawiszu ZNAKOWYM — sam
      modyfikator nie jest skrótem w rozumieniu systemu i nie da się go
      zarejestrować (patrz detectConflicts w main/shortcuts.js). */
-  if (event.target.closest('[data-act="shot-record"]')) {
-    state.shotKeys = !state.shotKeys;
+  const recordKeys = event.target.closest('[data-act="keys-record"]');
+  if (recordKeys) {
+    const target = KEYS[recordKeys.dataset.keys];
+    /* Kliknięcie w ten sam przycisk drugi raz przerywa, a kliknięcie
+       w cudzy — przenosi nasłuch. Nasłuch jest jeden, więc nie ma stanu,
+       w którym dwa pola czekają na te same klawisze. */
+    state.keysFor = state.keysFor === target.path ? null : target.path;
     render();
     return;
   }
 
-  if (event.target.closest('[data-act="shot-clear"]')) {
-    state.shotKeys = false;
-    await save("shot.hotkey", null);
+  const clearKeys = event.target.closest('[data-act="keys-clear"]');
+  if (clearKeys) {
+    const target = KEYS[clearKeys.dataset.keys];
+    state.keysFor = null;
+    await save(target.path, target.fallback ?? null);
     render();
-    toast(t("Skrót skasowany — zostaje menu."));
+    toast(t(target.cleared));
     return;
   }
 
@@ -2387,19 +2722,47 @@ function accelKey(event) {
 document.addEventListener(
   "keydown",
   async (event) => {
-    if (!state.shotKeys) return;
+    if (!state.keysFor) return;
+    const target = Object.values(KEYS).find((item) => item.path === state.keysFor);
     event.preventDefault();
     event.stopPropagation();
 
     if (event.key === "Escape") {
-      state.shotKeys = false;
+      state.keysFor = null;
       return render();
     }
     if (event.key === "Backspace" || event.key === "Delete") {
-      state.shotKeys = false;
-      await save("shot.hotkey", null);
+      state.keysFor = null;
+      await save(target.path, target.fallback ?? null);
       render();
-      return toast(t("Skrót skasowany — zostaje menu."));
+      return toast(t(target.cleared));
+    }
+
+    /* TRZYMANIE JEST STANEM KLAWIATURY, NIE SKRÓTEM SYSTEMOWYM — i dlatego
+       kończy się tutaj, przed całą resztą. Nie ma czego rejestrować, nie ma
+       kogo pytać o konflikt (żaden interfejs nie widzi aplikacji, która
+       podsłuchuje klawiaturę) i nie ma klawisza znakowego pod modyfikatorami.
+
+       Dwa modyfikatory to minimum, i nie jest to ostrożność na zapas: jeden
+       trzyma się przy zwykłym pisaniu dziesiątki razy na minutę, więc skrót
+       na jednym ruszałby nagranie sam. Trzy to maksimum, bo czwarty nie
+       zostawia już ręki na nic innego. */
+    if (target.kind === "hold") {
+      const held = HOLD_KEYS.filter(([flag]) => event[flag]).map(([, name]) => name);
+      if (accelKey(event)) {
+        return toast(t("Do trzymania biorą się same modyfikatory — bez litery."));
+      }
+      if (held.length < 2) return; // czekamy, aż dojdzie drugi
+      if (held.length > 3) return toast(t("Najwyżej trzy klawisze — czwarty nie zostawia ręki."));
+
+      state.keysFor = null;
+      await save(target.path, held);
+      render();
+      return toast(
+        t("{skrót} ustawione do trzymania.", {
+          skrót: held.map((key) => KEY_GLYPH[key] ?? key).join(""),
+        }),
+      );
     }
 
     const key = accelKey(event);
@@ -2415,8 +2778,8 @@ document.addEventListener(
     if (!mods.length) return toast(t("Skrót globalny potrzebuje ⌘, ⌃, ⌥ albo ⇧."));
 
     const accelerator = [...mods, key].join("+");
-    state.shotKeys = false;
-    await save("shot.hotkey", accelerator);
+    state.keysFor = null;
+    await save(target.path, accelerator);
     render();
 
     /* Od razu sprawdzamy, czy klawisze są wolne. Skrót, który się nie
