@@ -715,6 +715,18 @@ create policy "nadania: odbiera admin"
   using (public.is_admin());
 
 
+-- Prawa do tabel — jawnie, z tego samego powodu co przy `plans` i `usage`
+-- wyżej: warstwa dostępu to nie jest miejsce, w którym opłaca się polegać
+-- na cudzych ustawieniach domyślnych. O tym, KTÓRE wiersze widać, decyduje
+-- i tak RLS.
+--
+-- `public.admins` NIE DOSTAJE NIC i to jest zamierzone: spisu adresów nie
+-- czyta z aplikacji nikt, a sprawdzenie „czy admin" idzie przez funkcję
+-- `security definer`, której prawa liczą się względem właściciela.
+grant select on table public.features to authenticated;
+grant select, insert, delete on table public.feature_grants to authenticated;
+
+
 -- ── Co widzi TEN użytkownik ────────────────────────────────────────────
 --
 -- Jedno pytanie, jedna odpowiedź: lista kodów funkcji, które wolno mu
@@ -795,14 +807,29 @@ grant execute on function public.admin_users() to authenticated;
 -- ── KOMU CO NADANO ─────────────────────────────────────────────────────
 --
 -- Ostatnie zapytanie w pliku, więc to jego wynik zostaje na ekranie po
--- naciśnięciu Run. `plan_efektywny` liczy to samo, co polityki dostępu:
--- wygasły Pro pokaże się tu jako 'free', choć w kolumnie `plan` stoi 'pro'.
+-- naciśnięciu Run. Jedno spojrzenie ma odpowiedzieć na wszystko, co po
+-- wgraniu schematu trzeba wiedzieć:
+--
+--   admin            czy PANEL ADMINA otworzy się na tym koncie. Liczy się
+--                    adres, nie komputer — jeśli logujesz się w aplikacji
+--                    innym adresem niż ten w tabeli `admins`, panel wróci
+--                    z pustą listą i bez słowa wyjaśnienia.
+--   plan_efektywny   to samo, co liczą polityki dostępu: wygasły Pro
+--                    pokaże się tu jako 'free', choć w kolumnie `plan`
+--                    stoi 'pro'.
+--   funkcje_nadane   komu co wpuszczono imiennie (stan „Zaproszeni").
 
 select u.email,
-       p.id is not null as ma_profil,
+       (a.email is not null)                 as admin,
+       p.id is not null                      as ma_profil,
        p.plan,
-       p.plan_until,
-       public.effective_plan(u.id) as plan_efektywny
+       public.effective_plan(u.id)           as plan_efektywny,
+       coalesce(
+         (select array_agg(g.feature order by g.feature)
+            from public.feature_grants g
+           where g.user_id = u.id),
+         '{}'::text[])                       as funkcje_nadane
   from auth.users u
   left join public.profiles p on p.id = u.id
+  left join public.admins  a on lower(a.email) = lower(u.email)
  order by u.created_at;
