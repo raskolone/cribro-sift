@@ -431,6 +431,33 @@
     renderList();
   }
 
+  /**
+   * Nowa kartka na pulpicie — i notatka w oknie głównym. Jedno i to samo.
+   *
+   * ZWYKŁA notatka, a nie szybka, i to jest tu cała różnica. Wcześniej
+   * szło stąd `kind: "quick"`, przez co notatka lądowała w oknie głównym
+   * w przegródce „Szybkie notatki" (patrz groupNotes w js/notes-core.js).
+   * To jest przegródka na myśli rzucone w biegu, w małym okienku, w
+   * trakcie rozmowy — a plusik zakłada notatkę, którą się potem pisze
+   * i do której się wraca. Wpadała więc między rzeczy jednorazowe.
+   *
+   * `widget: true` znaczy, że kartka od razu leży na pulpicie: po to
+   * sięga się po ten przycisk. Jedna rzecz widoczna z dwóch stron, a nie
+   * dwa rodzaje notatki zależnie od tego, skąd powstała.
+   *
+   * Wołają to DWA przyciski — plusik w tacy (obok „Notatek") i plusik
+   * w nagłówku listy. Obydwa mają zakładać dokładnie to samo, więc mają
+   * jedno miejsce, w którym to robią.
+   */
+  async function newDeskNote() {
+    const note = await api.notes.create({ widget: true });
+    await refresh();
+    /* Od razu otwarta do pisania. Notatka założona i schowana pod listą
+       kazałaby ją jeszcze odszukać — a sięga się po plusik wtedy, gdy się
+       ma co napisać, nie kiedyś potem. */
+    return toSticky(note);
+  }
+
   function renderBadge() {
     const count = $("#count");
     count.textContent = String(notes.length);
@@ -906,25 +933,14 @@
     if (event.target.closest("#closeList")) return toBadge();
     if (event.target.closest("#back")) return toList();
 
-    if (event.target.closest("#add")) {
-      /* ZWYKŁA notatka, a nie szybka — i to jest tu cała różnica.
+    /* Plusik w tacy — obok „Notatek", bo to ta sama sprawa: tamto otwiera
+       to, co na pulpicie leży, to dokłada tam nową kartkę. Idzie przez tę
+       samą drogę co plusik w nagłówku listy, żeby jedno i drugie zakładało
+       DOKŁADNIE tę samą notatkę. */
+    if (event.target.closest("#slotNewNote")) return void newDeskNote();
 
-         Wcześniej szło stąd `kind: "quick"`, przez co notatka założona
-         plusikiem lądowała w oknie głównym w przegródce „Szybkie notatki"
-         (patrz groupNotes w js/notes-core.js). To jest przegródka na myśli
-         rzucone w biegu, w małym okienku, w trakcie rozmowy — a plusik
-         w tacy zakłada notatkę, którą się potem pisze i do której się
-         wraca. Wpadała więc między rzeczy jednorazowe i ginęła tam.
-
-         `widget: true` zostaje: notatka ma się położyć na pulpicie od
-         razu, bo po to sięga się właśnie po ten przycisk. Nowa notatka
-         jest teraz jedną rzeczą widoczną z dwóch stron — kartką na
-         pulpicie i pozycją w „Notatkach" okna głównego — a nie dwoma
-         różnymi rodzajami notatki zależnie od tego, skąd powstała. */
-      const note = await api.notes.create({ widget: true });
-      await refresh();
-      return toSticky(note);
-    }
+    // Plusik w nagłówku listy — ta sama notatka co z tacy.
+    if (event.target.closest("#add")) return void newDeskNote();
 
     if (event.target.closest("#dictate")) {
       if (current) await api.notes.dictate(current.id);

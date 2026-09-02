@@ -34,7 +34,9 @@ const wait = (ms) => new Promise((done) => setTimeout(done, ms));
    sprawdzenie na końcu. */
 const POLICY = [
   "default-src 'none'",
-  "script-src 'self' file:",
+  "script-src 'self' file: blob:",
+  "worker-src 'self' file: blob:",
+  "child-src 'self' blob:",
   "style-src 'self' file: 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' file: https://fonts.gstatic.com",
   "img-src 'self' file: data: blob:",
@@ -117,6 +119,42 @@ app.whenReady().then(async () => {
       complaints.join("\n    "),
     );
   }
+
+  /* ══ CZY NAGRYWANIE W OGÓLE RUSZA ══
+
+     Sprawdzenie samych komunikatów w konsoli NIE WYSTARCZA i to jest tu
+     wpisane z doświadczenia: pierwsza wersja tej polityki przepuściła
+     wszystkie dziewięć okien bez jednego narzekania, a mimo to zabijała
+     dyktowanie. Okno wczytywało się bez zarzutu, bo worklet powstaje
+     dopiero w chwili naciśnięcia „Dyktuj" — czyli po tym, jak test już
+     powiedział „w porządku".
+
+     Dlatego robimy to, co robi aplikacja: budujemy moduł workletu z Bloba
+     i każemy go wczytać. Mikrofonu nie ruszamy — chodzi o to, czy CSP
+     wpuści MODUŁ, a nie o to, czy jest co nagrywać. */
+  await win.loadFile(path.join(renderer, "hud.html"));
+  await wait(1200);
+  const worklet = await win.webContents.executeJavaScript(`
+    (async () => {
+      try {
+        const ctx = new AudioContext({ sampleRate: 16000 });
+        const code = "class P extends AudioWorkletProcessor { process() { return true; } } registerProcessor('csp-probe', P);";
+        const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
+        await ctx.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
+        new AudioWorkletNode(ctx, "csp-probe");
+        await ctx.close();
+        return "OK";
+      } catch (problem) {
+        return String(problem && problem.message ? problem.message : problem);
+      }
+    })()
+  `);
+  check(
+    "Dyktowanie ma z czego zbudować worklet (blob: w script-src)",
+    worklet === "OK",
+    worklet === "OK" ? "" : `AudioWorklet odmówił: ${worklet}`,
+  );
 
   /* Polityka ma nie być pusta w miejscach, na których naprawdę zależy. */
   /* Patrzymy na SAMĄ dyrektywę, nie na cały łańcuch: `https` pada dalej,

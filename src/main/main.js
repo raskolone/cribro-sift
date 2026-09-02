@@ -906,6 +906,12 @@ const WIDGET_TRAY = {
   tip: 8, // odstęp ikona ↔ dymek
   room: 168, // najszerszy dymek kolumny („Gęstość sita — Zgrubne")
   roomNotes: 96, // dymek przy notatkach — jedno słowo, więc węższy
+  /* Nowa notatka stoi o jedno kółko DALEJ niż notatki, na tej samej osi
+     w bok (patrz .slot--new w widget.html). Dymek ma więc mniej miejsca
+     do krawędzi okna niż tamten — stąd osobna liczba i krótki napis
+     („Nowa notatka", nie „Nowa notatka na pulpicie", które by się tam
+     nie zmieściło). */
+  roomNew: 96,
   /* Pytanie o notatki ze spotkania wychodzi w tę samą stronę co ikonka
      notatek i jest z nich wszystkich najszersze — bo jako jedyne ma dwa
      przyciski. Ta sama liczba stoi w widget.html jako --ask-w; okno musi
@@ -929,6 +935,18 @@ const trayReach =
 const traySide =
   Math.max(
     WIDGET_BADGE / 2 + WIDGET_TRAY.gap + WIDGET_TRAY.item + WIDGET_TRAY.tip + WIDGET_TRAY.roomNotes,
+    /* Nowa notatka: o jedno kółko i jedną przerwę dalej niż notatki,
+       plus jej własny dymek. Liczba wychodzi mniejsza od tej przy pytaniu
+       o spotkanie, więc dziś okna nie poszerza — ale stoi tu wprost, żeby
+       poszerzyła je sama, gdyby napis albo kółka kiedyś urosły. */
+    WIDGET_BADGE / 2 +
+      WIDGET_TRAY.gap +
+      WIDGET_TRAY.item / 2 +
+      WIDGET_TRAY.gap +
+      WIDGET_TRAY.item +
+      WIDGET_TRAY.item / 2 +
+      WIDGET_TRAY.tip +
+      WIDGET_TRAY.roomNew,
     WIDGET_TRAY.item / 2 + WIDGET_TRAY.tip + WIDGET_TRAY.room,
     // Pytanie o notatki ze spotkania — stoi przy samym znaczku i jest
     // szersze od każdego dymka.
@@ -5361,7 +5379,26 @@ if (!app.requestSingleInstanceLock()) {
 function guardWindows() {
   const POLICY = [
     "default-src 'none'",
-    "script-src 'self' file:",
+    /* `blob:` NIE JEST tu luzem na wszelki wypadek — bez niego nie działa
+       DYKTOWANIE, czyli jedyna rzecz, dla której ta aplikacja istnieje.
+
+       Nagrywanie liczy próbki w AudioWorklecie, a moduł workletu powstaje
+       w locie: kod leży jako tekst w js/hud.js, robi się z niego Blob
+       i `audioWorklet.addModule(blob:…)`. Moduł workletu jest dla CSP
+       SKRYPTEM, więc polityka bez `blob:` odrzucała go — a jedyne, co
+       widział człowiek, to „Nie udało się uruchomić nagrywania: Unable to
+       load a worklet's module". Dokładnie to zepsuła pierwsza wersja tej
+       polityki i dlatego jest tu dziś test, który nagrywanie naprawdę
+       uruchamia, a nie tylko wczytuje okno (scripts/csp-test.js).
+
+       Bezpieczeństwa to nie rozmienia: `blob:` może utworzyć wyłącznie
+       kod już działający w tym oknie, więc nie otwiera drogi z zewnątrz. */
+    "script-src 'self' file: blob:",
+    /* Worklety i workery bywają sprawdzane osobną dyrektywą, zależnie od
+       wersji silnika. Wpisujemy ją wprost, żeby nie zależeć od tego,
+       na którą trafi kolejny Chromium. */
+    "worker-src 'self' file: blob:",
+    "child-src 'self' blob:",
     "style-src 'self' file: 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' file: https://fonts.gstatic.com",
     "img-src 'self' file: data: blob:",

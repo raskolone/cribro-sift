@@ -464,6 +464,30 @@
         --dx: calc(-1 * var(--side));
         --dy: 0px;
       }
+
+      /* Nowa notatka stoi TUŻ ZA notatkami, na tej samej osi w bok — bo
+         to jest ta sama sprawa: jedno otwiera to, co leży na pulpicie,
+         drugie dokłada tam nową kartkę. Gdyby wpadła do kolumny pod
+         znaczkiem, byłaby szóstą czynnością „przy okazji", a nie parą
+         do notatek.
+
+         Odległość liczona, nie wpisana: to samo, co `--side`, plus jeszcze
+         jedna przerwa i jedno kółko. Zmiana rozmiaru kółek w jednym
+         miejscu przesuwa oba gniazda zgodnie. */
+      .slot--new {
+        --side-2: calc(
+          var(--badge) / 2 + var(--tray-gap, 12px) + var(--tray-item, 34px) / 2 +
+            var(--tray-gap, 12px) + var(--tray-item, 34px)
+        );
+      }
+      #stage[data-tray-side="right"] .slot--new {
+        --dx: var(--side-2);
+        --dy: 0px;
+      }
+      #stage[data-tray-side="left"] .slot--new {
+        --dx: calc(-1 * var(--side-2));
+        --dy: 0px;
+      }
       #stage[data-view="tray"] .slot {
         opacity: 1;
         pointer-events: auto;
@@ -1241,6 +1265,15 @@
         <button class="slot slot--notes" id="slotNotes">
           <span class="slot__face"><svg><use href="#w-note" /></svg></span>
           <span class="tip">Notatki</span>
+        </button>
+
+        <!-- Nowa kartka od razu na pulpicie. To ZWYKŁA notatka, nie szybka:
+             pokazuje się i tutaj, i w „Notatkach" okna głównego, gdzie da
+             się ją spokojnie dopisać. Patrz obsługa #slotNewNote
+             w js/widget.js. -->
+        <button class="slot slot--new" id="slotNewNote">
+          <span class="slot__face"><svg><use href="#w-plus" /></svg></span>
+          <span class="tip">Nowa notatka</span>
         </button>
       </div>
 

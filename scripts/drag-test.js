@@ -268,7 +268,9 @@ const cases = [
 
 fs.writeFileSync(
   path.join(work, "cases.json"),
-  JSON.stringify(cases.map(({ markdown, move, hover }) => ({ markdown, move, hover }))),
+  /* `grip` jedzie razem z resztą, choć sprawdza go dopiero proces główny:
+     okno używa go do CZEKANIA (patrz sonda niżej), a nie do oceny. */
+  JSON.stringify(cases.map(({ markdown, move, hover, grip }) => ({ markdown, move, hover, grip }))),
 );
 
 /* ── Proces główny: gest ────────────────────────────────────────
@@ -298,6 +300,14 @@ app.whenReady().then(async () => {
   const out = [];
   for (const item of JSON.parse(fs.readFileSync(${JSON.stringify(path.join(work, "cases.json"))}, "utf8"))) {
     await js("window.__setup(" + JSON.stringify(item.markdown) + ")");
+    /* Sześćdziesiąt milisekund to było za mało na ułożenie świeżo
+       wstawionego tekstu — a uchwyt umie stanąć dopiero przy linii,
+       która ma już swoje miejsce. Czekamy więc na DWIE klatki rysowania
+       zamiast na zegar: to jest ta chwila, w której układ jest gotowy,
+       niezależnie od tego, jak zajęta jest maszyna. */
+    await js(
+      "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(1))))",
+    );
     await wait(60);
     const note = { grip: null, marked: false };
 
@@ -309,9 +319,38 @@ app.whenReady().then(async () => {
       await wait(70);
       const spot = await js("window.__onLine(" + JSON.stringify(item.hover) + ")");
       if (!spot) { out.push({ error: "nie ma takiej linii: " + item.hover }); continue; }
+      /* DWA ruchy, nie jeden. Uchwyt idzie za zdarzeniem pointermove,
+         a pojedynczy skok z rogu okna wprost na linię bywał zjadany:
+         okno dostawało go, zanim skończyło układać świeżo wstawiony
+         tekst. Drugi ruch, o piksel, przychodzi już na gotowe. */
       mouse("mouseMove", spot.x, spot.y);
-      await wait(120);
-      out.push({ gripVisible: !!(await js("window.__grip()")) });
+      await wait(30);
+      mouse("mouseMove", spot.x + 1, spot.y);
+      /* ── CZEKAMY NA STAN, NIE NA ZEGAR ──
+
+         Było tu sztywne wait(120). Uchwyt pokazuje się przez obsługę
+         zdarzenia mousemove i przejście CSS, więc na obciążonej maszynie
+         bywał gotowy po stu pięćdziesięciu — i test przegrywał ten
+         wyścig. Padał wtedy ZA KAŻDYM RAZEM INNY przypadek, co wygląda
+         na przypadkowość, ale nią nie jest: pada ten, w który akurat
+         trafiło opóźnienie. Zmierzone na commicie sprzed tej poprawki:
+         dwa upadki na trzy przebiegi.
+
+         Teraz pytamy o uchwyt do skutku, przez sekundę i ćwierć. Gdy
+         przypadek mówi "uchwyt ma być", kończymy w chwili, w której jest
+         — czyli zwykle szybciej niż dawne 120 ms. Gdy mówi "nie ma go
+         być", czekamy pełny czas i dopiero wtedy stwierdzamy brak;
+         wolniej, ale to jedyny sposób, żeby BRAK znaczył brak, a nie
+         "jeszcze nie zdążył". */
+      const PATIENCE = 1250;
+      const STEP = 25;
+      let seen = false;
+      for (let waited = 0; waited <= PATIENCE; waited += STEP) {
+        seen = !!(await js("window.__grip()"));
+        if (seen === !!item.grip) break;
+        await wait(STEP);
+      }
+      out.push({ gripVisible: seen });
       continue;
     }
 
@@ -330,9 +369,22 @@ app.whenReady().then(async () => {
     } else {
       // 1. mysz wjeżdża na linię — uchwyt ma się pokazać
       const on = await js("window.__onLine(" + JSON.stringify(item.move.grab) + ")");
+      /* Ta sama poprawka co przy sondzie wyżej, i z tego samego powodu:
+         sztywne czekanie przegrywało wyścig z pojawianiem się uchwytu,
+         a bez uchwytu nie ma za co złapać linii — przypadek kończył się
+         wtedy błędem "uchwyt się nie pokazał". To TU padał najczęściej,
+         bo przeciąganiem jest dziewięć przypadków na trzynaście.
+         Dwa ruchy zamiast jednego: pierwszy bywa zjadany przez układanie
+         świeżo wstawionego tekstu. */
       mouse("mouseMove", on.x, on.y);
-      await wait(80);
-      const grip = await js("window.__grip()");
+      await wait(30);
+      mouse("mouseMove", on.x + 1, on.y);
+      let grip = null;
+      for (let waited = 0; waited <= 1250; waited += 25) {
+        grip = await js("window.__grip()");
+        if (grip) break;
+        await wait(25);
+      }
       note.grip = grip;
       if (!grip) { out.push({ error: "uchwyt się nie pokazał" }); continue; }
 
