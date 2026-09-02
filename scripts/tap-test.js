@@ -112,6 +112,21 @@ out = parse(Buffer.concat([Buffer.from("śmieci na wejściu"), frame(0, 60, 3)])
 check("Obcy bajt nie psuje strumienia — magia prowadzi do następnej ramki", out.frames.length === 1);
 check("…a odzyskana ramka jest cała", out.frames[0].millis === 60);
 
+/* ══ ŚMIEĆ Z MAGIĄ W ŚRODKU ══
+
+   Najgorszy rodzaj zgubionego rytmu: przypadkowe bajty układają się
+   w „CRIB", a następne cztery w ogromną liczbę próbek. Parser czekał wtedy
+   na resztę ramki, która nigdy nie przyjdzie — czyli DO KOŃCA NAGRANIA:
+   bufor rósł, z toru nie wychodziła ani jedna próbka, a nagranie „trwało"
+   dalej i kończyło się plikiem bez rozmowy. */
+const bogus = Buffer.alloc(20);
+bogus.write("CRIB", 0, "ascii");
+bogus.writeUInt32LE(4_000_000_000, 8); // ramka na trzy i pół dnia dźwięku
+out = parse(Buffer.concat([bogus, frame(1, 80, 3)]));
+check("Ramka o niemożliwej długości nie zatrzymuje toru na zawsze", out.frames.length === 1);
+check("…i to następna prawdziwa ramka wychodzi z parsera", out.frames[0].millis === 80);
+check("…a bufor nie rośnie w oczekiwaniu na nią", out.rest.length === 0);
+
 /* ── Nagłówek WAV ───────────────────────────────────────────── */
 
 const head = wavHeader(32000);

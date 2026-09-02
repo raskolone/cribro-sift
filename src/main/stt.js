@@ -18,6 +18,47 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const OPENAI_URL = "https://api.openai.com/v1/audio/transcriptions";
 const MAX_INLINE_BYTES = 18 * 1024 * 1024; // Gemini przyjmuje 20 MB na całe żądanie
 
+/**
+ * Po ilu milisekundach przerywamy żądanie, które zamilkło.
+ *
+ * ══ FETCH SAM Z SIEBIE NIE MA KOŃCA ══
+ *
+ * Połączenie nawiązane i porzucone — komputer uśpiony w połowie wysyłki,
+ * Wi-Fi zamienione na sieć komórkową, serwer trzymający otwarte gniazdo
+ * bez odpowiedzi — wisi wtedy, dopóki ktoś go nie zamknie. Nie jest to
+ * przypadek teoretyczny: dwie minuty dźwięku to pięć megabajtów wysyłki,
+ * a spotkania trwają dokładnie tyle, ile trwa laptop przenoszony między
+ * pokojami.
+ *
+ * Bez tego limitu takie żądanie zatrzymywało w spotkaniach WSZYSTKO, co
+ * jest po nim: zamknięcie wpisu, notatkę, podsumowanie i samo wyjście
+ * z aplikacji (patrz PATIENCE w main/meeting.js).
+ *
+ * Trzy minuty, bo tyle wystarcza na najdłuższy odcinek wysyłany łączem
+ * słabym, ale działającym — a przerwanie żądania, które JESZCZE by wróciło,
+ * kosztuje pieniądze drugi raz.
+ */
+const DEADLINE = 180_000;
+
+/**
+ * `fetch` z terminem. Po nim połączenie jest ZRYWANE, a nie tylko przestajemy
+ * na nie czekać — porzucone żądanie nadal wysyła megabajty i nadal kosztuje.
+ */
+async function fetchWithin(url, options, ms = DEADLINE) {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), ms);
+  try {
+    return await fetch(url, { ...options, signal: abort.signal });
+  } catch (problem) {
+    if (problem?.name === "AbortError") {
+      throw new Error(`Dostawca nie odpowiedział w ${Math.round(ms / 1000)} s.`);
+    }
+    throw problem;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const VERBATIM_PROMPT = `Zapisz dokładnie to, co słychać w nagraniu.
 
 Zasady:
@@ -92,7 +133,7 @@ async function transcribe(audio, settings, about = null) {
 async function geminiTranscribe(audio, model, apiKey, language, about) {
   const hint = `\n\n${directive(language)}${hintFor(about)}`;
 
-  const response = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
+  const response = await fetchWithin(`${GEMINI_URL}/${model}:generateContent`, {
     method: "POST",
     headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -139,7 +180,7 @@ async function openaiTranscribe(audio, model, apiKey, language, about) {
   const hint = [whisperHint(language), hintFor(about).trim()].filter(Boolean).join(" ");
   if (hint) form.append("prompt", hint);
 
-  const response = await fetch(OPENAI_URL, {
+  const response = await fetchWithin(OPENAI_URL, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
@@ -173,4 +214,4 @@ async function describeError(response, who) {
   return `${who} zwrócił błąd ${response.status}: ${detail}`;
 }
 
-module.exports = { transcribe, describeError, hintFor };
+module.exports = { transcribe, describeError, hintFor, fetchWithin, DEADLINE };

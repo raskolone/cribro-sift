@@ -2179,7 +2179,23 @@ async function toggleMeeting(about = null) {
     }
     /* Nagranie z menu też zasługuje na nazwę. Najpierw pytamy ekran —
        karta Google Meet niesie nazwę pokoju — a dopiero potem kalendarz. */
-    await meetings.start(about ?? aboutMeeting(await roomOnScreen()));
+    const room = about ? null : await roomOnScreen();
+    await meetings.start(about ?? aboutMeeting(room));
+    /* ══ NAGRANIE Z RĘKI TEŻ NALEŻY DO ROZMOWY, KTÓRA STOI NA EKRANIE ══
+
+       Bez tej linijki nagranie włączone z menu albo skrótem NIGDY nie
+       kończyło się samo — a to jest najczęstszy sposób, w jaki się tu
+       nagrywa. Zamiar był inny (patrz komentarz przy startedFromSpot),
+       ale droga do niego prowadziła wyłącznie przez meldunek watchera,
+       a ten mówi tylko o ZMIANACH: rozmowa, która stała na ekranie już
+       przed włączeniem nagrania, nie zmienia się przez to w nic nowego
+       i drugiego meldunku nie ma skąd wziąć.
+
+       Pytamy więc wprost, w tej jednej chwili, w której i tak pytamy
+       ekran o nazwę pokoju. Trzy drogi, którymi przychodzi `about`
+       (znaczek, tryb „sam z siebie", kalendarz), ustawiają to u siebie —
+       każda wie o swojej rozmowie więcej niż my tutaj. */
+    if (room) startedFromSpot = true;
     /* Od tej chwili pilnowanie ekranu odpowiada na inne pytanie niż przed
        chwilą: nie „czy zaczęła się rozmowa", tylko „czy ta jeszcze trwa".
        Na to drugie nie wolno odpowiadać co pół minuty. */
@@ -2409,6 +2425,9 @@ let startedFromSpot = false;
 let refusedRoom = false;
 /* Odliczanie od zniknięcia okna rozmowy do zakończenia nagrania. */
 let roomGoneTimer = null;
+/* Od kiedy okna nie widać. Odliczanie potrafi się przedłużyć — bo słychać
+   jeszcze rozmowę — a przedłużanie musi mieć koniec (patrz ROOM_GONE_LIMIT). */
+let roomGoneSince = 0;
 
 /**
  * Ile czekamy od zniknięcia okna rozmowy do zakończenia nagrania.
@@ -2424,6 +2443,21 @@ let roomGoneTimer = null;
  * nagrania pustego pokoju kosztuje kilka groszy i jedno zdanie w zapisie.
  */
 const GRACE = 60_000;
+
+/**
+ * Jak długo najdłużej można odwlekać koniec, bo coś jeszcze słychać.
+ *
+ * Odwlekanie po dźwięku (patrz armRoomGone) jest zabezpieczeniem przed
+ * uciętym nagraniem, ale samo w sobie ma dziurę: mikrofon w pokoju
+ * z wentylatorem albo przy ulicy słyszy COŚ przez cały czas, a wtedy
+ * „jeszcze słychać rozmowę" znaczyłoby „nigdy nie kończymy" — czyli
+ * dokładnie tę awarię, przed którą kończenie po oknie miało chronić.
+ *
+ * Kwadrans, bo tyle wystarcza na najdłuższe realne wyjście do innej karty,
+ * a po kwadransie bez okna rozmowy na ekranie nagranie i tak nie jest już
+ * nagraniem spotkania.
+ */
+const ROOM_GONE_LIMIT = 900_000;
 
 /** Wszystko, co znaczek i okno wiedzą o spotkaniach — jedną wiadomością.
 
@@ -2551,17 +2585,45 @@ async function meetingSpotted(meeting) {
  */
 function armRoomGone() {
   if (roomGoneTimer) return; // odliczanie już biegnie
+  if (!roomGoneSince) roomGoneSince = Date.now();
   roomGoneTimer = setTimeout(async () => {
     roomGoneTimer = null;
     if (!meetings.recording || !startedFromSpot) return;
     if (await roomStillOnScreen()) return; // wrócili z poczekalni
-    await endWithRoom("okno rozmowy zniknęło");
+
+    /* ══ OKNO ZNIKŁO, ALE CZY ROZMOWA? ══
+
+       Spis okien pokazuje tytuł AKTYWNEJ KARTY, nie wszystkich otwartych.
+       Przełączenie się w przeglądarce na inną kartę — dokument, kalendarz,
+       cokolwiek, po co sięga się w trakcie rozmowy — wygląda stąd
+       DOKŁADNIE tak samo jak wyjście ze spotkania: „Meet – …" znika
+       z listy okien i nie wraca, dopóki ktoś nie kliknie tamtej karty
+       z powrotem.
+
+       Nagranie ucięte w takiej chwili jest stratą nieodwracalną, więc
+       pytamy jeszcze o jedno — i pytamy o to, co naprawdę rozstrzyga:
+       CZY KTOŚ MÓWI. Dźwięku nie da się pomylić z układem kart. Dopóki
+       w którymkolwiek torze coś słychać, rozmowa trwa; odliczanie zaczyna
+       się wtedy od nowa.
+
+       Cisza dłuższa niż karencja rozstrzyga w drugą stronę: nikogo nie ma
+       na ekranie i nikogo nie słychać. */
+    if (meetings.quietSeconds * 1000 < GRACE && Date.now() - roomGoneSince < ROOM_GONE_LIMIT) {
+      armRoomGone();
+      return;
+    }
+    await endWithRoom(
+      meetings.quietSeconds * 1000 < GRACE
+        ? "okna rozmowy nie ma na ekranie od kwadransa"
+        : "okno rozmowy zniknęło i od minuty nikt nic nie mówi",
+    );
   }, GRACE);
 }
 
 function disarmRoomGone() {
   clearTimeout(roomGoneTimer);
   roomGoneTimer = null;
+  roomGoneSince = 0;
 }
 
 /**

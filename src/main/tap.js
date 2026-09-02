@@ -34,6 +34,25 @@ const MAGIC = Buffer.from("CRIB", "ascii");
 const HEAD = 20;
 const SAMPLE_RATE = 16000;
 
+/**
+ * Najdłuższa ramka, w jaką jeszcze wierzymy — dziesięć sekund dźwięku.
+ *
+ * ══ ZŁA DŁUGOŚĆ ZATRZYMUJE TOR NA ZAWSZE ══
+ *
+ * Prawdziwa ramka niesie ułamek sekundy: tyle, ile oddaje jedno wywołanie
+ * Core Audio. Gdyby po zgubieniu rytmu cztery przypadkowe bajty ułożyły się
+ * w magię, a następne cztery w ogromną liczbę próbek, parser uznałby, że
+ * czeka na resztę ramki — i czekałby DO KOŃCA NAGRANIA. Bufor rósłby
+ * w nieskończoność (a rośnie przez `Buffer.concat`, czyli kwadratowo),
+ * z toru nie wyszłaby ani jedna próbka więcej, a nagranie „trwałoby" dalej.
+ *
+ * Ramka dłuższa niż to jest więc nie ramką, tylko śmieciem — i tak trzeba
+ * ją potraktować: szukać następnej magii, zamiast czekać na coś, co nigdy
+ * nie przyjdzie. Dziesięć sekund to zapas rzędu tysiąca razy ponad to, co
+ * przysyła program pomocniczy.
+ */
+const MAX_FRAME_SAMPLES = 10 * SAMPLE_RATE;
+
 const LANE = { 0: "mic", 1: "system" };
 
 /**
@@ -62,6 +81,13 @@ function parse(buffer) {
 
     const samples = buffer.readUInt32LE(at + 8);
     const bytes = samples * 2;
+    if (samples > MAX_FRAME_SAMPLES) {
+      // Nie ramka, tylko śmieć z magią w środku — patrz MAX_FRAME_SAMPLES.
+      const next = buffer.indexOf(MAGIC, at + 1);
+      if (next === -1) return { frames, rest: buffer.subarray(buffer.length) };
+      at = next;
+      continue;
+    }
     if (at + HEAD + bytes > buffer.length) break; // reszta ramki jeszcze w drodze
 
     frames.push({
@@ -220,6 +246,8 @@ function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
   /* Czy koniec jest zamówiony. Odróżnia normalne zakończenie od awarii —
      patrz obsługa "close" niżej. */
   let stopping = false;
+  /* Czy obieg próbek już się raz wywrócił — patrz obsługa „data" niżej. */
+  let broke = false;
   const startedAt = Date.now();
 
   /* ══ TOR SYSTEMU MOŻE MIEĆ PRZERWY — I MUSI ZOSTAĆ CIĄGŁY ══
@@ -262,21 +290,39 @@ function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
     if (onPcm) onPcm(lane, pcm);
   };
 
+  /* ══ WYJĄTEK STĄD NIE MA GDZIE POLECIEĆ ══
+
+     To jest obsługa zdarzenia strumienia, a nie zwykłe wywołanie: wyjątek
+     z niej nie wraca do niczyjego `try`, tylko ląduje jako niezłapany
+     w procesie głównym — czyli w najlepszym razie zabija aplikację w środku
+     rozmowy, a razem z nią nagranie. Trzy rzeczy potrafią tu rzucić: pełny
+     dysk przy zapisie toru, brak pamięci przy sklejaniu bufora i odbiorca
+     próbek. Każda z nich ma się skończyć meldunkiem, a nie ciszą albo
+     zniknięciem aplikacji. */
   child.stdout.on("data", (chunk) => {
-    const { frames, rest: left } = parse(Buffer.concat([rest, chunk]));
-    rest = left;
-    for (const frame of frames) {
-      const expectedMillis = delivered[frame.lane] * 1000;
-      const gapMillis = frame.millis - expectedMillis;
-      if (gapMillis > GAP_TOLERANCE_MS) {
-        const gapSeconds = Math.min(gapMillis / 1000, MAX_GAP_SECONDS);
-        advance(frame.lane, Buffer.alloc(Math.round(gapSeconds * SAMPLE_RATE) * 2));
+    try {
+      const { frames, rest: left } = parse(Buffer.concat([rest, chunk]));
+      rest = left;
+      for (const frame of frames) {
+        const expectedMillis = delivered[frame.lane] * 1000;
+        const gapMillis = frame.millis - expectedMillis;
+        if (gapMillis > GAP_TOLERANCE_MS) {
+          const gapSeconds = Math.min(gapMillis / 1000, MAX_GAP_SECONDS);
+          advance(frame.lane, Buffer.alloc(Math.round(gapSeconds * SAMPLE_RATE) * 2));
+        }
+        advance(frame.lane, frame.pcm);
+        // Pokazujemy głośność MIKROFONU. Tor systemu też ma poziom, ale to
+        // nie o nim człowiek chce wiedzieć, patrząc na znaczek: chce wiedzieć,
+        // czy słychać JEGO.
+        if (frame.lane === "mic" && onLevel) onLevel(peak(frame.pcm));
       }
-      advance(frame.lane, frame.pcm);
-      // Pokazujemy głośność MIKROFONU. Tor systemu też ma poziom, ale to
-      // nie o nim człowiek chce wiedzieć, patrząc na znaczek: chce wiedzieć,
-      // czy słychać JEGO.
-      if (frame.lane === "mic" && onLevel) onLevel(peak(frame.pcm));
+    } catch (problem) {
+      /* Raz, a nie przy każdej porcji: przy pełnym dysku to samo zdanie
+         przychodziłoby czterdzieści razy na sekundę. */
+      if (!broke) {
+        broke = true;
+        onError?.(`Zapis dźwięku się wywrócił: ${problem.message}`);
+      }
     }
   });
 

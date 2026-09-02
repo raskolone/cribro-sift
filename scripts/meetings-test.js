@@ -131,7 +131,19 @@ const main = read("src", "main", "main.js");
 check("Nazwa z okna rozmowy bije nazwę z kalendarza",
   /const fromRoom = spot\?\.title \?\? null;[\s\S]{0,200}title: fromRoom \?\? live\?\.title \?\? null,/.test(main));
 check("Nagranie włączone ręką najpierw pyta ekran o nazwę",
-  /await meetings\.start\(about \?\? aboutMeeting\(await roomOnScreen\(\)\)\)/.test(main));
+  /const room = about \? null : await roomOnScreen\(\);[\s\S]{0,80}await meetings\.start\(about \?\? aboutMeeting\(room\)\)/.test(main));
+/* ══ NAGRANIE Z RĘKI TEŻ KOŃCZY SIĘ RAZEM Z ROZMOWĄ ══
+
+   Watcher melduje wyłącznie ZMIANY, więc rozmowa, która stała na ekranie
+   już przed włączeniem nagrania, nie dawała drugiego meldunku — i nagranie
+   z menu albo ze skrótu nie kończyło się samo NIGDY, choć to jest
+   najczęstszy sposób, w jaki się tu nagrywa. */
+check("…i po tej odpowiedzi wie, że nagranie należy do tej rozmowy",
+  /if \(room\) startedFromSpot = true;/.test(main));
+check("Koniec po zniknięciu okna pyta jeszcze, czy kogoś słychać",
+  /meetings\.quietSeconds \* 1000 < GRACE/.test(main));
+check("…ale odwlekanie po dźwięku ma koniec",
+  /Date\.now\(\) - roomGoneSince < ROOM_GONE_LIMIT/.test(main));
 check("Podsumowanie nie przemianowuje rozmowy, która ma już nazwę z pokoju",
   /const named = meeting\.titleByHand \|\| meeting\.titleFrom === "room";/.test(main));
 check("Skąd wzięła się nazwa, wie wpis spotkania",
