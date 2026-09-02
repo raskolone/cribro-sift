@@ -217,6 +217,9 @@ function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
 
   let rest = Buffer.alloc(0);
   let closed = false;
+  /* Czy koniec jest zamówiony. Odróżnia normalne zakończenie od awarii —
+     patrz obsługa "close" niżej. */
+  let stopping = false;
   const startedAt = Date.now();
 
   /* ══ TOR SYSTEMU MOŻE MIEĆ PRZERWY — I MUSI ZOSTAĆ CIĄGŁY ══
@@ -287,6 +290,28 @@ function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
 
   child.on("error", (problem) => onError?.(problem.message));
 
+  /* ══ ŚMIERĆ PROGRAMU POMOCNICZEGO W TRAKCIE NAGRYWANIA ══
+
+     Tego nie było i to jest cicha awaria najgorszego rodzaju: jeżeli
+     cribro-tap skończy się SAM — bo Core Audio oddało błąd przy zmianie
+     urządzenia, bo system go uśpił, bo cokolwiek — to `stdout` po prostu
+     przestaje mówić. Nikt się nie dowiaduje. Nagranie „trwa" dalej, zegar
+     w oknie idzie, a próbek nie ma; po godzinie zostaje wpis o godzinie
+     rozmowy, w którym nie ma rozmowy.
+
+     Wyjście ZAMÓWIONE (przez `stop`) jest normalnym końcem pracy i o nim
+     nie mówimy — stąd `stopping`. Każde inne jest awarią i ma dojść do
+     człowieka, kiedy jeszcze można coś z nią zrobić: włączyć nagrywanie
+     od nowa, zanim rozmowa się skończy. */
+  child.on("close", (code, signal) => {
+    if (stopping) return;
+    onError?.(
+      `Nagrywanie przerwało się samo (program pomocniczy zakończył się ${
+        signal ? `sygnałem ${signal}` : `kodem ${code}`
+      }). Dźwięk od tej chwili nie jest zapisywany.`,
+    );
+  });
+
   const finish = () => {
     if (closed) return;
     closed = true;
@@ -327,6 +352,7 @@ function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
      */
     stop: () =>
       new Promise((resolve) => {
+        stopping = true;
         const done = () => {
           clearTimeout(guard);
           finish();

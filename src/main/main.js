@@ -2404,6 +2404,9 @@ let watcher = null;
    Nagranie zrobione bez żadnej rozmowy na ekranie (dyktafon na spotkaniu
    przy stole) nie jest niczyje i nikt go nie zgasi. */
 let startedFromSpot = false;
+/* Czy człowiek odmówił nagrywania TEJ rozmowy. Gaśnie razem z jej oknem —
+   patrz answerMeeting i meetingSpotted. */
+let refusedRoom = false;
 /* Odliczanie od zniknięcia okna rozmowy do zakończenia nagrania. */
 let roomGoneTimer = null;
 
@@ -2497,6 +2500,9 @@ async function meetingSpotted(meeting) {
     if (meetings.recording && startedFromSpot) {
       if (store.getSettings().meetings?.stopWithMeeting !== false) armRoomGone();
     }
+    /* Rozmowa naprawdę zeszła z ekranu — odmowa dotyczyła jej, więc razem
+       z nią przestaje obowiązywać. Następna rozmowa pyta od nowa. */
+    refusedRoom = false;
     if (!spotted) return;
     spotted = null;
     tellMeetings();
@@ -2513,6 +2519,7 @@ async function meetingSpotted(meeting) {
   }
 
   const how = store.getSettings().meetings?.detect ?? "ask";
+  if (how === "auto" && refusedRoom) return; // odmowa wiąże także tryb bez pytania
   if (how === "auto") {
     /* Bez pytania znaczy też: bez wywoływania okna na wierzch. Kto wybrał
        „sam z siebie", wybrał niewidzialność — dowodem, że nagranie ruszyło,
@@ -2522,6 +2529,8 @@ async function meetingSpotted(meeting) {
     return;
   }
   if (how !== "ask") return;
+  // Odmówiono przy tej rozmowie — nagrywanie zostaje wyłącznie z ręki.
+  if (refusedRoom) return;
   spotted = meeting;
   tellMeetings();
 }
@@ -2602,7 +2611,23 @@ async function answerMeeting(yes) {
   const meeting = spotted;
   spotted = null;
   tellMeetings();
-  if (!yes || !meeting) return false;
+  if (!yes || !meeting) {
+    /* ══ „NIE NAGRYWAJ" ZNACZY NIE, A NIE „NIE TERAZ" ══
+
+       Samo wyzerowanie `spotted` chowało pytanie na tyle długo, ile trwało
+       jedno spojrzenie watchera — czyli osiem sekund. Potem tytuł okna
+       rozmowy drgał (Google Meet dopisuje do niego liczbę uczestników
+       i wyciszenie), watcher uznawał to za NOWĄ rozmowę i pytał jeszcze
+       raz. Odmowa co osiem sekund przez godzinę zajęć.
+
+       Odmowa zostaje więc zapamiętana do KOŃCA TEJ ROZMOWY: dopóki okno
+       rozmowy stoi na ekranie, nikt o nic nie pyta, a nagrywanie zostaje
+       dostępne wyłącznie z ręki — z tacy, z menu i skrótem. Pamięć gaśnie
+       dopiero wtedy, gdy rozmowa naprawdę zniknie z ekranu (patrz
+       meetingSpotted) — czyli następna rozmowa pyta od nowa. */
+    refusedRoom = true;
+    return false;
+  }
   startedFromSpot = true;
   await toggleMeeting(aboutMeeting(meeting));
   createMainWindow().webContents.send("view:go", "meetings");

@@ -55,7 +55,13 @@ function keepNote(store, id, { me = "" } = {}) {
   if (!meeting) return { note: null, action: "none" };
   if (!meeting.summary && !meeting.transcript?.length) return { note: null, action: "none" };
 
-  const text = asNote(meeting, { transcript: true, me });
+  /* BEZ ZAPISU ROZMOWY. Notatka ze spotkania ma być tym, co z rozmowy
+     zostaje — ustaleniami i zadaniami — a nie całą rozmową jeszcze raz.
+     Godzinny zapis doklejony pod podsumowaniem robił z notatki dokument,
+     przez który trzeba się przewijać, żeby dojść do trzech zdań, po które
+     się przyszło. Zapis nie ginie: mieszka w zakładce „Transkrypcja"
+     przy spotkaniu, gdzie da się go skopiować i wyeksportować. */
+  const text = asNote(meeting, { transcript: false, me });
   const known = meeting.noteId
     ? store.rawNotes().find((note) => note.id === meeting.noteId)
     : null;

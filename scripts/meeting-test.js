@@ -238,8 +238,14 @@ app.whenReady().then(async () => {
   })());
 
   say("po przepisaniu nagranie znika z dysku", !written.meeting.tracks);
+  /* Pytamy o NAGRANIE, nie o pusty katalog. Od chwili, gdy każdy odcinek
+     zostawia linijkę w „odcinki.jsonl" (patrz #note w main/meeting.js),
+     katalog po udanym przepisaniu nie jest pusty — i nie ma być: ten ślad
+     jest jedyną odpowiedzią na pytanie „co się stało z tą godziną", gdy
+     dźwięku już nie ma. Sprawdzenie ma pilnować, że zniknął DŹWIĘK. */
   say("…i naprawdę nie ma go w katalogu",
-    fs.readdirSync(store.meetingDir(written.meeting.id)).length);
+    fs.readdirSync(store.meetingDir(written.meeting.id))
+      .filter((name) => /\.(wav|m4a|aac|mp3)$/i.test(name)).length);
   say("…a spotkanie zostaje w spisie", meetings.list().some((item) => item.id === written.meeting.id));
 
   finish();
@@ -340,7 +346,7 @@ if (out.skip) {
     "Po udanym przepisaniu nagranie znika z dysku — tak, jak mówi ustawienie",
     step("po przepisaniu nagranie znika z dysku") === true,
   );
-  check("…i katalog spotkania naprawdę jest pusty", step("…i naprawdę nie ma go w katalogu") === 0);
+  check("…i w katalogu nie ma już żadnego pliku dźwiękowego", step("…i naprawdę nie ma go w katalogu") === 0);
   check("…a samo spotkanie zostaje w spisie", step("…a spotkanie zostaje w spisie") === true);
 
   /* Przepisanie z plików wymaga nagrania, które przetrwało próg pomyłki.

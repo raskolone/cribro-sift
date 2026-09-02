@@ -415,6 +415,40 @@ class Meetings {
 
   /** Wpis do rejestru odcinków. Jedno miejsce, żeby żaden nie wyszedł bokiem. */
   #note(piece, state, detail = null) {
+    /* ══ ŚLAD NA DYSKU, NIE TYLKO W PAMIĘCI ══
+
+       Rejestr żyje w polu obiektu i ginie razem z nim — a razem z nim
+       ginie jedyna odpowiedź na pytanie „co się stało z tą godziną".
+       2 września 2026 godzinne spotkanie zamknęło się rejestrem o jednym
+       odcinku i nie dało się po fakcie rozstrzygnąć, czy odcinki nie
+       powstały, czy powstały i przepadły: nagranie skasowano, logów nie
+       było, a pamięć procesu dawno zniknęła.
+
+       Dopisujemy więc każdy odcinek linijką do pliku obok nagrania.
+       Jedna linijka to około stu bajtów, godzina rozmowy to sześćdziesiąt
+       linijek — koszt żaden, a następnym razem będzie z czego czytać.
+       Zapis nie ma prawa przewrócić nagrywania, więc idzie w try/catch
+       i po cichu: brak śladu jest gorszy od braku nagrania tylko dla mnie,
+       nie dla człowieka. */
+    try {
+      if (this.id) {
+        fs.appendFileSync(
+          path.join(this.store.meetingDir(this.id), "odcinki.jsonl"),
+          JSON.stringify({
+            t: new Date().toISOString(),
+            lane: piece.lane,
+            i: piece.index,
+            from: Math.round(piece.from ?? 0),
+            to: Math.round(piece.to ?? 0),
+            voiced: Math.round(piece.voiced ?? 0),
+            state,
+            detail: detail ? String(detail).slice(0, 120) : undefined,
+          }) + "\n",
+        );
+      }
+    } catch {
+      /* Dysk pełny albo katalog zniknął — nagranie leci dalej. */
+    }
     this.ledger.push({
       lane: piece.lane,
       index: piece.index,
@@ -442,7 +476,7 @@ class Meetings {
    * @returns {{segments, done, empty, failed, skipped, silent,
    *            spokenSeconds, writtenSeconds, complete}}
    */
-  static tally(ledger = []) {
+  static tally(ledger = [], recordedSeconds = 0) {
     const count = (state) => ledger.filter((item) => item.state === state).length;
     const voiced = (test) =>
       ledger.filter(test).reduce((total, item) => total + (item.voiced || 0), 0);
@@ -456,8 +490,62 @@ class Meetings {
     const spoken = voiced((item) => item.state !== "silent");
     const written = voiced((item) => item.state === "done");
 
+    /* ══ ILE NAGRANIA W OGÓLE PRZESZŁO PRZEZ KRAJALNICĘ ══
+
+       Rejestr odpowiada na pytanie „czy odcinki, KTÓRE PRZYSZŁY, doszły
+       do tekstu". Nie odpowiada na pytanie, czy przyszły wszystkie —
+       a to jest inne pytanie i to na nim ta funkcja dotąd milczała.
+
+       2 września 2026 godzinne spotkanie (3808 s) zamknęło się rejestrem
+       o JEDNYM odcinku: dwadzieścia sekund mowy z ostatniej minuty.
+       Rejestr nie miał w sobie ani jednej straty, więc `complete` wyszło
+       PRAWDĄ — a skoro prawdą, to nagranie skasowano. Zapis rozmowy
+       z godziny zajęć to jeden akapit, którego nie da się już uzupełnić,
+       bo dźwięku nie ma. Ten sam kształt miało spotkanie z 31 sierpnia:
+       58 minut, dwa wpisy.
+
+       Zamykamy więc pytanie „czy to jest całość" od drugiej strony:
+       ostatni odcinek rejestru musi kończyć się mniej więcej tam, gdzie
+       kończy się nagranie. Jeżeli rejestr urywa się kwadrans przed końcem,
+       to nie jest zapis niepełny — to jest zapis, o którym nie wiadomo,
+       czego w nim nie ma. */
+    /* Mierzymy SUMĘ odcinków w torze, a nie to, dokąd sięga ostatni.
+
+       Pierwsza wersja tej poprawki patrzyła na `max(to)` i nie złapała
+       niczego: w straconym spotkaniu ostatni odcinek kończył się na 3864
+       sekundzie przy nagraniu 3808-sekundowym, czyli SIĘGAŁ SAMEGO KOŃCA.
+       Brakowało nie końca, tylko wszystkiego przed nim — jednego odcinka
+       zamiast trzydziestu trzech. Dziura była w środku, a miara patrzyła
+       na brzeg.
+
+       Liczymy więc osobno w każdym torze, ile sekund nagrania w ogóle
+       przeszło przez krajalnicę, i bierzemy tor LEPSZY. Gorszy bywa
+       martwy z powodów, które nie są utratą zapisu: druga strona
+       z wyciszonym mikrofonem daje tor systemu pusty przez całe spotkanie,
+       a rozmowa jest mimo to zapisana w całości tym drugim. */
+    const perLane = new Map();
+    for (const item of ledger) {
+      const span = Math.max(0, (item.to ?? 0) - (item.from ?? 0));
+      perLane.set(item.lane, (perLane.get(item.lane) ?? 0) + span);
+    }
+    const reached = perLane.size ? Math.max(...perLane.values()) : 0;
+    /* Pół minuty luzu: zakładka między odcinkami liczy się podwójnie
+       w jedną stronę, a resztka poniżej progu wypada z krojenia
+       (patrz flush w main/segments.js) — w drugą. */
+    const SLACK = 30;
+    const covered = recordedSeconds > 0 ? Math.min(1, reached / recordedSeconds) : 1;
+    const truncated = recordedSeconds > 0 && reached + SLACK < recordedSeconds;
+
     return {
       segments: ledger.length,
+      /* Do ilu sekundy nagrania sięga rejestr i jaka to część całości.
+         Stoi we wpisie, bo bez tego „zapis obejmuje X z Y minut" nie ma
+         z czego powstać, a to jest pierwsza rzecz do powiedzenia
+         człowiekowi o niepełnym zapisie. */
+      recordedSeconds: Math.round(recordedSeconds),
+      reachedSeconds: Math.round(reached),
+      covered: Math.round(covered * 100) / 100,
+      truncated,
       done: count("done"),
       empty: count("empty"),
       failed: count("failed"),
@@ -476,6 +564,10 @@ class Meetings {
       complete:
         ledger.length > 0 &&
         !(spoken > 0 && written === 0) &&
+        /* Czwarty warunek, dopisany po utracie godziny zajęć: rejestr, który
+           nie dosięga końca nagrania, NIE JEST całością — choćby wszystko,
+           co w nim stoi, było przepisane bez jednej straty. */
+        !truncated &&
         !ledger.some((item) => lost(item) || hollow(item)),
     };
   }
@@ -540,7 +632,10 @@ class Meetings {
 
     const transcript = splice(this.pieces, { speakers: this.speakers });
     this.pieces = [];
-    const coverage = Meetings.tally(this.ledger);
+    /* Rejestr sprawdzamy WZGLĘDEM długości nagrania — patrz `truncated`
+       w tally. Bez tej liczby „całość" znaczyłoby tylko tyle, że nie
+       zgubiono nic z tego, co przyszło. */
+    const coverage = Meetings.tally(this.ledger, seconds);
     this.ledger = [];
 
     /* ══ KIEDY WOLNO SKASOWAĆ NAGRANIE ══
@@ -590,9 +685,16 @@ class Meetings {
       /* Zdanie dla człowieka, nie liczba dla programu. Stoi we wpisie, bo
          to jest pierwsza rzecz, którą trzeba wiedzieć o zapisie rozmowy —
          przed jego treścią. */
+      /* Dwa różne zdania, bo to są dwie różne awarie i różnią się tym, co
+         z nimi zrobić. Zapis URWANY znaczy, że do przepisywania nie doszła
+         część nagrania — wtedy liczy się, ILE godziny w ogóle widziano.
+         Zapis NIEPEŁNY znaczy, że odcinki doszły, ale część nie wróciła
+         tekstem — wtedy liczą się minuty mowy. */
       transcriptError: coverage.complete
         ? null
-        : `Zapis obejmuje ${Math.round(coverage.writtenSeconds / 60)} z ${Math.round(coverage.spokenSeconds / 60)} minut rozmowy. Nagranie zostało zachowane, żeby dało się przepisać resztę.`,
+        : coverage.truncated
+          ? `Do zapisu doszło ${Math.round(coverage.reachedSeconds / 60)} z ${Math.round(coverage.recordedSeconds / 60)} minut nagrania — reszta nie przeszła przez przepisywanie w biegu. Nagranie zostało zachowane; „Przepisz jeszcze raz" odtworzy je z pliku.`
+          : `Zapis obejmuje ${Math.round(coverage.writtenSeconds / 60)} z ${Math.round(coverage.spokenSeconds / 60)} minut rozmowy. Nagranie zostało zachowane, żeby dało się przepisać resztę.`,
     });
     this.onChange();
     return { discarded: false, meeting, coverage };
@@ -748,7 +850,11 @@ class Meetings {
       }
 
       const transcript = splice(pieces, { speakers: meeting.speakers });
-      const coverage = Meetings.tally(ledger);
+      /* Ta sama miara co w stop(): rejestr ma dosięgnąć końca nagrania,
+         a nie tylko nie mieć w sobie strat. Przebieg z pliku jest ostatnią
+         drogą do tekstu — po nim wolno skasować dźwięk — więc to właśnie
+         tutaj pomyłka kosztuje najwięcej. */
+      const coverage = Meetings.tally(ledger, meeting.seconds ?? 0);
       /* Teraz, gdy tekst jest, nagranie przestaje być jedynym egzemplarzem
          rozmowy — i dopiero teraz wolno je ścisnąć albo skasować, zgodnie
          z ustawieniem. Wcześniej byłoby to niszczeniem czegoś, czego nie

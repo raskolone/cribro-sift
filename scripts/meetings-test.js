@@ -155,8 +155,15 @@ check("Założenie i odświeżenie melduje się osobno",
 const reguły = read("src", "main", "meetnote.js");
 check("Rozstrzygnięcia leżą osobno i nie znają Electrona",
   !/require\("electron"\)/.test(reguły) && /function keepNote\(store, id/.test(reguły));
-check("Notatka niesie CAŁY zapis rozmowy — dlatego wolno skasować nagranie",
-  /asNote\(meeting, \{ transcript: true, me \}\)/.test(reguły));
+/* Notatka NIE niesie zapisu rozmowy — i to jest zmiana świadoma. Ma nieść
+   to, co z rozmowy zostaje, a nie całą rozmowę jeszcze raz; godzinny zapis
+   pod podsumowaniem robił z niej dokument do przewijania. Zapis mieszka
+   w zakładce „Transkrypcja" przy spotkaniu.
+
+   O tym, czy wolno skasować nagranie, decyduje dziś POKRYCIE (patrz
+   Meetings.tally), a nie to, czy zapis wylądował w notatce. */
+check("Notatka NIE niesie zapisu rozmowy — ten zostaje w zakładce Transkrypcja",
+  /asNote\(meeting, \{ transcript: false, me \}\)/.test(reguły));
 check("Rodzaj „meeting” trafia do notatki — po nim poznaje ją przegródka",
   /kind: "meeting"/.test(reguły));
 check("…i notatka nie trafia do żadnej szuflady — tylko do zwijanej przegródki",

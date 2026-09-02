@@ -173,6 +173,51 @@ const run = async (label, transcribe) => {
       "Pusty rejestr NIE jest pełnym pokryciem — nagranie ma zostać",
       Meetings.tally([]).complete === false,
     );
+  }
+
+  /* ══ URWANY REJESTR ══
+     2 września 2026 godzinne spotkanie (3808 s) zamknęło się rejestrem
+     o jednym odcinku z ostatniej minuty. Rejestr nie miał w sobie ani
+     jednej straty, więc pokrycie wyszło pełne — i nagranie skasowano.
+     Zapis godziny zajęć to jeden akapit, którego nie da się uzupełnić.
+
+     Rejestr, który obejmuje ułamek nagrania, NIE JEST całością — choćby
+     wszystko, co w nim stoi, było przepisane bez błędu. */
+  {
+    const urwany = [
+      { lane: "mic", index: 32, from: 3744, to: 3864, seconds: 120, voiced: 20, state: "done" },
+    ];
+    const one = Meetings.tally(urwany, 3808);
+    check("Rejestr obejmujący minutę z godziny NIE jest pełnym pokryciem", one.complete === false);
+    check("…i mówi wprost, że jest urwany", one.truncated === true);
+    check("…i podaje, dokąd sięgnął", one.reachedSeconds === 120 && one.recordedSeconds === 3808);
+
+    /* Zdrowy przebieg tej samej godziny: trzydzieści trzy odcinki w torze. */
+    const caly = [];
+    for (const lane of ["mic", "system"]) {
+      for (let i = 0; i < 33; i += 1) {
+        caly.push({ lane, index: i, from: i * 117, to: i * 117 + 120, seconds: 120, voiced: 40, state: "done" });
+      }
+    }
+    check("Cała godzina przepisana JEST pełnym pokryciem", Meetings.tally(caly, 3808).complete === true);
+
+    /* Tor systemu martwy przez całe spotkanie (druga strona wyciszona) to
+       nie jest urwany zapis — rozmowa siedzi w drugim torze w całości. */
+    const jedenTor = [
+      ...caly.filter((item) => item.lane === "mic"),
+      { lane: "system", index: 0, from: 0, to: 120, seconds: 120, voiced: 0, state: "silent" },
+    ];
+    check(
+      "Martwy drugi tor nie robi z zapisu urwanego",
+      Meetings.tally(jedenTor, 3808).complete === true,
+    );
+
+    /* Bez długości nagrania miara milczy — stare wpisy nie mają się nagle
+       robić niekompletne. */
+    check("Bez podanej długości nic się nie zmienia", Meetings.tally(urwany).truncated === false);
+  }
+
+  {
     check(
       "Sama cisza jest kompletna: nie było czego zapisać",
       Meetings.tally([{ state: "silent", voiced: 0 }]).complete === true,

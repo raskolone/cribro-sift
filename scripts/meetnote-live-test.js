@@ -75,7 +75,11 @@ app.whenReady().then(async () => {
   say("po zakończeniu nagrania kartka powstaje", pierwsza.action);
   say("…z rodzajem, po którym pozna ją przegródka", pierwsza.note.kind);
   say("…bez szuflady — tylko zwijana przegródka, jak przy szybkich notatkach", pierwsza.note.folder ?? null);
-  say("…z zapisem rozmowy w środku", pierwsza.note.text.includes("Dane wyślę we wtorek."));
+  /* Zapisu rozmowy w kartce NIE MA i to jest decyzja, nie przeoczenie:
+     notatka ma nieść to, co z rozmowy zostaje, a nie całą rozmowę jeszcze
+     raz. Godzinny zapis doklejony pod podsumowaniem robił z niej dokument
+     do przewijania. Sam zapis mieszka w zakładce „Transkrypcja". */
+  say("…bez zapisu rozmowy w środku", pierwsza.note.text.includes("Dane wyślę we wtorek."));
   say("…i pod nazwą złożoną z treści i rozmówcy", pierwsza.note.text.split("\\n")[0]);
   say("spotkanie pamięta swoją kartkę", store.getMeetings().find((m) => m.id === id).noteId === pierwsza.note.id);
 
@@ -93,7 +97,7 @@ app.whenReady().then(async () => {
   say("wciąż jedna notatka", store.getNotes().length);
   say("…i ma w sobie wniosek", druga.note.text.includes("Raport idzie w czwartek."));
   say("…zadania jako listę do odhaczenia", druga.note.text.includes("- [ ] Ania: przysłać dane, wtorek"));
-  say("…i nadal cały zapis rozmowy", druga.note.text.includes("## Zapis rozmowy"));
+  say("…i nadal bez zapisu rozmowy", druga.note.text.includes("## Zapis rozmowy"));
 
   /* ── Ktoś dopisał do notatki dwa zdania ── */
   store.updateNote(druga.note.id, { text: druga.note.text + "\\n\\nSpytać Anię o budżet." });
@@ -164,7 +168,7 @@ const oczekiwane = [
   ["po zakończeniu nagrania kartka powstaje", "created"],
   ["…z rodzajem, po którym pozna ją przegródka", "meeting"],
   ["…bez szuflady — tylko zwijana przegródka, jak przy szybkich notatkach", null],
-  ["…z zapisem rozmowy w środku", true],
+  ["…bez zapisu rozmowy w środku", false],
   ["…i pod nazwą złożoną z treści i rozmówcy", "# Przegląd tygodnia · Ania Kowalska"],
   ["spotkanie pamięta swoją kartkę", true],
   ["powtórzone wywołanie bez zmian nic nie robi", "kept"],
@@ -173,7 +177,7 @@ const oczekiwane = [
   ["wciąż jedna notatka", 1],
   ["…i ma w sobie wniosek", true],
   ["…zadania jako listę do odhaczenia", true],
-  ["…i nadal cały zapis rozmowy", true],
+  ["…i nadal bez zapisu rozmowy", false],
   ["notatka zmieniona ręką nie jest nadpisywana", "kept"],
   ["i dopisek w niej zostaje", true],
   ["…a nowe podsumowanie do niej nie weszło", true],
