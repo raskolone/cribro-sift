@@ -70,6 +70,15 @@
        Druga postać, nie drugi widok: gdyby to był osobny plik, notatnik
        i zakładki rozjechałyby się przy pierwszej zmianie w tamtym. */
     solo: null,
+    /* ══ PRZEGLĄD TYGODNIA ══
+
+       Okno kontekstowe, w którym „Nadchodzące" pokazuje się w całości —
+       tydzień po tygodniu, w obie strony. `events` to WSZYSTKO, co przyszło
+       z jednego szerokiego zapytania (patrz meetings:week w main/main.js):
+       przełączanie tygodni filtruje TĘ listę w przeglądarce, nie woła
+       procesu głównego drugi raz — stąd `offset` (ile tygodni od bieżącego)
+       zamiast osobnego zapytania na każdą zmianę. */
+    week: { open: false, loading: false, error: null, events: null, offset: 0 },
   };
 
   let ticker = null;
@@ -120,6 +129,12 @@
     <div class="meet">
       <aside class="meet__list" id="meetList"></aside>
       <section class="meet__detail" id="meetDetail"></section>
+      <!-- Ustawienia i wytyczne AI — POD oboma kolumnami, na całą
+           szerokość panelu, a nie doklejone na końcu spisu po lewej.
+           Wcześniej stały tam i rozciągały lewą kolumnę dłużej niż prawą,
+           więc obie przestawały być tej samej wysokości — patrz
+           settingsCard niżej po to, dlaczego mają teraz układ poziomy. -->
+      <section class="meet__ai" id="meetSettings" hidden></section>
     </div>
   `;
 
@@ -199,19 +214,36 @@
         return;
       }
 
+      const week = event.target.closest("[data-meet-week]");
+      if (week) {
+        void openWeek();
+        return;
+      }
+
       const cog = event.target.closest("[data-meet-cog]");
       if (cog) {
         state.settingsOpen = !state.settingsOpen;
         localStorage.setItem("cribro:meet-settings", state.settingsOpen ? "1" : "0");
+        // Sam znak przestawia się natychmiast w #meetList, ale to
+        // paintSettings() rysuje panel, o który tu naprawdę chodzi.
         paintList();
+        paintSettings();
         window.translateTree(root);
-        /* Wyłożona szuflada wjeżdża GÓRĄ, nie środkiem: pierwszą rzeczą
-           po kliknięciu w koło ma być nagłówek „Jak działają spotkania",
-           a nie połowa listy przełączników bez wiadomo czego. */
+        /* Panel wjeżdża POD spisem i pod zapisem rozmowy — i ma się tam
+           POKAZAĆ, na dole okna, a nie zająć całego ekranu od góry.
+
+           `block: "start"` (jak było) przyklejał GÓRĘ panelu do góry okna —
+           a skoro panel bywa dłuższy niż ekran, spis i zapis rozmowy nad nim
+           znikały ze skrolla całkowicie i wyglądało to jak zakładka
+           zastąpiona oknem dialogowym, dokładnie to, czego ten panel miał
+           przestać robić. `block: "end"` przykleja jego DÓŁ do dołu okna:
+           spis zostaje widoczny nad panelem, o ile się mieści, a przewinięcie
+           pokazuje dokładnie tyle panelu, ile trzeba, żeby było wiadomo,
+           że się otworzył. */
         if (state.settingsOpen) {
           root
-            .querySelector(".meet__settings")
-            ?.scrollIntoView({ block: "start", behavior: "smooth" });
+            .querySelector(".meet__ai")
+            ?.scrollIntoView({ block: "end", behavior: "smooth" });
         }
         return;
       }
@@ -309,9 +341,24 @@
       const remove = event.target.closest("[data-meet-remove]");
       if (remove) {
         const id = remove.dataset.meetRemove;
-        // Nagranie jest jedyną rzeczą w tej aplikacji, której nie da się
-        // odtworzyć — pytamy, zamiast kasować po cichu.
-        if (!window.confirm(t("Skasować to spotkanie razem z nagraniem?"))) return;
+        /* Nagranie jest jedyną rzeczą w tej aplikacji, której nie da się
+           odtworzyć — notatkę da się napisać jeszcze raz, rozmowy sprzed
+           tygodnia nikt nie powtórzy. Pytamy więc tym samym pytaniem, co
+           przy notatce (js/ask.js), a nie systemowym `window.confirm`:
+           tamten zatrzymywał całe okno razem z zapisem notatnika, który
+           w tej zakładce chodzi w tle i jest jedynym zapisem, jaki jest. */
+        const meeting = state.meetings.find((item) => item.id === id);
+        const name = meeting?.title?.trim();
+        const agreed = await window.CribroAsk?.danger({
+          anchor: remove,
+          title: "Skasować spotkanie?",
+          body: name
+            ? `„${name}" ${t("zniknie razem z nagraniem i zapisem rozmowy. Tego nie da się odtworzyć.")}`
+            : t("Spotkanie zniknie razem z nagraniem i zapisem rozmowy. Tego nie da się odtworzyć."),
+          confirm: "Skasuj",
+          cancel: "Zostaw",
+        });
+        if (agreed === false) return;
         await api.meetings.remove(id);
         // Okno jednego spotkania po skasowaniu tego spotkania nie ma czego
         // pokazywać — zamyka się razem z nim.
@@ -457,8 +504,23 @@
           }</p>`
         }
       </div>
-      ${state.settingsOpen ? settingsCard() : ""}
     `;
+  }
+
+  /**
+   * Ustawienia i wytyczne AI — osobna sekcja, bo to jest osobne pytanie.
+   *
+   * Spis po lewej i zapis po prawej rosną razem, do tej samej wysokości
+   * (patrz .meet w css/app.css); ustawienia rosną POD nimi, na całą
+   * szerokość, i to jest jedyne miejsce w tej zakładce, które wolno mu
+   * rozciągnąć panel w pionie — bo dotyka się go raz, nie patrzy się na
+   * niego przy każdym spojrzeniu na spis.
+   */
+  function paintSettings() {
+    const host = $("#meetSettings");
+    if (!host) return;
+    host.hidden = !state.settingsOpen;
+    host.innerHTML = state.settingsOpen ? settingsCard() : "";
   }
 
   /* ── Kalendarz ─────────────────────────────────────────────────
@@ -467,6 +529,252 @@
      rozmowa już trwa i trzeba jej słuchać, a nie klikać. */
 
   /** Godzina wpisu, bez daty tam, gdzie wystarczy „dziś". */
+  /* ══ PRZEGLĄD TYGODNIA ══════════════════════════════════════════
+     Okno kontekstowe, w którym „Nadchodzące" pokazuje się w całości.
+
+     LEŻY POZA `.meet`, W KORZENIU DOKUMENTU — z tego samego powodu co
+     uchwyt przenoszenia linii w js/editor.js: `build()` przepisuje
+     `root.innerHTML` przy każdej zmianie zakładki, więc cokolwiek ma
+     PRZEŻYĆ to przepisanie (a modal otwarty w chwili przełączenia
+     zakładki ma się wtedy po prostu zamknąć, nie zniknąć w połowie
+     wraz z fragmentem drzewa) musi stać obok, nie w środku.
+
+     DANE PRZYCHODZĄ RAZ. `meetings:week` w main/main.js oddaje pięć
+     tygodni jednym zapytaniem — bo koszt odczytu leży w SAMEJ ENUMERACJI
+     kalendarzy i nie zależy od szerokości okna czasowego (zmierzone,
+     patrz komentarz przy tamtym handlerze). Przełączanie tygodni tutaj
+     jest więc filtrowaniem w przeglądarce, nie kolejnym zapytaniem —
+     strzałka reaguje natychmiast, zamiast każdorazowo czekać pół minuty
+     na Kalendarz.app. */
+
+  let weekEl = null;
+
+  function weekSetup() {
+    const doc = root.ownerDocument;
+    const host = doc.getElementById("meetWeek");
+    if (host) {
+      weekEl = host;
+      return;
+    }
+    const el = doc.createElement("div");
+    el.className = "week";
+    el.id = "meetWeek";
+    el.hidden = true;
+    el.innerHTML = `
+      <div class="week__backdrop" data-week-close></div>
+      <div class="week__card" role="dialog" aria-modal="true" aria-label="${t("Przegląd tygodnia")}">
+        <header class="week__head">
+          <button type="button" class="week__nav" data-week-nav="-1" title="${t("Poprzedni tydzień")}">‹</button>
+          <div class="week__title">
+            <h3 id="weekTitle"></h3>
+            <button type="button" class="week__today" data-week-today>${t("Dziś")}</button>
+          </div>
+          <button type="button" class="week__nav" data-week-nav="1" title="${t("Następny tydzień")}">›</button>
+          <button type="button" class="week__close" data-week-close title="${t("Zamknij")}">✕</button>
+        </header>
+        <div class="week__grid" id="weekGrid"></div>
+      </div>
+    `;
+    (doc.getElementById("app") ?? doc.body).appendChild(el);
+    weekEl = el;
+
+    el.addEventListener("click", (event) => {
+      if (event.target.closest("[data-week-close]")) return closeWeek();
+      const nav = event.target.closest("[data-week-nav]");
+      if (nav) return void shiftWeek(Number(nav.dataset.weekNav));
+      if (event.target.closest("[data-week-today]")) {
+        state.week.offset = 0;
+        return renderWeek();
+      }
+      const item = event.target.closest("[data-week-open]");
+      if (item) {
+        // Systemowa przeglądarka, nie window.open — inaczej Electron
+        // próbowałby wczytać Google Meet WEWNĄTRZ aplikacji, tak jak
+        // każdy inny odsyłacz w tym oknie (patrz link:open w main/main.js).
+        void api.system.openExternal(item.dataset.weekOpen);
+      }
+    });
+
+    doc.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && state.week.open) closeWeek();
+    });
+  }
+
+  /** Poniedziałek tygodnia, `offset` tygodni od bieżącego. */
+  function weekStart(offset = 0) {
+    const at = new Date();
+    at.setHours(0, 0, 0, 0);
+    // Niedziela to dzień 0 w JS — w tej aplikacji tydzień zaczyna się
+    // w poniedziałek, jak w polskim kalendarzu.
+    const monday = (at.getDay() + 6) % 7;
+    at.setDate(at.getDate() - monday + offset * 7);
+    return at;
+  }
+
+  /**
+   * Wciąga wydarzenia do `state.week` — bez otwierania okna, więc ta sama
+   * droga służy i kliknięciu w „Przegląd tygodnia" (`openWeek`), i cichemu
+   * dociąganiu w tle, ZANIM ktokolwiek kliknie (`prefetchWeek` niżej).
+   *
+   * Strażnik na `state.week.events`/`loading` sprawia, że drugie wywołanie
+   * (np. klik w trakcie trwającego dociągania w tle) nic nie robi — obie
+   * drogi kończą się tym samym, jednym zapytaniem.
+   */
+  async function loadWeek() {
+    if (state.week.events || state.week.loading) return;
+    state.week.loading = true;
+    state.week.error = null;
+    if (state.week.open) renderWeek();
+    try {
+      const plan = await api.meetings.week();
+      if (plan?.access === "granted") {
+        state.week.events = plan.events ?? [];
+      } else {
+        state.week.error = plan?.access ?? "error";
+      }
+    } catch (problem) {
+      state.week.error = "error";
+    } finally {
+      state.week.loading = false;
+      if (state.week.open) renderWeek();
+    }
+  }
+
+  /**
+   * Dociągnięcie wydarzeń, zanim ktokolwiek o nie zapyta.
+   *
+   * Piętnaście do czterdziestu sekund (patrz main/calendar-osa.js) zapłacone
+   * ZANIM ktoś kliknie „Przegląd tygodnia" są niewidoczne — te same sekundy
+   * zapłacone PO kliknięciu są długim czekaniem na pierwszy dzień, jaki się
+   * pokaże. Wołane z `show()`, więc zaczyna się, gdy tylko otwiera się
+   * zakładka Spotkania, nie dopiero na żądanie.
+   *
+   * Tylko przy włączonym „Pokaż kalendarz": bez tego ustawienia przycisk
+   * „Przegląd tygodnia" i tak się nie pokazuje (patrz agendaCard), a samo
+   * zapytanie budzi Kalendarz.app — czego nie robimy wbrew wyłączonemu
+   * ustawieniu.
+   */
+  function prefetchWeek() {
+    if (!state.settings?.meetings?.calendar) return;
+    void loadWeek();
+  }
+
+  async function openWeek() {
+    weekSetup();
+    state.week.open = true;
+    weekEl.hidden = false;
+    doc_focus();
+    renderWeek();
+    await loadWeek();
+  }
+
+  function doc_focus() {
+    weekEl.querySelector(".week__close")?.focus();
+  }
+
+  function closeWeek() {
+    state.week.open = false;
+    if (weekEl) weekEl.hidden = true;
+  }
+
+  function shiftWeek(by) {
+    state.week.offset += by;
+    renderWeek();
+  }
+
+  /** Adres pokoju, skrócony do samego serwisu — „meet.google.com/xyz" jest
+      długie i nikt go tak nie czyta; wystarczy wiedzieć, że to Meet. */
+  function roomLabel(link) {
+    if (!link) return "";
+    if (link.includes("meet.google.com")) return "Google Meet";
+    if (link.includes("zoom.us")) return "Zoom";
+    if (link.includes("teams.microsoft.com")) return "Teams";
+    if (link.includes("webex.com")) return "Webex";
+    return t("Rozmowa");
+  }
+
+  /* „Niedz”, nie „Nie” — bo „Nie” jest jednocześnie zwykłym polskim słowem
+     (negacja) i przebieg tłumaczący (translateTree) dopasowuje po TEKŚCIE,
+     nie po kontekście. Klucz o mniejszej szansie na zderzenie z czymś, co
+     ktoś kiedyś dopisze gdzie indziej w aplikacji. */
+  const WEEKDAYS = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Niedz"];
+  const MONTHS = [
+    "stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca",
+    "lipca", "sierpnia", "września", "października", "listopada", "grudnia",
+  ];
+
+  function renderWeek() {
+    if (!weekEl) return;
+    const start = weekStart(state.week.offset);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const titleEl = weekEl.querySelector("#weekTitle");
+    const last = new Date(end);
+    last.setDate(last.getDate() - 1);
+    titleEl.textContent =
+      start.getMonth() === last.getMonth()
+        ? `${start.getDate()}–${last.getDate()} ${t(MONTHS[start.getMonth()])} ${start.getFullYear()}`
+        : `${start.getDate()} ${t(MONTHS[start.getMonth()])} – ${last.getDate()} ${t(MONTHS[last.getMonth()])} ${last.getFullYear()}`;
+    weekEl.querySelector('[data-week-today]').hidden = state.week.offset === 0;
+
+    const grid = weekEl.querySelector("#weekGrid");
+
+    if (state.week.loading && !state.week.events) {
+      grid.innerHTML = `<p class="week__empty">${t("Czytam kalendarz — bywa, że to pół minuty…")}</p>`;
+      return;
+    }
+    if (state.week.error) {
+      grid.innerHTML = `<p class="week__empty">${t("Nie udało się przeczytać kalendarza.")}</p>`;
+      return;
+    }
+
+    // Tylko rozmowy — wpis bez adresu Meet/Zoom/Teams/Webex nie jest tym,
+    // po co się tu przyszło (patrz meetingLink w main/calendar-osa.js).
+    const events = (state.week.events ?? []).filter((event) => event.link);
+
+    const days = Array.from({ length: 7 }, (_, i) => {
+      const at = new Date(start);
+      at.setDate(at.getDate() + i);
+      const next = new Date(at);
+      next.setDate(next.getDate() + 1);
+      const isToday = at.getTime() === today.getTime();
+      const dayEvents = events
+        .filter((event) => event.from >= at.getTime() && event.from < next.getTime())
+        .sort((a, b) => a.from - b.from);
+
+      const rows = dayEvents
+        .map((event) => {
+          const at2 = new Date(event.from);
+          const time = `${pad(at2.getHours())}:${pad(at2.getMinutes())}`;
+          return `
+            <li class="week__event" data-week-open="${escape(event.link)}" title="${escape(event.link)}">
+              <span class="week__event-time">${time}</span>
+              <span class="week__event-title">${escape(event.title || t("Spotkanie"))}</span>
+              <span class="week__event-room">${escape(roomLabel(event.link))}</span>
+            </li>`;
+        })
+        .join("");
+
+      return `
+        <div class="week__day${isToday ? " is-today" : ""}">
+          <div class="week__day-head">
+            <span class="week__day-name">${t(WEEKDAYS[i])}</span>
+            <span class="week__day-num">${at.getDate()}</span>
+          </div>
+          <ul class="week__events">
+            ${rows || `<li class="week__none">${t("nic")}</li>`}
+          </ul>
+        </div>`;
+    }).join("");
+
+    grid.innerHTML = days;
+  }
+
+
   function clock(ms) {
     const at = new Date(ms);
     if (Number.isNaN(at.getTime())) return "";
@@ -534,7 +842,11 @@
 
     if (blocked) {
       return `<div class="meet__plan">
-          <p class="meet__legend">${t("Nadchodzące")}</p>
+          <button type="button" class="meet__legend meet__legend--link" data-meet-week
+                  title="${t("Zobacz cały tydzień")}">
+            ${t("Nadchodzące")}
+            <svg class="meet__legend-more" aria-hidden="true"><use href="#i-chevron" /></svg>
+          </button>
           <p class="meet__empty">${t(blocked.say)}</p>
           ${
             blocked.act
@@ -548,7 +860,11 @@
 
     if (!plan?.events?.length) {
       return `<div class="meet__plan">
-          <p class="meet__legend">${t("Nadchodzące")}</p>
+          <button type="button" class="meet__legend meet__legend--link" data-meet-week
+                  title="${t("Zobacz cały tydzień")}">
+            ${t("Nadchodzące")}
+            <svg class="meet__legend-more" aria-hidden="true"><use href="#i-chevron" /></svg>
+          </button>
           <p class="meet__empty">${t("Nic w planie na najbliższe godziny.")}</p>
         </div>`;
     }
@@ -568,7 +884,11 @@
       .join("");
 
     return `<div class="meet__plan">
-        <p class="meet__legend">${t("Nadchodzące")}</p>
+        <button type="button" class="meet__legend meet__legend--link" data-meet-week
+                  title="${t("Zobacz cały tydzień")}">
+            ${t("Nadchodzące")}
+            <svg class="meet__legend-more" aria-hidden="true"><use href="#i-chevron" /></svg>
+          </button>
         ${rows}
         <p class="meet__note meet__note--tight">${t("Włączone nagra się samo, gdy nadejdzie jego godzina.")}</p>
       </div>`;
@@ -599,6 +919,7 @@
       <div class="meet__settings">
         <h3>${t("Jak działają spotkania")}</h3>
 
+        <div class="meet__settings-grid">
         <div class="meet__group">
           <p class="meet__legend">${t("Kiedy zacząć nagrywać")}</p>
           ${option("off", "Nigdy sam", "Nagrywanie tylko z menu albo stąd.")}
@@ -652,13 +973,13 @@
               <em>${t("sekund")}</em>
             </span>
           </label>
-
-          <label class="meet__field">
-            <span class="meet__field-name">${t("Szuflada na notatki ze spotkań")}</span>
-            <input type="text" value="${escape(meet.folder ?? "")}" data-meet-set="folder" />
-          </label>
+        </div>
         </div>
 
+        <!-- Poza siatką kolumn, celowo: to nie jest szósta grupa ustawień,
+             tylko jedno zdanie o zgodzie i przycisk pod nim — pełna
+             szerokość, pod gridem, tak jak stała pod ostatnią grupą
+             w dawnym stosie. -->
         <p class="meet__note">
           ${t("Nagrywanie dotyczy ludzi, którzy w tej aplikacji niczego nie klikali. Znaczek świeci przez cały czas nagrywania, a macOS pokazuje przy nim własny wskaźnik.")}
         </p>
@@ -1010,6 +1331,7 @@
     const busy = busyField();
     if (!state.solo && !busy?.closest(".meet__list")) paintList();
     if (!busy?.closest(".meet__detail")) paintDetail();
+    if (!busy?.closest(".meet__ai")) paintSettings();
     window.translateTree(root);
     foldSummary();
   }
@@ -1108,6 +1430,13 @@
       follow(live, false);
       await reload();
       tick(state.recording);
+      // Ciche dociąganie w tle, żeby „Przegląd tygodnia" nie kazał czekać
+      // przy pierwszym kliknięciu — patrz prefetchWeek wyżej. NIE w oknie
+      // pojedynczego spotkania: ono nie pokazuje spisu ani „Nadchodzące",
+      // więc nie ma tam czego przyśpieszać — za to zapytanie budziłoby
+      // w tle GŁÓWNE okno (patrz createMainWindow().show() przy
+      // meetings:week w main/main.js), którego to okno w ogóle nie jest.
+      if (!state.solo) prefetchWeek();
     },
 
     hide() {
@@ -1117,11 +1446,18 @@
       // Zakładka znika razem z notatnikiem — to, co w nim napisano,
       // ma zostać na dysku, a nie w pamięci widoku.
       void flushNotes();
+      // Przegląd tygodnia leży poza `.meet` właśnie po to, żeby przeżyć
+      // przebudowę szkieletu — ale nie ma po co zostawać otwarty nad
+      // zakładką, na którą człowiek właśnie przeszedł.
+      closeWeek();
     },
 
     settings(next) {
       state.settings = next;
       if (root?.querySelector(".meet")) paint();
+      // Kalendarz mógł się właśnie włączyć — patrz prefetchWeek wyżej.
+      // Nie w oknie pojedynczego spotkania, z tego samego powodu co w show().
+      if (!state.solo) prefetchWeek();
     },
 
     /** Meldunek z procesu głównego: zaczęło się, skończyło albo przybyło

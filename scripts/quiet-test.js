@@ -115,32 +115,36 @@ assert.ok(
 ok("Paczka nie instaluje wirtualnego mikrofonu ani kamery");
 
 /* ── 3. Program pomocniczy bierze DŹWIĘK, nie obraz ───────────────
-   Strumień ScreenCaptureKit jest strumieniem ekranu i klatki w nim
-   powstają — ale nikt ich nie zamawia i nikt ich nie czyta. Gdyby
-   ktoś kiedyś dopisał wyjście `.screen`, ta aplikacja z dyktafonu
-   zrobiłaby się nagrywarką ekranu i nikt by tego nie zauważył. */
+   Wcześniej dźwięk systemu szedł przez ScreenCaptureKit — API DO
+   NAGRYWANIA EKRANU, poproszone o klatkę 2×2 piksela raz na minutę, żeby
+   obrazu było jak najmniej. Nawet tak zamówiony strumień i tak uruchamiał
+   całą maszynerię przechwytywania ekranu pod spodem (to był koszt, który
+   dawał się we znaki w trakcie spotkań — patrz nagłówek main.swift).
+
+   Dziś dźwięk systemu idzie przez Core Audio Process Tap — API, które
+   w ogóle nie zna pojęcia „ekran”. Test pilnuje, żeby ScreenCaptureKit
+   nie wróciło tylnymi drzwiami: gdyby ktoś kiedyś dopisał ten import,
+   ta aplikacja po cichu wróciłaby do nagrywania ekranu zamiast dźwięku. */
 
 const tap = read("native", "tap", "main.swift");
+assert.ok(!/import ScreenCaptureKit/.test(tap), "cribro-tap znowu importuje ScreenCaptureKit — ekran nie ma tu czego robić");
+assert.ok(!/\bSCStream\b/.test(tap), "cribro-tap wraca do SCStream — dźwięk systemu ma iść przez Core Audio Process Tap");
 assert.ok(
-  !/addStreamOutput\([^)]*type:\s*\.screen/.test(tap),
-  "cribro-tap zamawia obraz z ekranu — ma brać wyłącznie dźwięk",
+  /CATapDescription\(stereoGlobalTapButExcludeProcesses:/.test(tap),
+  "cribro-tap nie zakłada procesowego tapa — bez niego nie ma jak wziąć dźwięku systemu",
 );
-assert.ok(/config\.capturesAudio = true/.test(tap), "cribro-tap nie zamawia dźwięku");
-assert.ok(
-  /config\.width = \d\b/.test(tap) && /config\.height = \d\b/.test(tap),
-  "klatka obrazu przestała być dwoma pikselami — to już nie jest „nie interesuje mnie obraz”",
-);
-ok("cribro-tap bierze dźwięk, a obrazu nie zamawia");
+ok("cribro-tap bierze dźwięk przez Core Audio Process Tap, ekranu nie dotyka wcale");
 
 /* ── 4. Cribro wyklucza samo siebie ───────────────────────────────
    Dźwięk potwierdzenia po dyktowaniu i odsłuch fragmentu zapisu wychodzą
-   z procesów Electrona, nie z cribro-tap — więc `excludesCurrentProcessAudio`
-   ich nie łapie. Bez jawnego wykluczenia własny sygnał aplikacji wchodziłby
-   do nagrania cudzej rozmowy i wracał w transkrypcji jako czyjaś wypowiedź. */
+   z procesów Electrona, nie z cribro-tap — więc samo wykluczenie WŁASNEGO
+   PID-u tego programu by ich nie złapało. Bez jawnego wykluczenia aplikacji
+   PO NAZWIE własny sygnał Cribro wchodziłby do nagrania cudzej rozmowy
+   i wracał w transkrypcji jako czyjaś wypowiedź. */
 
 assert.ok(
-  /config\.excludesCurrentProcessAudio = true/.test(tap),
-  "cribro-tap nagrywa własny proces",
+  /processAudioObject\(pid: ProcessInfo\.processInfo\.processIdentifier\)/.test(tap),
+  "cribro-tap nie wyklucza własnego procesu z toru systemu",
 );
 assert.ok(
   /let mine = \[[^\]]*com\.cribro\.sift/.test(tap),

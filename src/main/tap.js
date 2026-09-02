@@ -219,16 +219,57 @@ function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
   let closed = false;
   const startedAt = Date.now();
 
+  /* ══ TOR SYSTEMU MOŻE MIEĆ PRZERWY — I MUSI ZOSTAĆ CIĄGŁY ══
+
+     cribro-tap bierze dziś dźwięk systemu przez Core Audio Process Tap,
+     nie przez ScreenCaptureKit (patrz nagłówek main.swift po to, dlaczego).
+     Różnica, która dotyczy TEGO pliku: ScreenCaptureKit sypał ramkami
+     w STAŁYM RYTMIE, cisza czy nie — bufor pusty jest wtedy tak samo
+     ramką, jak bufor głośny. Tap urządzenia zbiorczego, dopóki system nie
+     ma nic do zagrania, potrafi nie wysłać NIC — a zero ramek nie jest
+     tym samym co ramka ciszy.
+
+     Krajalnica (main/segments.js) liczy czas WYŁĄCZNIE z liczby próbek,
+     jakie do niej weszły — sekunda przyjętego dźwięku ma być sekundą
+     prawdziwego czasu, bez pytania. Gdyby przerwa w torze systemu po
+     prostu zniknęła z zapisu, dwa tory przestałyby zgadzać się co do tego,
+     KIEDY padło zdanie — a to jest dokładnie to, na czym stoi splot torów
+     (main/merge.js) i sekundy pokazywane w odtwarzaczu zapisu.
+
+     Naprawa jest tania, bo program natywny i tak niesie czas: każda ramka
+     ma `millis` liczone od JEDNEGO wspólnego zegara dla obu torów (patrz
+     `Clock` w main.swift). Wystarczy więc porównać, ile dźwięku tor już
+     dostał, z tym, na jakiej minucie stoi jego zegar — a różnicę dopisać
+     ciszą, ZANIM realne próbki pójdą dalej. */
+  const GAP_TOLERANCE_MS = 200;
+  /* Zabezpieczenie przed pojedynczą, absurdalnie długą łatą — komputer
+     usypiający w środku nagrania nie ma dostać w zamian bufora na kilka
+     godzin ciszy. Dłuższa przerwa i tak wygląda w rejestrze odcinków jak
+     długa cisza, którą reszta aplikacji już umie pokazać. */
+  const MAX_GAP_SECONDS = 600;
+  const delivered = { mic: 0, system: 0 };
+
+  const advance = (lane, pcm) => {
+    lanes[lane]?.write(pcm);
+    delivered[lane] += pcm.length / 2 / SAMPLE_RATE;
+    /* Te same próbki idą DALEJ, a nie tylko na dysk: z nich powstają
+       odcinki do transkrypcji w biegu (main/segments.js). Kopii nie
+       robimy — odbiorca dostaje wycinek wspólnego bufora i ma go zużyć
+       od razu, tak jak robi to krajalnica. */
+    if (onPcm) onPcm(lane, pcm);
+  };
+
   child.stdout.on("data", (chunk) => {
     const { frames, rest: left } = parse(Buffer.concat([rest, chunk]));
     rest = left;
     for (const frame of frames) {
-      lanes[frame.lane]?.write(frame.pcm);
-      /* Te same próbki idą DALEJ, a nie tylko na dysk: z nich powstają
-         odcinki do transkrypcji w biegu (main/segments.js). Kopii nie
-         robimy — odbiorca dostaje wycinek wspólnego bufora i ma go zużyć
-         od razu, tak jak robi to krajalnica. */
-      if (onPcm) onPcm(frame.lane, frame.pcm);
+      const expectedMillis = delivered[frame.lane] * 1000;
+      const gapMillis = frame.millis - expectedMillis;
+      if (gapMillis > GAP_TOLERANCE_MS) {
+        const gapSeconds = Math.min(gapMillis / 1000, MAX_GAP_SECONDS);
+        advance(frame.lane, Buffer.alloc(Math.round(gapSeconds * SAMPLE_RATE) * 2));
+      }
+      advance(frame.lane, frame.pcm);
       // Pokazujemy głośność MIKROFONU. Tor systemu też ma poziom, ale to
       // nie o nim człowiek chce wiedzieć, patrząc na znaczek: chce wiedzieć,
       // czy słychać JEGO.
@@ -249,6 +290,26 @@ function record({ dir, exclude = [], onLevel, onPcm, onError } = {}) {
   const finish = () => {
     if (closed) return;
     closed = true;
+    /* ══ CISZA DO SAMEGO KOŃCA TEŻ JEST CISZĄ, NIE BRAKIEM NAGRANIA ══
+
+       Ten sam powód co przy łatach W ŚRODKU toru (patrz komentarz przy
+       GAP_TOLERANCE_MS wyżej), tylko na końcu: jeśli system nie zagrał
+       NIC PRZEZ CAŁE NAGRANIE — pusty pokój, druga strona z wyciszonym
+       mikrofonem, test bez żadnego dźwięku — tap nie przysyła ani jednej
+       ramki i `delivered.system` zostaje zerem. Łatanie w pętli odbioru
+       nie ma wtedy czego złapać: nie przyjdzie już żadna ramka, po której
+       dałoby się poznać, że czas minął.
+
+       Domykamy więc różnicę TUTAJ, względem czasu, który naprawdę upłynął
+       (`startedAt`) — żeby plik WAV drugiego toru miał tyle samo sekund,
+       ile trwało nagranie, zamiast zera. Bez tego mikrofon i system
+       rozjeżdżałyby się dokładnie w tym przypadku, który wygląda najbardziej
+       niewinnie: w pustym pokoju. */
+    const elapsedSeconds = (Date.now() - startedAt) / 1000;
+    for (const lane of Object.keys(lanes)) {
+      const missing = elapsedSeconds - delivered[lane];
+      if (missing > 0) advance(lane, Buffer.alloc(Math.round(missing * SAMPLE_RATE) * 2));
+    }
     for (const lane of Object.values(lanes)) lane.close();
   };
 

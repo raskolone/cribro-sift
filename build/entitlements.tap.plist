@@ -12,9 +12,12 @@
     <key>com.apple.security.device.audio-input</key>
     <true/>
 
-    <!-- Nagrywanie ekranu NIE MA klucza uprawnienia. To zgoda TCC,
-         o którą system pyta przy pierwszym wywołaniu SCShareableContent,
-         i pamięta ją po tożsamości podpisu — dlatego program pomocniczy
-         musi być podpisany tym samym certyfikatem co aplikacja. -->
+    <!-- Dźwięk systemu (Core Audio Process Tap) NIE MA klucza uprawnienia,
+         tak samo jak dawniej nagrywanie ekranu. To zgoda TCC, o którą system
+         pyta przy pierwszym wywołaniu AudioHardwareCreateProcessTap, i pamięta
+         ją po tożsamości podpisu — dlatego program pomocniczy musi być
+         podpisany tym samym certyfikatem co aplikacja. Opis, który system
+         pokaże w oknie zgody, siedzi osobno — patrz NSAudioCaptureUsageDescription
+         w build/tap-info.plist. -->
   </dict>
 </plist>

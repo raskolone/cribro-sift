@@ -1149,7 +1149,11 @@
         <section class="sheet paper" id="list">
           <header class="head">
             <span class="head__title">Na wierzchu</span>
-            <button class="ico" id="add" title="Nowa notatka">
+            <!-- Plusik zakłada ZWYKŁĄ notatkę i od razu kładzie ją na
+                 pulpicie — jedna rzecz widoczna z dwóch stron, a nie
+                 osobny rodzaj „notatki z tacy". Patrz obsługa #add
+                 w js/widget.js. -->
+            <button class="ico" id="add" title="Nowa notatka na pulpicie">
               <svg><use href="#w-plus" /></svg>
             </button>
             <button class="ico" id="closeList" title="Zwiń">
@@ -1160,8 +1164,8 @@
           <div id="empty" hidden>
             <svg><use href="#w-note" /></svg>
             <p>
-              Nic tu nie leży — i tak zostanie, dopóki sam czegoś nie odłożysz.
-              Otwórz notatkę w Notatniku i włącz przy niej <b>Widoczna w widgecie</b>.
+              Nic tu nie leży. Zacznij nową plusikiem u góry albo odłóż
+              tutaj istniejącą — w notatce jest do tego przycisk <b>Na pulpit</b>.
             </p>
           </div>
         </section>

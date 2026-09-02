@@ -24,11 +24,13 @@
          mówiła „brak zgody na kalendarz" u kogoś, kto nigdy nie widział
          pytania o kalendarz.
 
-         Mikrofon i nagrywanie ekranu działały mimo braku tego pliku, bo
-         idą inną drogą: mikrofon przez uprawnienie w podpisie
-         (build/entitlements.tap.plist), a nagrywanie ekranu przez zgodę
-         klikaną w Ustawieniach systemowych, która nie potrzebuje opisu.
-         Trzymamy tu jednak wszystkie trzy opisy — żeby następna zgoda,
+         Mikrofon działał mimo braku tego pliku, bo idzie inną drogą:
+         uprawnienie w podpisie (build/entitlements.tap.plist). Dźwięk
+         systemu (Core Audio Process Tap) i kalendarz (EventKit) idą przez
+         zgodę TCC, którą system pyta wprost — i OBIE milczą bez opisu
+         dokładnie tak samo jak kalendarz milczał: zgoda przepada NATYCHMIAST
+         I BEZ PYTANIA, bez okna, bez błędu, jako zwykłe „odmówiono”.
+         Trzymamy tu więc wszystkie opisy razem — żeby następna zgoda,
          o którą ten program poprosi, nie odbiła się o to samo.
          ════════════════════════════════════════════════════════════════ -->
 
@@ -49,5 +51,12 @@
     <string>Cribro Sift czyta kalendarz tylko po to, żeby pokazać nadchodzące spotkania i zaproponować notatki z nich. Nic z kalendarza nie opuszcza tego komputera.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Cribro Sift nagrywa Twój głos wyłącznie po to, żeby zamienić go na tekst. Nagranie jest kasowane zaraz po transkrypcji.</string>
+    <!-- Core Audio Process Tap (native/tap/main.swift, openCapture) — dźwięk
+         systemu w trakcie spotkania. Bez tego klucza AudioHardwareCreateProcessTap
+         nie pokazuje żadnego okna zgody i po cichu oddaje same zera zamiast
+         dźwięku (zmierzone gdzie indziej dokładnie to zachowanie przy braku
+         tego klucza) — czyli nagranie „się udaje”, tylko nic w nim nie ma. -->
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Cribro Sift nagrywa dźwięk spotkania — czyli to, co gra z Twoich głośników — wyłącznie po to, żeby zamienić go na tekst. Nagranie jest kasowane zaraz po transkrypcji.</string>
   </dict>
 </plist>

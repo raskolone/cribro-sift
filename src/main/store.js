@@ -221,7 +221,6 @@ const DEFAULTS = {
     detect: "ask", // off | ask | auto
     keepAudio: false,
     minSeconds: 90,
-    folder: "Spotkania",
     // Dźwięk systemu to dźwięk wszystkich aplikacji z oknami, więc muzyka
     // z tła weszłaby do transkrypcji jako czyjaś wypowiedź.
     exclude: ["Spotify", "Music"],

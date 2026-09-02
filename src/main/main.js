@@ -2108,7 +2108,7 @@ function languageRadios(settings, language, field, apply) {
 /**
  * Główne menu aplikacji.
  *
- * Tu mieszka wszystko, co otwiera okno: Notatnik, Przesiane, Ustawienia.
+ * Tu mieszka wszystko, co otwiera okno: Notatnik, Start, Ustawienia.
  * Taca widgetu jest od czynności, które robi się w biegu — otwieranie okien
  * zabierałoby na niej miejsce dokładnie tym rzeczom, dla których powstała,
  * a menu i tak jest zawsze pod ręką, z klawiszami skrótu.
@@ -2276,13 +2276,17 @@ async function summarizeMeeting(id) {
  * Rozstrzygnięcia (czego nie wskrzeszać, czego nie nadpisywać, czego nie
  * zakładać z niczego) siedzą w main/meetnote.js i nie znają Electrona.
  * Tutaj zostaje to, czego tamten plik nie ma prawa wiedzieć: kim jest
- * właściciel konta, gdzie leży szuflada i komu o zmianie powiedzieć.
+ * właściciel konta i komu o zmianie powiedzieć.
+ *
+ * NIE TRAFIA DO ŻADNEJ SZUFLADY. Trafiała wcześniej — a szuflada jest
+ * dziś rzeczą, do której trzeba samemu wejść (patrz notes-view.js), więc
+ * notatka ze spotkania znikałaby w niej z oczu zamiast być widoczna od
+ * razu. Zostaje jej to, co miała od początku i co wystarczy: rodzaj
+ * „meeting”, po którym Notatnik sam składa ją do zwijanej przegródki
+ * „Notatki ze spotkań” — tej samej mechaniki, którą mają „Szybkie notatki”.
  */
 function keepMeetingNote(id) {
-  const { note, action } = keepNote(store, id, {
-    me: whoAmI(),
-    folder: store.getSettings().meetings?.folder || null,
-  });
+  const { note, action } = keepNote(store, id, { me: whoAmI() });
   if (action === "created") broadcast("note:new", note);
   else if (action === "updated") broadcast("note:changed", note);
   return note;
@@ -2431,9 +2435,16 @@ function tellMeetings() {
  * zrzutu ekranu, tylko czytamy napisy z belek. Bez tego każde spojrzenie
  * (co osiem sekund) rysowałoby obrazek każdego okna w systemie.
  *
- * Wymaga zgody „Nagrywanie ekranu" — tej samej, którą i tak trzeba dać
- * na nagrywanie dźwięku systemu. Bez niej spis wraca pusty i wykrywanie
+ * Wymaga zgody „Nagrywanie ekranu". Bez niej spis wraca pusty i wykrywanie
  * po prostu nic nie znajduje.
+ *
+ * TO JEST DZIŚ JEDYNA RZECZ W APLIKACJI, KTÓRA TEJ ZGODY POTRZEBUJE.
+ * Dawniej dzieliła ją z nagrywaniem dźwięku spotkania (oba szły przez
+ * ScreenCaptureKit) — od migracji na Core Audio Process Tap (patrz nagłówek
+ * native/tap/main.swift) nagrywanie ma WŁASNĄ, osobną zgodę i tej tu już
+ * nie dotyka. Stąd applyDetect musi dziś sam poprosić o „Nagrywanie ekranu"
+ * w chwili, w której ktoś włącza wykrywanie — nie ma już innej drogi,
+ * którą ta zgoda mogłaby się pojawić.
  */
 async function screenWindows() {
   const sources = await desktopCapturer.getSources({
@@ -2592,21 +2603,50 @@ let agendaWatch = null;
 /** Kiedy patrzyliśmy ostatnio — do pytania „co ruszyło od tamtej pory". */
 let agendaSeenAt = null;
 
-/** Jak często pytamy kalendarz. Minuta: spotkania zaczynają się o pełnych
-    kwadransach, a nie w losowych sekundach. */
-const AGENDA_EVERY = 60_000;
+/**
+ * Jak często pytamy kalendarz w tle.
+ *
+ * Nie minuta. Samo zapytanie (patrz main/calendar-osa.js) zmierzone na
+ * koncie z dziesięcioma kalendarzami trwa 15–40 sekund — a przy odstępie
+ * jednej minuty dwa takie zapytania potrafiłyby się nałożyć. Kalendarz.app
+ * SERIALIZUJE żądania Apple Events wewnętrznie (zmierzone: dziesięć
+ * zapytań puszczonych naraz trwało DŁUŻEJ niż te same dziesięć puszczone
+ * po kolei), więc nałożenie się dwóch odczytów nie przyspiesza niczego —
+ * tylko podwaja czas, aż oba przekroczą PATIENCE i oba przepadną.
+ *
+ * Trzy minuty dają zapas nawet przy najwolniejszym zmierzonym przebiegu,
+ * a `GRACE` w main/agenda.js (dziesięć minut tolerancji na spóźniony
+ * start) i tak nie wymaga częstszego spojrzenia.
+ */
+const AGENDA_EVERY = 180_000;
+
+/* Zapytanie trwa do kilkudziesięciu sekund — zegar w tle potrafi więc
+   odpalić następne, zanim poprzednie wróci. Bez tej blokady dwa
+   nakładające się zapytania do Kalendarz.app spowalniają się nawzajem
+   (patrz komentarz przy AGENDA_EVERY) i żadne nie zdąży na czas. */
+let agendaBusy = false;
 
 async function lookAtAgenda({ force = false, patience } = {}) {
   const settings = store.getSettings();
   /* `force` znaczy: pytam, bo człowiek właśnie kliknął. Wtedy ustawienie
-     „Pokaż kalendarz" nie ma nic do rzeczy — kliknięcie JEST włączeniem. */
+     „Pokaż kalendarz" nie ma nic do rzeczy — kliknięcie JEST włączeniem.
+     Kliknięcie też ma prawo wejść PRZED zapytaniem w tle, które akurat
+     trwa — człowiek czeka na odpowiedź, tło może poczekać na następną
+     turę. */
   if (!force && !settings.meetings?.calendar) return;
+  if (!force && agendaBusy) return;
 
-  /* `force` znaczy „człowiek kliknął" — i tylko wtedy wolno obudzić
-     Kalendarz.app oraz czekać minutami na okno zgody. */
-  const fresh = await agendaSource.read(
-    force ? { patience: patience ?? undefined, launch: true } : {},
-  );
+  agendaBusy = true;
+  let fresh;
+  try {
+    /* `force` znaczy „człowiek kliknął" — i tylko wtedy wolno obudzić
+       Kalendarz.app oraz czekać minutami na okno zgody. */
+    fresh = await agendaSource.read(
+      force ? { patience: patience ?? undefined, launch: true } : {},
+    );
+  } finally {
+    agendaBusy = false;
+  }
   agenda = fresh;
   const now = Date.now();
   const started = agendaSource.justStarted(fresh.events, now, { since: agendaSeenAt });
@@ -2647,12 +2687,16 @@ function watchAgenda(settings = store.getSettings()) {
 /**
  * Pilnowanie ekranu włącza się i wyłącza razem z ustawieniem.
  *
- * ZGODY NIE WYPRASZAMY. Spis okien wymaga „Nagrywania ekranu", a samo
- * pytanie o niego wywołuje systemowe okienko — i wywołałoby je przy
- * pierwszym uruchomieniu aplikacji, zanim ktokolwiek poprosił o cokolwiek
- * związanego ze spotkaniami. Dopóki zgody nie ma, wykrywanie po prostu
- * śpi; obudzi się, gdy zgoda pojawi się przy pierwszym nagraniu spotkania
- * (patrz watchPermissions).
+ * TA FUNKCJA SAMA O ZGODĘ NIE PROSI. Wywoływana z uśpienia, z odblokowania
+ * ekranu czy przy starcie aplikacji, prosiłaby o „Nagrywanie ekranu" przy
+ * PIERWSZYM URUCHOMIENIU — zanim ktokolwiek w ogóle otworzył zakładkę
+ * Spotkania. Dopóki zgody nie ma, wykrywanie po prostu śpi.
+ *
+ * O ZGODĘ PROSI TEN, KTO WŁĄCZA USTAWIENIE — patrz „settings:save" niżej,
+ * dokładnie przy `patch.meetings?.detect`. To jest dziś JEDYNA droga, którą
+ * ta zgoda może się pojawić: nagrywanie dźwięku spotkania nie idzie już
+ * przez ScreenCaptureKit (patrz nagłówek native/tap/main.swift) i nie
+ * prosi o nią przy okazji, tak jak robiło to dawniej.
  */
 function applyDetect(settings = store.getSettings()) {
   const how = settings.meetings?.detect ?? "ask";
@@ -2751,11 +2795,10 @@ function buildAppMenu() {
       label: t("Widok"),
       submenu: [
         { label: t("Start"), accelerator: "Command+1", click: go("start") },
-        { label: t("Przesiane"), accelerator: "Command+2", click: go("sifted") },
-        { label: t("Notatki"), accelerator: "Command+3", click: go("notes") },
-        { label: t("Sito"), accelerator: "Command+4", click: go("sieve") },
-        { label: t("Ziarna"), accelerator: "Command+5", click: go("grains") },
-        { label: t("Ustawienia"), accelerator: "Command+6", click: go("settings") },
+        { label: t("Notatki"), accelerator: "Command+2", click: go("notes") },
+        { label: t("Funkcja sita"), accelerator: "Command+3", click: go("sieve") },
+        { label: t("Ziarna"), accelerator: "Command+4", click: go("grains") },
+        { label: t("Ustawienia"), accelerator: "Command+5", click: go("settings") },
         { type: "separator" },
         { role: "togglefullscreen", label: t("Pełny ekran") },
       ],
@@ -2797,7 +2840,7 @@ function refreshTrayMenu() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: t("Otwórz Cribro Sift"), click: () => createMainWindow() },
-      { label: t("Przesiane"), click: () => createMainWindow().webContents.send("view:go", "sifted") },
+      { label: t("Start"), click: () => createMainWindow().webContents.send("view:go", "start") },
       { label: t("Notatnik"), click: () => createNotesWindow() },
       { label: t("Szybka notatka"), click: () => quickNote() },
       { label: `${t("Tekst z ekranu")}…`, click: () => grabScreenText() },
@@ -3914,7 +3957,18 @@ function registerIpc() {
     if (patch.spellcheck || patch.language) applySpellcheck(settings);
     // Wykrywanie rusza i staje razem z ustawieniem — a nie dopiero po
     // przeładowaniu aplikacji.
-    if (patch.meetings?.detect !== undefined) applyDetect(settings);
+    if (patch.meetings?.detect !== undefined) {
+      applyDetect(settings);
+      /* Włączenie wykrywania jest tym momentem, w którym system ma zapytać
+         o zgodę „Nagrywanie ekranu" — dokładnie tak samo jak kalendarz kilka
+         linii niżej pyta o swoją przy pierwszym włączeniu. Bez tego
+         wywołania ta zgoda nie miałaby już SKĄD się wziąć (patrz komentarz
+         przy applyDetect). `screenWindows()` samym wywołaniem
+         `desktopCapturer.getSources` stawia systemowe okienko, gdy stan jest
+         jeszcze nierozstrzygnięty — a gdy zgody już odmówiono, jest po
+         prostu tanim wywołaniem bez skutku, nie drugim pytaniem. */
+      if (settings.meetings?.detect !== "off" && !canSeeScreen()) void screenWindows();
+    }
     // Kalendarz włącza się i gaśnie razem z przełącznikiem — a pierwsze
     // włączenie jest tym momentem, w którym system pyta o zgodę.
     if (patch.meetings?.calendar !== undefined) watchAgenda(settings);
@@ -4299,14 +4353,6 @@ function registerIpc() {
        w pasek, gdy widget stoi na drugim końcu ekranu. */
     if (action === "app") {
       createMainWindow();
-      return true;
-    }
-    /* Znaczek w trakcie nagrywania prowadzi wprost do Meeting Notes —
-       bo to jedyne miejsce, w którym trwające spotkanie ma jakąkolwiek
-       treść. Poza nagrywaniem ten sam znaczek robi to, co zawsze:
-       otwiera notatki na wierzchu. */
-    if (action === "meetings") {
-      createMainWindow().webContents.send("view:go", "meetings");
       return true;
     }
     return false;
@@ -4760,6 +4806,55 @@ function registerIpc() {
     createMainWindow().show();
     await lookAtAgenda({ force: true, patience: 180_000 });
     return meetingState().agenda;
+  });
+
+  /* ══ PRZEGLĄD TYGODNIA ══
+
+     Klik w „Nadchodzące” otwiera coś więcej niż pięć najbliższych wpisów:
+     całe okno, które da się przewijać tydzień po tygodniu, w obie strony.
+
+     JEDNO SZEROKIE ZAPYTANIE, NIE JEDNO NA TYDZIEŃ. Koszt odczytu przez
+     Kalendarz.app (main/calendar-osa.js) leży niemal w całości w SAMEJ
+     ENUMERACJI — w przejściu przez wszystkie wydarzenia każdego kalendarza,
+     żeby ustalić, które mieszczą się w oknie. Ten koszt NIE ZALEŻY od tego,
+     jak szerokie jest okno: zapytanie o dobę i zapytanie o dwa miesiące
+     kosztują to samo, bo oba przechodzą przez te same wydarzenia. Zapytanie
+     o pojedynczy tydzień przy każdej zmianie tygodnia płaciłoby więc ten
+     sam rachunek (piętnaście do czterdziestu sekund) za KAŻDE przewinięcie
+     — a szerokie, jedno, płaci go raz i oddaje tygodnie do przewijania
+     za darmo, bo reszta dzieje się w przeglądarce.
+
+     `detail: 0` pomija listę zaproszonych — przegląd tygodnia pyta tylko
+     o to, co ma link do Google Meet albo Zoom (patrz `isMeeting` w
+     main/agenda.js, sprawdzenie `link` idzie przed sprawdzeniem gości),
+     więc goście nie są tu do niczego potrzebni, a ich pominięcie zdejmuje
+     drugi, kosztowny etap tego samego zapytania.
+
+     CACHE NA PIĘĆ MINUT. Okno kontekstowe otwiera się i zamyka w trakcie
+     jednej sesji patrzenia w kalendarz — drugie otwarcie w tym czasie ma
+     dostać to, co pierwsze, a nie każdorazowo czekać pół minuty na to samo. */
+  /* Miesiąc wstecz, dwa miesiące w przód — z zapasem w obie strony, żeby
+     przewijanie tygodni starczyło na CAŁY miesiąc, licząc od dzisiaj, zanim
+     trafi na pustkę. Szerzej niż trzeba: koszt i tak nie zależy od okna
+     (patrz komentarz wyżej), więc zapas nic nie kosztuje. */
+  const WEEK_SPAN = { back: 31 * 24, hours: 62 * 24 };
+  const WEEK_CACHE_FOR = 5 * 60_000;
+  let weekAgenda = null;
+  let weekAgendaAt = 0;
+
+  ipcMain.handle("meetings:week", async (_e, { fresh = false } = {}) => {
+    if (!fresh && weekAgenda && Date.now() - weekAgendaAt < WEEK_CACHE_FOR) {
+      return weekAgenda;
+    }
+    createMainWindow().show();
+    weekAgenda = await agendaSource.read({
+      ...WEEK_SPAN,
+      detail: 0,
+      launch: true,
+      patience: 180_000,
+    });
+    weekAgendaAt = Date.now();
+    return weekAgenda;
   });
 
   /* Tytuł wpisany ręką. Znacznik `titleByHand` chroni go przed inteligentną
@@ -5221,8 +5316,77 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on("second-instance", () => createMainWindow());
 
+/**
+ * Content-Security-Policy dla wszystkich okien naraz.
+ *
+ * ── PO CO, SKORO WSZYSTKO JEST LOKALNE ──
+ *
+ * Bo nie wszystko. Do okien wchodzi tekst, którego NIE NAPISALIŚMY: to,
+ * co wróciło z sita (czyli od cudzego modelu językowego), to, co przyszło
+ * z Notion, i to, co ktoś wkleił ze schowka. Ten tekst jest renderowany
+ * jako treść bogata — z pogrubieniami, listami i obrazkami (patrz
+ * shared/richtext.js). Gdyby kiedykolwiek przeciekła tamtędy choć jedna
+ * pominięta ścieżka, atakujący dostaje wykonanie kodu w oknie, które ma
+ * most do procesu głównego. CSP nie naprawia takiej dziury, ale odbiera
+ * jej wartość: wstrzyknięty skrypt nie ma skąd się wczytać ani dokąd
+ * wysłać tego, co znajdzie.
+ *
+ * Electron ostrzegał o braku tej polityki w konsoli każdego okna.
+ *
+ * ── SKĄD TE KONKRETNE ŹRÓDŁA ──
+ *
+ *   script-src   tylko własne pliki. Renderer nie ma ani jednego `eval`
+ *                ani `new Function` — sprawdzone, więc nie ma tu
+ *                'unsafe-eval'.
+ *   style-src    'unsafe-inline' jest potrzebne naprawdę: szerokość
+ *                obrazka w notatce siedzi w atrybucie `style` (richtext.js),
+ *                a kartka i okno spotkania mają własne bloki <style>.
+ *                fonts.googleapis.com — stamtąd idzie arkusz z krojami.
+ *   font-src     fonts.gstatic.com — stamtąd idą same pliki krojów.
+ *   img-src      `file:` NIE JEST nadmiarem: obrazki wklejone do notatki
+ *                leżą na dysku i wchodzą jako `file://…` (patrz fileUrl
+ *                w main/shot.js). `data:` — podgląd przed zapisem.
+ *   media-src    nagrania spotkań, tą samą drogą co obrazki.
+ *   connect-src  'self' i tyle. Renderer nie dzwoni NIGDZIE sam —
+ *                sprawdzone, ani jednego `fetch`; wszystkie rozmowy
+ *                z Google, OpenAI i Notion prowadzi proces główny,
+ *                a okno rozmawia z nim mostem, nie siecią.
+ *
+ * `file:` w script-src i default-src bierze się stąd, że okna ładują się
+ * z dysku (`loadFile`), a dokument spod `file://` ma w Chromium źródło
+ * nieprzezroczyste — samo 'self' nie dopuściłoby wtedy nawet własnych
+ * skryptów obok. Sprawdzone uruchomieniem każdego okna po kolei:
+ * scripts/csp-test.js.
+ */
+function guardWindows() {
+  const POLICY = [
+    "default-src 'none'",
+    "script-src 'self' file:",
+    "style-src 'self' file: 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' file: https://fonts.gstatic.com",
+    "img-src 'self' file: data: blob:",
+    "media-src 'self' file: data: blob:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+
+  session.defaultSession.webRequest.onHeadersReceived((details, done) => {
+    done({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [POLICY],
+      },
+    });
+  });
+}
+
   app.whenReady().then(() => {
     store = new Store();
+
+    guardWindows();
 
     // Cribro ma jedną paletę i jest nocna. Materiał szkła w oknie szybkiej
     // notatki (vibrancy) bierze się natomiast od systemu — w jasnym motywie
@@ -5251,8 +5415,9 @@ if (!app.requestSingleInstanceLock()) {
     google.configure(store.getSettings().briefing?.google);
 
     /* Spotkania chodzą OBOK dyktowania, nie zamiast niego: to dwa różne
-       stany i dwa różne mikrofony (ScreenCaptureKit kontra getUserMedia).
-       Dyktowanie notatki w trakcie rozmowy ma działać. */
+       stany i dwa różne mikrofony (Core Audio w cribro-tap kontra
+       getUserMedia w oknie HUD-a). Dyktowanie notatki w trakcie rozmowy
+       ma działać. */
     meetings = new Meetings(store, {
       onChange: () => {
         tellMeetings();

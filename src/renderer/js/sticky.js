@@ -39,6 +39,7 @@
     actionBar,
     paintActions,
     runAction,
+    fitMenu,
     runShare,
   } = window.NotesCore;
   const $ = (selector) => document.querySelector(selector);
@@ -369,6 +370,9 @@
     if (act === "share") {
       const menu = document.querySelector('[data-acts-menu="share"]');
       if (menu) menu.hidden = !menu.hidden;
+      /* Kartka bywa węższa niż samo menu — tu domknięcie do krawędzi jest
+         potrzebne najbardziej z całej trójki okien. */
+      fitMenu(menu);
       return;
     }
     closeShare();

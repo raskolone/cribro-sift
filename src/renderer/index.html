@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="css/prose.css" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="stylesheet" href="css/note-acts.css" />
+    <link rel="stylesheet" href="css/ask.css" />
     <link rel="stylesheet" href="css/onboarding.css" />
   </head>
   <body>
@@ -35,15 +36,6 @@
             stroke-width="1.1"
             opacity=".6"
             stroke-linecap="round"
-          />
-        </symbol>
-        <symbol id="i-layers" viewBox="0 0 24 24">
-          <path
-            d="M12 3 3 8l9 5 9-5-9-5ZM3 13l9 5 9-5M3 17.5l9 5 9-5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linejoin="round"
           />
         </symbol>
         <symbol id="i-sieve" viewBox="0 0 24 24">
@@ -268,11 +260,8 @@
         </div>
 
         <nav class="nav" id="nav">
-          <button class="nav__item" title="Start" data-view="start" aria-selected="false">
+          <button class="nav__item" title="Start" data-view="start" aria-selected="true">
             <svg><use href="#i-mic" /></svg> <span>Start</span>
-          </button>
-          <button class="nav__item" title="Przesiane" data-view="sifted" aria-selected="true">
-            <svg><use href="#i-layers" /></svg> <span>Przesiane</span>
           </button>
           <button class="nav__item" title="Notatki" data-view="notes" aria-selected="false">
             <svg><use href="#i-note" /></svg> <span>Notatki</span>
@@ -280,8 +269,8 @@
           <button class="nav__item" title="Meeting Notes" data-view="meetings" aria-selected="false">
             <svg><use href="#i-meeting" /></svg> <span>Spotkania</span>
           </button>
-          <button class="nav__item" title="Sito" data-view="sieve" aria-selected="false">
-            <svg><use href="#i-sieve" /></svg> <span>Sito</span>
+          <button class="nav__item" title="Funkcja sita" data-view="sieve" aria-selected="false">
+            <svg><use href="#i-sieve" /></svg> <span>Funkcja sita</span>
           </button>
           <button class="nav__item" title="Ziarna" data-view="grains" aria-selected="false">
             <svg><use href="#i-grain" /></svg> <span>Ziarna</span>
@@ -320,8 +309,8 @@
       <main>
         <header class="topbar">
           <div class="topbar__text">
-            <h1><span id="title">Przesiane</span> <span class="pill" id="titlePill"></span></h1>
-            <p id="subtitle">Tylko to, co chciałeś powiedzieć.</p>
+            <h1><span id="title">Start</span> <span class="pill" id="titlePill"></span></h1>
+            <p id="subtitle">Cztery kroki do pierwszego dyktowania — i wszystko, co już przesiane.</p>
           </div>
           <div class="status no-drag" data-state="idle" id="status">
             <i></i><span class="label" id="statusText">Gotowe</span>
@@ -334,8 +323,7 @@
         <div id="banner"></div>
         <div id="errorBar"></div>
 
-        <section class="view" id="view-start" hidden></section>
-        <section class="view" id="view-sifted"></section>
+        <section class="view" id="view-start"></section>
         <section class="view" id="view-notes" hidden></section>
         <section class="view" id="view-meetings" hidden></section>
         <section class="view" id="view-sieve" hidden></section>
@@ -375,6 +363,7 @@
     <script src="js/constellation.js"></script>
     <script src="js/diff.js"></script>
     <script src="js/editor.js"></script>
+    <script src="js/ask.js"></script>
     <script src="js/notes-core.js"></script>
     <script src="js/notes-view.js"></script>
     <script src="js/meetings-view.js"></script>

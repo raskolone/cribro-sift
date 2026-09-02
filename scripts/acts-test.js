@@ -38,11 +38,28 @@ const nodes = new Map();
 global.window = {};
 global.t = (text, vars) =>
   String(text).replace(/\{(\w+)\}/g, (_all, key) => String(vars?.[key] ?? ""));
+/* Kosze w pasku czynności: to ich szuka `askDelete`, żeby wiedzieć, przy
+   którym postawić pytanie. Pusta lista znaczy „w tym oknie nie ma paska" —
+   i wtedy kasowanie ma iść bez pytania (patrz askDelete w notes-core.js). */
+let slots = [];
 global.document = {
   getElementById: (id) => nodes.get(id) ?? null,
   createElementNS: () => ({ setAttribute() {}, style: {}, set innerHTML(_v) {} }),
+  querySelectorAll: () => slots,
+  createElement: () => ({
+    className: "",
+    setAttribute() {},
+    set innerHTML(_v) {},
+    addEventListener() {},
+    remove() {},
+    contains: () => true,
+    querySelector: () => ({ focus() {} }),
+  }),
+  addEventListener() {},
+  removeEventListener() {},
   body: { appendChild() {} },
 };
+global.setTimeout = setTimeout;
 
 require(path.join(__dirname, "..", "src", "renderer", "js", "notes-core.js"));
 const { actionBar, paintActions, runAction, runShare, specialsMenu, ACTIONS, SPECIALS } =
@@ -56,6 +73,15 @@ for (const act of ACTIONS) {
 }
 check("Każdy przycisk niesie podpis, nie samą ikonę", (bar.match(/<span>/g) ?? []).length === ACTIONS.length);
 check("Kasowanie jest oznaczone jako nieodwracalne", bar.includes("note-act--danger"));
+check(
+  "Każdy przycisk niesie dymek dla wąskiej stopki",
+  ACTIONS.every((act) => bar.includes(`data-tip="${act.label}"`)),
+);
+check(
+  "…i etykietę dla czytnika ekranu",
+  ACTIONS.every((act) => bar.includes(`aria-label="${act.label}"`)),
+);
+check("Systemowy dymek nie jest już rysowany", !bar.includes("title="));
 check("Udostępnianie ma własne menu", bar.includes('data-acts-menu="share"'));
 check(
   "…a w nim wszystkie drogi wyjścia",
@@ -110,9 +136,21 @@ function fakeBar() {
     "Leżąca na pulpicie mówi „Z pulpitu”",
     root.buttons.get("desktop").span.textContent === "Z pulpitu",
   );
+  /* Dymek nie jest już systemowym `title`, tylko `data-tip` (rysuje go
+     .note-act::after w css/note-acts.css — systemowy budził się po sekundzie
+     i wyglądał jak wklejka z innego programu). Sprawdzamy więc oba napisy,
+     które ma dziś przycisk: ten dla oka i ten dla czytnika ekranu. */
   check(
     "Dymek zgadza się z napisem — inaczej mówiłyby co innego",
-    root.buttons.get("desktop").title === "Z pulpitu",
+    root.buttons.get("desktop").dataset.tip === "Z pulpitu",
+  );
+  check(
+    "…i czytnik ekranu słyszy to samo",
+    root.buttons.get("desktop").attrs["aria-label"] === "Z pulpitu",
+  );
+  check(
+    "Systemowego dymka już nie ma — dwa dymki naraz to jeden za dużo",
+    !root.buttons.get("desktop").title,
   );
   check(
     "Przycisk bez stanu („Przesiej”) nie udaje wciśniętego",
@@ -159,9 +197,60 @@ function fakeApi() {
     check("„Przesiej” bierze wynik do notatki", note.text === "przesiane");
     check("…i melduje, że pracuje", said.includes("Przesiewam notatkę…"));
 
+    /* ── KASOWANIE PYTA, ZANIM SKASUJE ──
+
+       Samo okienko z pytaniem siedzi w js/ask.js i ma własne życie
+       w przeglądarce; tutaj podstawiamy je atrapą i sprawdzamy to, co
+       naprawdę należy do paska: czy odpowiedź człowieka rozstrzyga o tym,
+       czy notatka ginie.
+
+       Brak paska w oknie (skrót klawiszowy, menu) znaczy, że nie ma gdzie
+       postawić pytania — i wtedy kasujemy, bo milcząca odmowa wyglądałaby
+       jak zepsuty przycisk. */
+    slots = [];
+    window.CribroAsk = undefined;
     gone = await runAction("delete", note, { api, say });
     check("„Usuń” naprawdę kasuje", api.calls.some(([what, id]) => what === "remove" && id === "n1"));
     check("…i mówi o tym wprost, żeby okno mogło się zamknąć", gone === true);
+
+    /* Z paskiem pytanie staje pod koszem i czeka na odpowiedź. */
+    const asked = [];
+    /* `askDelete` pyta dziś wprost o PRZYCISKI w slotach paska
+       ('.note-acts__slot [data-act="delete"]') i odsiewa je po
+       `offsetParent`, czyli po tym, czy są widoczne. Atrapa oddaje więc
+       przycisk, a nie slot. */
+    slots = [{ offsetParent: {} }];
+    const answerWith = (answer) => {
+      window.CribroAsk = {
+        danger(options) {
+          asked.push(options);
+          return Promise.resolve(answer);
+        },
+      };
+    };
+
+    const before = api.calls.length;
+    answerWith(false);
+    gone = await runAction("delete", note, { api, say });
+    check("„Zostaw” zostawia notatkę w spokoju", api.calls.length === before);
+    check("…i mówi oknu, że nic nie zniknęło", gone === false);
+    check(
+      "Pytanie mówi wprost, że nie da się tego cofnąć",
+      /nie da się jej przywrócić/.test(asked[0]?.body ?? ""),
+    );
+    check("…i stoi przy koszu, a nie na środku ekranu", !!asked[0]?.anchor);
+
+    answerWith(true);
+    gone = await runAction("delete", note, { api, say });
+    check("„Skasuj” dopiero teraz kasuje", api.calls.length === before + 1);
+    check("…i dopiero teraz okno może się zamknąć", gone === true);
+
+    window.CribroAsk = undefined;
+    slots = [];
+    gone = await runAction("delete", note, { api, say });
+    check("„Usuń” naprawdę kasuje", api.calls.some(([what, id]) => what === "remove" && id === "n1"));
+    check("…i mówi o tym wprost, żeby okno mogło się zamknąć", gone === true);
+
 
     /* ── 4. Wysyłka ── */
     const out = fakeApi();

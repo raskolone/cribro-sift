@@ -20,16 +20,15 @@
 const EN = {
   /* ── Nawigacja i nagłówki widoków ── */
   Start: "Start",
-  Przesiane: "Sifted",
   Notatnik: "Notepad",
   Notatki: "Notes",
   "Lista po lewej, notatka po prawej. Podwójne kliknięcie otwiera ją w osobnym okienku.":
     "List on the left, note on the right. A double click opens it in its own window.",
-  Sito: "Sieve",
+  "Funkcja sita": "Sieve function",
   Ziarna: "Grains",
   Ustawienia: "Settings",
-  "Tylko to, co chciałeś powiedzieć.": "Only what you meant to say.",
-  "Cztery kroki do pierwszego dyktowania.": "Four steps to your first dictation.",
+  "Cztery kroki do pierwszego dyktowania — i wszystko, co już przesiane.":
+    "Four steps to your first dictation — and everything sifted so far.",
   "Jedno pokrętło: jak gęsto przesiewać.": "One dial: how finely to sift.",
   "Słowa, których sito nigdy nie tknie.": "Words the sieve never touches.",
   "Skróty, dostawcy, prywatność.": "Shortcuts, providers, privacy.",
@@ -60,7 +59,6 @@ const EN = {
   Podsumowanie: "Summary",
   Transkrypcja: "Transcript",
   Nieznany: "Unknown",
-  "Skasować to spotkanie razem z nagraniem?": "Delete this meeting along with its recording?",
   "Trwa nagrywanie. Tekst pojawi się po zakończeniu.":
     "Recording. The text will appear once it ends.",
   "Pierwsze zdania pojawią się tu za chwilę — zapis powstaje odcinkami.":
@@ -293,6 +291,28 @@ const EN = {
   Przypięta: "Pinned",
   Odpięta: "Unpinned",
 
+  /* Pytanie przed skasowaniem notatki (askDelete w js/notes-core.js).
+     „Zostaw" zamiast „Anuluj": mówi, co się stanie z notatką, a nie co
+     stanie się z oknem. */
+  "Skasować notatkę?": "Delete this note?",
+  "Notatka zniknie na zawsze — nie da się jej przywrócić.":
+    "The note will be gone for good — it cannot be brought back.",
+  "zniknie na zawsze — nie da się jej przywrócić.":
+    "will be gone for good — it cannot be brought back.",
+  Zostaw: "Keep it",
+  Skasuj: "Delete",
+
+  /* To samo pytanie przy spotkaniu — z tą różnicą, że tam ginie NAGRANIE,
+     czyli jedyna rzecz w tej aplikacji, której nie da się odtworzyć. */
+  "Nowa notatka na pulpicie": "New note on the desktop",
+  "Nic tu nie leży. Zacznij nową plusikiem u góry albo odłóż tutaj istniejącą — w notatce jest do tego przycisk Na pulpit.":
+    "Nothing here yet. Start one with the plus above, or put an existing note here — there is a To desktop button on every note.",
+  "Skasować spotkanie?": "Delete this meeting?",
+  "Spotkanie zniknie razem z nagraniem i zapisem rozmowy. Tego nie da się odtworzyć.":
+    "The meeting will go, and the recording and transcript with it. That cannot be recreated.",
+  "zniknie razem z nagraniem i zapisem rozmowy. Tego nie da się odtworzyć.":
+    "will go, and the recording and transcript with it. That cannot be recreated.",
+
   /* Znaki specjalne. Nazwy grup — same znaki tłumaczenia nie mają
      i przebieg po drzewie ich nie tyka. */
   "Znaki specjalne": "Special characters",
@@ -340,6 +360,41 @@ const EN = {
   "Nadaj dostęp": "Grant access",
   "Odbierz dostęp": "Revoke access",
   "Zapisane.": "Saved.",
+
+  /* Przegląd tygodnia — okno kontekstowe otwierane z „Nadchodzące". */
+  "Zobacz cały tydzień": "See the whole week",
+  "Przegląd tygodnia": "Week overview",
+  "Poprzedni tydzień": "Previous week",
+  "Następny tydzień": "Next week",
+  "Dziś": "Today",
+  "Zamknij": "Close",
+  "Czytam kalendarz — bywa, że to pół minuty…": "Reading the calendar — can take up to half a minute…",
+  "Nie udało się przeczytać kalendarza.": "Couldn't read the calendar.",
+  "Rozmowa": "Call",
+  "nic": "nothing",
+
+  /* Miesiące — dopełniacz, tak jak w „12 stycznia". */
+  stycznia: "January",
+  lutego: "February",
+  marca: "March",
+  kwietnia: "April",
+  maja: "May",
+  czerwca: "June",
+  lipca: "July",
+  sierpnia: "August",
+  września: "September",
+  października: "October",
+  listopada: "November",
+  grudnia: "December",
+
+  /* Dni tygodnia, skrócone — nagłówki kolumn w siatce tygodnia. */
+  Pon: "Mon",
+  Wt: "Tue",
+  Śr: "Wed",
+  Czw: "Thu",
+  Pt: "Fri",
+  Sob: "Sat",
+  Niedz: "Sun",
   Przypięte: "Pinned",
   przypięta: "pinned",
   zostało: "kept",
@@ -547,8 +602,8 @@ const EN = {
     "Without it you will not see what the sieve removed.",
 
   "Język interfejsu": "Interface language",
-  "Zmienia napisy w oknach, w pasku menu i na widgecie. Język dyktowania ustawia się osobno, w zakładce Sito.":
-    "Changes the labels in the windows, the menu bar and the widget. The dictation language is set separately, in the Sieve tab.",
+  "Zmienia napisy w oknach, w pasku menu i na widgecie. Język dyktowania ustawia się osobno, w zakładce Funkcja sita.":
+    "Changes the labels in the windows, the menu bar and the widget. The dictation language is set separately, in the Sieve function tab.",
 
   "Dwa osobne kroki. Najpierw ktoś zamienia głos na tekst, potem ktoś inny ten tekst czyści. Możesz dać oba jednemu dostawcy albo je rozdzielić.":
     "Two separate steps. First someone turns speech into text, then someone else cleans that text up. You can give both to one provider or split them.",
@@ -1015,8 +1070,8 @@ const EN = {
     "Let the keys go — the sieve works, and the sifted text lands at the cursor in whatever app you are in. Would rather not hold? Tap the same keys twice and recording stays on; another tap ends it. Escape deletes the recording without a trace.",
 
   "Jedno pokrętło: jak gęsto przesiewać": "One dial: how finely to sift",
-  "Zgrubne zostawia prawie wszystko i usuwa same zacięcia. Średnie daje czystą wypowiedź twoim głosem. Drobne przepisuje ją zwięźle i formalnie, gotową do wysłania. Przestawisz je w zakładce Sito, w pasku menu i na tacy widgetu.":
-    "Coarse leaves almost everything and removes only the stumbles. Medium gives you a clean sentence in your own voice. Fine rewrites it concisely and formally, ready to send. You can change it in the Sieve tab, in the menu bar and on the widget tray.",
+  "Zgrubne zostawia prawie wszystko i usuwa same zacięcia. Średnie daje czystą wypowiedź twoim głosem. Drobne przepisuje ją zwięźle i formalnie, gotową do wysłania. Przestawisz je w zakładce Funkcja sita, w pasku menu i na tacy widgetu.":
+    "Coarse leaves almost everything and removes only the stumbles. Medium gives you a clean sentence in your own voice. Fine rewrites it concisely and formally, ready to send. You can change it in the Sieve function tab, in the menu bar and on the widget tray.",
 
   "Powiedz, czym ma być ten tekst": "Say what the text should become",
   "„Zrób z tego maila”, „zrób z tego listę” — fraza rzucona na początku albo na końcu wypowiedzi przestawia sito na to jedno dyktowanie i sama znika z wyniku. Polecenia są twoje: dopisujesz własne frazy i własne reguły w zakładce Polecenia.":

@@ -183,6 +183,7 @@ async function read(options = {}) {
     hours: options.hours ?? HOURS,
     back: options.back ?? 1,
     patience: options.patience,
+    detail: options.detail,
     /* Kalendarz.app budzimy TYLKO wtedy, gdy człowiek właśnie o to
        poprosił. Zaglądanie co minutę nie ma prawa stawiać cudzej
        aplikacji w Docku i uruchamiać jej synchronizacji. */

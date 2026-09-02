@@ -884,20 +884,19 @@
     if (event.target.closest("#askYes")) return void api.meetings.answer(true);
     if (event.target.closest("#askNo")) return void api.meetings.answer(false);
 
+    /* ══ ZNACZEK NIE OTWIERA OKNA APLIKACJI — NIGDY, ŻADNYM STANEM ══
+
+       Nawet w trakcie nagrywania. Okno aplikacji ma dokładnie jedną drogę
+       z widgetu — gniazdo „Otwórz Cribro Sift" w rozłożonej tacy (patrz
+       action === "app" w main/main.js) — i to jest jedyne miejsce, które
+       samo z siebie wywołuje coś większego niż stickies. Wcześniej stał tu
+       wyjątek: w trakcie nagrywania klik w sam znaczek wołał okno na
+       zakładkę Spotkania. Kończyło się to oknem wyskakującym nad cudzą
+       pracą przy zwyczajnym geście chowania/pokazywania kartek — dokładnie
+       tym, przed czym broni reguła w main/main.js przy ipcMain.handle("widget:run", …). */
     if (event.target.closest("#badge") || event.target.closest("#slotNotes")) {
       if (deck) return void hideDeck();
       if (view === "list" || view === "sticky") return void toBadge();
-
-      /* ══ W TRAKCIE NAGRYWANIA ZNACZEK PROWADZI DO SPOTKANIA ══
-
-         Tylko sam znaczek i tylko wtedy, gdy nic nie jest rozwinięte.
-         Umowa „znaczek chowa wszystko" zostaje nietknięta, a notatki na
-         wierzchu nie znikają z zasięgu: wychodzi się do nich tak samo jak
-         zawsze, ikonką w tacy — która rozkłada się samym najechaniem. */
-      if (meeting.recording && event.target.closest("#badge")) {
-        return void api.widget.run("meetings");
-      }
-
       return mode === "desk" ? toggleDeck() : toList();
     }
 
@@ -908,7 +907,21 @@
     if (event.target.closest("#back")) return toList();
 
     if (event.target.closest("#add")) {
-      const note = await api.notes.create({ kind: "quick", widget: true });
+      /* ZWYKŁA notatka, a nie szybka — i to jest tu cała różnica.
+
+         Wcześniej szło stąd `kind: "quick"`, przez co notatka założona
+         plusikiem lądowała w oknie głównym w przegródce „Szybkie notatki"
+         (patrz groupNotes w js/notes-core.js). To jest przegródka na myśli
+         rzucone w biegu, w małym okienku, w trakcie rozmowy — a plusik
+         w tacy zakłada notatkę, którą się potem pisze i do której się
+         wraca. Wpadała więc między rzeczy jednorazowe i ginęła tam.
+
+         `widget: true` zostaje: notatka ma się położyć na pulpicie od
+         razu, bo po to sięga się właśnie po ten przycisk. Nowa notatka
+         jest teraz jedną rzeczą widoczną z dwóch stron — kartką na
+         pulpicie i pozycją w „Notatkach" okna głównego — a nie dwoma
+         różnymi rodzajami notatki zależnie od tego, skąd powstała. */
+      const note = await api.notes.create({ widget: true });
       await refresh();
       return toSticky(note);
     }

@@ -22,6 +22,7 @@
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/prose.css" />
     <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/ask.css" />
     <style>
       /* ─────────────────────────────────────────────────────────
          Jedno spotkanie we własnym oknie.
@@ -95,6 +96,14 @@
           <rect x="3.5" y="5" width="17" height="14" rx="2.6" fill="none" stroke="currentColor" stroke-width="1.6" />
           <path d="M3.5 9h17" fill="none" stroke="currentColor" stroke-width="1.6" />
         </symbol>
+        <!-- js/meetings-view.js jest wspólny z oknem głównym i rysuje tę
+             strzałkę w agendaCard() — także tutaj, choć w trybie solo
+             ta karta się dziś nie pokazuje. Symbol ma być pod ręką na
+             wszelki wypadek, a nie dopiero wtedy, gdy ktoś to zmieni. -->
+        <symbol id="i-chevron" viewBox="0 0 24 24">
+          <path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.9"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
       </defs>
     </svg>
 
@@ -107,6 +116,7 @@
     <script src="js/mock-bridge.js"></script>
     <script src="js/theme.js"></script>
     <script src="js/constellation.js"></script>
+    <script src="js/ask.js"></script>
     <script src="js/meetings-view.js"></script>
     <script src="js/meeting-solo.js"></script>
   </body>

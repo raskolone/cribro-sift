@@ -64,7 +64,7 @@ async function look(win, query) {
   const seen = { text: "", engines: false, keys: false, probes: 0 };
   /* Chodzimy po WSZYSTKICH zakładkach, nie tylko po Ustawieniach: nazwa
      modelu potrafi wyjść w karcie „Pierwsze dyktowanie" albo w przewodniku. */
-  for (const view of ["start", "sifted", "notes", "meetings", "sieve", "grains", "commands", "settings"]) {
+  for (const view of ["start", "notes", "meetings", "sieve", "grains", "commands", "settings"]) {
     await win.webContents.executeJavaScript(
       \`document.querySelector('.nav__item[data-view="\${view}"]')?.click()\`,
     );

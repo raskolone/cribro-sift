@@ -237,7 +237,7 @@
 
   const SLIDES = [
     {
-      label: "Sito",
+      label: "Funkcja sita",
       title: "Mów swobodnie. Zostaje esencja.",
       body: "Cribro Sift zamienia mówienie w tekst i przepuszcza go przez sito: znikają wahania, zająknięcia, powtórzenia i fałszywe starty. Zostaje to, co chciałeś powiedzieć — a nie zapis tego, jak się mówiło.",
       art: "sieve",
@@ -251,7 +251,7 @@
     {
       label: "Gęstość",
       title: "Jedno pokrętło: jak gęsto przesiewać",
-      body: "Zgrubne zostawia prawie wszystko i usuwa same zacięcia. Średnie daje czystą wypowiedź twoim głosem. Drobne przepisuje ją zwięźle i formalnie, gotową do wysłania. Przestawisz je w zakładce Sito, w pasku menu i na tacy widgetu.",
+      body: "Zgrubne zostawia prawie wszystko i usuwa same zacięcia. Średnie daje czystą wypowiedź twoim głosem. Drobne przepisuje ją zwięźle i formalnie, gotową do wysłania. Przestawisz je w zakładce Funkcja sita, w pasku menu i na tacy widgetu.",
       art: "mesh",
     },
     {

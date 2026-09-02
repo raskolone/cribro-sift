@@ -12,8 +12,7 @@ const MESH = {
 };
 
 const VIEWS = {
-  start: { title: "Start", subtitle: "Cztery kroki do pierwszego dyktowania." },
-  sifted: { title: "Przesiane", subtitle: "Tylko to, co chciałeś powiedzieć." },
+  start: { title: "Start", subtitle: "Cztery kroki do pierwszego dyktowania — i wszystko, co już przesiane." },
   notes: {
     title: "Notatki",
     subtitle: "Lista po lewej, notatka po prawej. Podwójne kliknięcie otwiera ją w osobnym okienku.",
@@ -22,7 +21,7 @@ const VIEWS = {
     title: "Meeting Notes",
     subtitle: "Zapis rozmowy i wniosek z niej. Spis po lewej, spotkanie po prawej.",
   },
-  sieve: { title: "Sito", subtitle: "Jedno pokrętło: jak gęsto przesiewać." },
+  sieve: { title: "Funkcja sita", subtitle: "Jedno pokrętło: jak gęsto przesiewać." },
   grains: { title: "Ziarna", subtitle: "Słowa, których sito nigdy nie tknie." },
   commands: { title: "Polecenia", subtitle: "Zdania, po których sito wie, co zrobić." },
   settings: { title: "Ustawienia", subtitle: "Skróty, dostawcy, prywatność." },
@@ -35,13 +34,17 @@ const VIEWS = {
 const KEY_GLYPH = { Alt: "⌥", Ctrl: "⌃", Shift: "⇧", Meta: "⌘", Space: "␣" };
 
 const state = {
-  view: "sifted",
+  view: "start",
   settings: null,
   history: [],
   stats: null,
   status: { backend: "none", accessibility: true, microphone: "granted" },
   query: "",
-  expanded: new Set(),
+  /* Różnica surowe→przesiane pokazuje się DOMYŚLNIE, przy każdym wpisie —
+     to jest sedno tego, co ta zakładka pokazuje, więc nie ma po co chować
+     go za kliknięciem. Zbiór trzyma więc WYJĄTKI: identyfikatory wpisów,
+     które ktoś świadomie zwinął. Puste znaczy „wszystko rozwinięte". */
+  collapsedDiffs: new Set(),
   runtime: "idle",
   error: null,
   providers: { stt: {}, sieve: {}, shot: {} },
@@ -158,8 +161,20 @@ function chip(ok, okText, badText) {
   return `<span class="pill ${ok ? "pill--mint" : "pill--amber"}">${ok ? okText : badText}</span>`;
 }
 
+/**
+ * Start i dawne Przesiane w jednym widoku.
+ *
+ * Były dwiema osobnymi zakładkami, a mówiły w gruncie rzeczy o jednym: co
+ * ta aplikacja dla ciebie zrobiła. Cztery kroki pierwszego uruchomienia są
+ * na górze razem ze statystykami — to jest właściwe miejsce na pierwszy
+ * rzut oka, PRZED kreską — a spis wszystkiego, co kiedykolwiek przesiano,
+ * rośnie pod kreską, tak jak rosło w dawnym „Przesianym". Różnica surowe →
+ * przesiane pokazuje się przy każdym wpisie od razu (patrz collapsedDiffs
+ * w state) — to jest sedno tego, co tu widać, a nie coś do odkrycia
+ * dopiero po kliknięciu.
+ */
 function renderStart() {
-  const { settings, status, tests } = state;
+  const { settings, status, tests, stats } = state;
   const micOk = status.microphone === "granted";
   const axOk = !!status.accessibility;
   /* Klucz może być wpisany w którymkolwiek kroku, jeśli oba chodzą na tym
@@ -185,7 +200,42 @@ function renderStart() {
     return `<div class="setup__result ${result.ok ? "is-ok" : "is-bad"}" data-i18n="skip">${escape(result.note)}</div>`;
   };
 
+  const tiles = [
+    { label: "Sesje", value: stats?.sessions ?? 0, note: "przesianych dyktowań" },
+    { label: "Słowa zachowane", value: stats?.wordsKept ?? 0, note: "trafiły do schowka" },
+    { label: "Szum odsiany", value: stats?.wordsSifted ?? 0, note: "zniknęło po drodze" },
+    {
+      label: "Czas oddany",
+      value: stats?.minutesSaved ?? 0,
+      unit: "min",
+      note: "wobec pisania na klawiaturze",
+    },
+  ];
+
+  const query = state.query.trim().toLowerCase();
+  const entries = state.history.filter(
+    (entry) => !query || entry.text.toLowerCase().includes(query) || (entry.app ?? "").toLowerCase().includes(query),
+  );
+
   $("#view-start").innerHTML = `
+    <!-- Statystyki na samej górze, ZAWSZE w jednym wierszu — cztery kafle,
+         cztery kolumny (repeat(4, 1fr), nie auto-fit): mają się ściskać
+         i rosnąć razem z oknem, nie łamać do dwóch rzędów. Patrz .tiles
+         w css/app.css po powód, dla którego to jest osobna reguła niż
+         w reszcie aplikacji. -->
+    <div class="tiles tiles--one-line tiles--glow">
+      ${tiles
+        .map(
+          (tile) => `
+        <div class="tile">
+          <div class="label">${escape(tile.label)}</div>
+          <div class="tile__value">${tile.value}${tile.unit ? `<small>${tile.unit}</small>` : ""}</div>
+          <div class="tile__note">${escape(tile.note)}</div>
+        </div>`,
+        )
+        .join("")}
+    </div>
+
     <div class="card">
       <h2>Pierwsze dyktowanie</h2>
       <p class="sub">Cztery kroki. Potem już tylko trzymasz dwa klawisze i mówisz.</p>
@@ -292,44 +342,11 @@ function renderStart() {
              ${last.raw ? renderDiff(last) : ""}
            </div>`
         : ""
-    }`;
-}
+    }
 
-/* ── Widok: Przesiane ─────────────────────────────────────────── */
-
-function renderSifted() {
-  const { stats } = state;
-  const query = state.query.trim().toLowerCase();
-  const entries = state.history.filter(
-    (entry) => !query || entry.text.toLowerCase().includes(query) || (entry.app ?? "").toLowerCase().includes(query),
-  );
-
-  const tiles = [
-    { label: "Sesje", value: stats?.sessions ?? 0, note: "przesianych dyktowań" },
-    { label: "Słowa zachowane", value: stats?.wordsKept ?? 0, note: "trafiły do schowka" },
-    { label: "Szum odsiany", value: stats?.wordsSifted ?? 0, note: "zniknęło po drodze" },
-    {
-      label: "Czas oddany",
-      value: stats?.minutesSaved ?? 0,
-      unit: "min",
-      note: "wobec pisania na klawiaturze",
-    },
-  ];
-
-  $("#view-sifted").innerHTML = `
-    <div class="tiles">
-      ${tiles
-        .map(
-          (tile) => `
-        <div class="tile">
-          <div class="label">${escape(tile.label)}</div>
-          <div class="tile__value">${tile.value}${tile.unit ? `<small>${tile.unit}</small>` : ""}</div>
-          <div class="tile__note">${escape(tile.note)}</div>
-        </div>`,
-        )
-        .join("")}
-    </div>
-
+    <!-- Kreska NA DOLE tego, co było dawną zakładką „Start" — od tego
+         miejsca w dół zaczyna się dawne „Przesiane": cały zapis, ze
+         wszystkim, co kiedykolwiek przesiano. -->
     <div class="section-head">
       <span class="label">Zapis</span>
       <hr />
@@ -354,11 +371,11 @@ function renderSifted() {
            </div>`
     }`;
 
-  mountCanvases($("#view-sifted"));
+  mountCanvases($("#view-start"));
 }
 
 function renderEntry(entry) {
-  const open = state.expanded.has(entry.id);
+  const open = !state.collapsedDiffs.has(entry.id);
   const mesh = MESH[entry.mesh]?.name ?? entry.mesh;
   const removed = Math.max(0, (entry.rawWords ?? 0) - (entry.siftedWords ?? 0));
   const seconds = entry.timings?.total ? `${(entry.timings.total / 1000).toFixed(1)}s` : null;
@@ -1013,7 +1030,7 @@ function renderSettings() {
       <div class="field">
         <div class="field__label">
           <strong>Język interfejsu</strong>
-          <span>Zmienia napisy w oknach, w pasku menu i na widgecie. Język dyktowania ustawia się osobno, w zakładce Sito.</span>
+          <span>Zmienia napisy w oknach, w pasku menu i na widgecie. Język dyktowania ustawia się osobno, w zakładce Funkcja sita.</span>
         </div>
         <div class="field__control">
           <select data-setting="uiLanguage">
@@ -2207,7 +2224,7 @@ function render() {
   /* Zakładka mogła zniknąć pod ręką — po wylogowaniu albo po zdalnym
      wyłączeniu funkcji. Stanie na niej znaczyłoby puste okno bez wyjścia. */
   if (!visible(state.view)) {
-    state.view = "sifted";
+    state.view = "start";
     return render();
   }
   document.querySelectorAll(".view").forEach((section) => {
@@ -2217,7 +2234,6 @@ function render() {
   renderBanner();
   renderErrorBar();
   if (state.view === "start") renderStart();
-  if (state.view === "sifted") renderSifted();
   if (state.view === "notes") NotesView.show();
   /* Widok spotkań sam pyta proces główny o spis i o to, czy coś się właśnie
      nagrywa — dlatego dostaje tylko ustawienia, a resztę bierze sobie sam. */
@@ -2570,7 +2586,7 @@ document.addEventListener("click", async (event) => {
       toast(t("Skopiowane do schowka"));
       break;
     case "toggle":
-      state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id);
+      state.collapsedDiffs.has(id) ? state.collapsedDiffs.delete(id) : state.collapsedDiffs.add(id);
       render();
       break;
     case "pin":
@@ -2633,7 +2649,7 @@ document.addEventListener("input", (event) => {
   if (event.target.id === "search") {
     state.query = event.target.value;
     const focus = document.activeElement === event.target;
-    renderSifted();
+    renderStart();
     if (focus) {
       const input = $("#search");
       input.focus();
@@ -3097,7 +3113,6 @@ api.onState(async ({ state: next, entry }) => {
     state.history = await api.history.get();
   }
   if (state.view === "start") renderStart();
-  else if (state.view === "sifted") renderSifted();
 });
 
 api.history.onNew((entry) => {
@@ -3182,14 +3197,9 @@ function setRail(collapsed) {
   state.redirects = (await api.cloud.redirects?.()) ?? [];
   state.briefing = (await api.briefing?.state?.()) ?? null;
 
-  // W podglądzie w przeglądarce pierwszy wpis jest od razu rozwinięty —
-  // różnica między surowym a przesianym to sedno produktu, a domyślnie
-  // siedzi schowana za przyciskiem.
-  if (api.isMock && state.history[0]) state.expanded.add(state.history[0].id);
-
-  // Dopóki nie ma ani jednego przesianego zdania, sensownym ekranem
-  // powitalnym jest lista kroków, a nie pusta historia.
-  if (!state.history.length) state.view = "start";
+  // Różnica między surowym a przesianym jest teraz otwarta od razu przy
+  // każdym wpisie (patrz collapsedDiffs) — nie ma już czego tu podpierać
+  // dla samego podglądu w przeglądarce.
 
   setLanguage(state.settings.uiLanguage ?? "pl");
   if (localStorage.getItem("cribro:rail") === "1") setRail(true);

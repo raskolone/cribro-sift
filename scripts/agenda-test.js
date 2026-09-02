@@ -216,5 +216,20 @@ const { read } = require("../src/main/agenda");
   check("Odmowa drugiej drogi wraca jako odmowa", odmowa.access === "denied");
   check("…i niesie ślad po pierwszej", odmowa.first === "missing");
 
+  /* Przegląd tygodnia prosi o `detail: 0` — bez tego dotarcie do argumentu
+     byłoby niewidoczne aż do prawdziwego wywołania osascript, a to jest
+     dokładnie ten rodzaj cichej pomyłki, którą łatwo przeoczyć przy
+     kolejnej zmianie w agenda.js. */
+  let widzianyDetail = null;
+  await read({
+    helper: null,
+    detail: 0,
+    run: (args, done) => {
+      widzianyDetail = args[6]; // [-l, JavaScript, -e, SCRIPT, from, to, detail, launch]
+      done(null, "[]", "");
+    },
+  });
+  check("`detail: 0` dociera aż do wywołania osascript", widzianyDetail === "0");
+
   console.log(`\n${passed} sprawdzeń przeszło.`);
 })();

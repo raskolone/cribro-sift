@@ -71,10 +71,10 @@ app.whenReady().then(async () => {
     ],
   });
 
-  const pierwsza = keepNote(store, id, { me: JA, folder: "Spotkania" });
+  const pierwsza = keepNote(store, id, { me: JA });
   say("po zakończeniu nagrania kartka powstaje", pierwsza.action);
   say("…z rodzajem, po którym pozna ją przegródka", pierwsza.note.kind);
-  say("…w szufladzie z ustawień", pierwsza.note.folder);
+  say("…bez szuflady — tylko zwijana przegródka, jak przy szybkich notatkach", pierwsza.note.folder ?? null);
   say("…z zapisem rozmowy w środku", pierwsza.note.text.includes("Dane wyślę we wtorek."));
   say("…i pod nazwą złożoną z treści i rozmówcy", pierwsza.note.text.split("\\n")[0]);
   say("spotkanie pamięta swoją kartkę", store.getMeetings().find((m) => m.id === id).noteId === pierwsza.note.id);
@@ -163,7 +163,7 @@ const oczekiwane = [
   ["i nie zostawia notatki", 0],
   ["po zakończeniu nagrania kartka powstaje", "created"],
   ["…z rodzajem, po którym pozna ją przegródka", "meeting"],
-  ["…w szufladzie z ustawień", "Spotkania"],
+  ["…bez szuflady — tylko zwijana przegródka, jak przy szybkich notatkach", null],
   ["…z zapisem rozmowy w środku", true],
   ["…i pod nazwą złożoną z treści i rozmówcy", "# Przegląd tygodnia · Ania Kowalska"],
   ["spotkanie pamięta swoją kartkę", true],

@@ -797,6 +797,111 @@ body.is-solo #detach {
   border-color: var(--accent-30);
   border-style: solid;
 }
+.folder-chip svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+/* Przycisk „Szuflady" jest dziś jedyną rzeczą na tym pasku, dopóki nikt
+   nie wszedł do środka żadnej szuflady — ma się dać zauważyć bez szukania. */
+.folder-chip--toggle[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-30);
+  background: var(--accent-08);
+}
+
+/* ══ SIATKA SZUFLAD ══
+   Ten sam wzorzec, co w zakładce Notatki (patrz .folder-grid w app.css) —
+   karty, w które się wchodzi, nie chipy filtra. */
+.folder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: var(--s-3);
+  padding-top: var(--s-2);
+}
+.folder-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: var(--s-3) var(--s-3) var(--s-2);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.folder-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--paper-tint, var(--accent-30));
+  box-shadow: var(--shadow-md);
+}
+.folder-card:focus-visible {
+  outline: 2px solid var(--accent-55);
+  outline-offset: 2px;
+}
+.folder-card__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 2px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--paper-tint, var(--text-mute)) 18%, transparent);
+  color: var(--paper-tint, var(--text-mute));
+}
+.folder-card__icon svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+.folder-card__name {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-card__count {
+  font-size: var(--fs-label);
+  color: var(--text-mute);
+}
+.folder-card__colors {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.folder-card:hover .folder-card__colors,
+.folder-card:focus-within .folder-card__colors {
+  opacity: 1;
+}
+.folder-card__swatch {
+  padding: 2px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  transition: transform var(--t-fast);
+}
+.folder-card__swatch:hover {
+  transform: scale(1.15);
+}
+.folder-card__swatch[aria-pressed="true"] .swatch {
+  box-shadow: var(--paper-sheen), 0 0 0 2px var(--accent-55);
+}
+
+.notes__nothing {
+  margin: var(--s-3) 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-mute);
+}
 
 .notes__tags {
   display: flex;

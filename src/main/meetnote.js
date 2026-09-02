@@ -46,12 +46,11 @@ const { asNote } = require("./digest");
  * @param {string} id     identyfikator spotkania
  * @param {object} [options]
  * @param {string} [options.me]      imię właściciela konta — do nazwy notatki
- * @param {string} [options.folder]  szuflada dla nowych notatek
  * @returns {{note: object|null, action: "created"|"updated"|"kept"|"none"}}
  *          `kept` znaczy „notatka jest i została nietknięta"; `none` —
  *          „nie ma z czego jej zrobić albo skasowano ją ręką".
  */
-function keepNote(store, id, { me = "", folder = null } = {}) {
+function keepNote(store, id, { me = "" } = {}) {
   const meeting = store.getMeetings().find((item) => item.id === id);
   if (!meeting) return { note: null, action: "none" };
   if (!meeting.summary && !meeting.transcript?.length) return { note: null, action: "none" };
@@ -71,7 +70,7 @@ function keepNote(store, id, { me = "", folder = null } = {}) {
     return { note: store.updateNote(known.id, { text, autoText: text }), action: "updated" };
   }
 
-  const note = store.createNote({ text, autoText: text, kind: "meeting", folder });
+  const note = store.createNote({ text, autoText: text, kind: "meeting" });
   store.updateMeeting(id, { noteId: note.id });
   return { note, action: "created" };
 }

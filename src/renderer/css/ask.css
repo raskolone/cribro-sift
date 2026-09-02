@@ -1,0 +1,97 @@
+/* ─────────────────────────────────────────────────────────────
+   Pytanie przed rzeczą nieodwracalną — wygląd.
+
+   Zachowanie siedzi w js/ask.js i tam też stoi wyjaśnienie, dlaczego to
+   nie jest `window.confirm`. Osobny arkusz, bo pytanie stoi w czterech
+   oknach o czterech szkieletach: zakładki Notatki i Spotkania w oknie
+   głównym, Notatnik, kartka na pulpicie i okno jednego spotkania —
+   a tylko trzy z nich ładują note-acts.css, w którym to wcześniej było.
+   ───────────────────────────────────────────────────────────── */
+
+/* Wychodzi spod przycisku, który je wywołał — tak jak menu „Udostępnij"
+   spod strzałki. Równa się do PRAWEJ krawędzi gospodarza, bo przyciski
+   kasowania z natury stoją na końcu pasków: pytanie puszczone w lewo,
+   ku środkowi okna, mieści się zawsze. Skrajne przypadki (wąska kartka
+   na pulpicie) domyka jeszcze `danger` w js/ask.js. */
+.ask {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  width: 244px;
+  padding: 12px 13px 11px;
+  border-radius: var(--r-md);
+  background-color: var(--glass);
+  background-image: var(--glass-fill);
+  border: 1px solid var(--danger-30, rgb(240 114 111 / 0.35));
+  box-shadow: var(--glass-sheen), var(--glass-drop);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  z-index: 40;
+  text-align: left;
+  animation: ask-in 0.14s var(--ease, ease) both;
+}
+@keyframes ask-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.ask b {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--danger);
+}
+/* Zdanie o nieodwracalności jest tu najważniejsze i dlatego NIE jest
+   przygaszone — to ono, a nie nagłówek, niesie całą wagę tego pytania. */
+.ask p {
+  margin: 0 0 11px;
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-2);
+}
+.ask__row {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.ask__row button {
+  height: 27px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  transition:
+    background var(--t),
+    border-color var(--t),
+    color var(--t);
+}
+.ask__row button:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+.ask__row .ask__go {
+  border-color: var(--danger-30, rgb(240 114 111 / 0.35));
+  color: var(--danger);
+}
+.ask__row .ask__go:hover {
+  background: var(--danger-12, rgb(240 114 111 / 0.14));
+  color: var(--danger);
+}
+.ask__row button:focus-visible {
+  outline: 2px solid var(--accent-55);
+  outline-offset: 1px;
+}

@@ -310,6 +310,26 @@
     return [...seen.values()].sort((a, b) => a.localeCompare(b, uiLocale()));
   }
 
+  /**
+   * Kolor szuflady — wybrany ręcznie albo „default".
+   *
+   * Kolor NIE mieszka w notatkach — mieszkałby wtedy tyle razy, ile notatek
+   * jest w szufladzie, i kopie mogłyby się rozjechać. Mieszka w ustawieniach
+   * aplikacji (`settings.notesFolderColors`), pod nazwą złożoną do małych
+   * liter — tą samą, po której `foldersOf` rozpoznaje, że „Spotkania"
+   * i „spotkania" to jedna szuflada.
+   *
+   * Wpis może osierocieć, gdy zniknie ostatnia notatka z tej szuflady —
+   * to nic nie kosztuje (kilka bajtów w ustawieniach, bez wpływu na to, co
+   * widać), a gdy szuflada powstanie znowu pod tą samą nazwą, odzyska swój
+   * kolor za darmo, zamiast wymagać osobnego rejestru do sprzątania.
+   */
+  const folderColorOf = (name, settings) => {
+    const key = String(name ?? "").trim().toLowerCase();
+    const stored = key ? settings?.notesFolderColors?.[key] : null;
+    return COLOR_KEYS.has(stored) ? stored : "default";
+  };
+
   /** Wszystkie etykiety razem z liczbą notatek — najczęstsze pierwsze. */
   function allTags(notes) {
     const count = new Map();
@@ -475,7 +495,7 @@
             <button type="button" class="note-act${act.danger ? " note-act--danger" : ""}"
                     data-act="${act.id}" data-label-off="${act.label}"
                     ${act.on ? `data-label-on="${act.on}"` : ""}
-                    aria-pressed="false" title="${act.label}">
+                    aria-pressed="false" aria-label="${act.label}" data-tip="${act.label}">
               <svg><use href="#${act.icon}" /></svg><span>${act.label}</span>
             </button>${menu}
           </div>`;
@@ -494,7 +514,12 @@
       const source = on ? button.dataset.labelOn : button.dataset.labelOff;
       if (!source) continue;
       const label = t(source);
-      button.title = label;
+      /* Trzy miejsca, jeden napis: dymek (CSS czyta `data-tip`), czytnik
+         ekranu i widoczny podpis. Systemowego `title` tu nie ma celowo —
+         rysowałby DRUGI dymek, systemowy, obok naszego i z sekundą
+         opóźnienia (patrz .note-act::after w css/note-acts.css). */
+      button.dataset.tip = label;
+      button.setAttribute("aria-label", label);
       const text = button.querySelector("span");
       if (text) text.textContent = label;
     }
@@ -506,7 +531,7 @@
    *
    * @returns {Promise<boolean>} czy notatka przestała istnieć
    */
-  async function runAction(what, note, { api, say = () => {}, after = () => {} } = {}) {
+  async function runAction(what, note, { api, say = () => {}, after = () => {}, confirm } = {}) {
     if (!note) return false;
 
     if (what === "pin") {
@@ -533,6 +558,16 @@
     }
 
     if (what === "delete") {
+      /* PYTAMY, ZANIM SKASUJEMY. To jedyna czynność w tym pasku, po której
+         nie ma drogi powrotnej: notatka nie idzie do żadnego kosza, z
+         którego dałoby się ją wyjąć, i nie cofa jej ⌘Z. Sąsiadem „Usuń"
+         jest „Udostępnij", a oba to znaczki wielkości piętnastu pikseli —
+         pomyłka o jeden przycisk jest kwestią czasu, nie nieuwagi.
+
+         Pytanie stoi TUTAJ, a nie w trzech oknach osobno, bo `runAction`
+         jest jedynym miejscem, przez które kasowanie przechodzi w każdym
+         z nich (zakładka Notatki, Notatnik, kartka na pulpicie). */
+      if (confirm !== false && !(await askDelete(note))) return false;
       await api.notes.remove(note.id);
       return true;
     }
@@ -540,6 +575,69 @@
     return false;
   }
 
+  /**
+   * Domknięcie menu do krawędzi okna.
+   *
+   * CSS ustawia menu przy PRAWEJ krawędzi przycisku i puszcza w lewo —
+   * i to wystarcza wszędzie tam, gdzie okno jest szersze niż samo menu.
+   * Kartka na pulpicie bywa jednak węższa niż dwieście dwadzieścia
+   * pikseli, a wtedy menu wychodzi poza LEWĄ krawędź. Arkusz tego nie
+   * naprawi, bo nie zna szerokości okna; tu ją znamy.
+   *
+   * Ośmiopikselowy margines nie jest ozdobą: menu dotykające krawędzi
+   * wygląda jak ucięte nawet wtedy, gdy całe się mieści.
+   *
+   * @param {HTMLElement|null} menu  otwarte menu do domknięcia
+   */
+  function fitMenu(menu) {
+    if (!menu || menu.hidden) return;
+    const EDGE = 8;
+    menu.style.transform = "";
+    const box = menu.getBoundingClientRect();
+    const room = menu.ownerDocument.documentElement.clientWidth;
+    let shift = 0;
+    if (box.left < EDGE) shift = EDGE - box.left;
+    else if (box.right > room - EDGE) shift = room - EDGE - box.right;
+    if (shift) menu.style.transform = `translateX(${Math.round(shift)}px)`;
+  }
+
+  /* ══ „NA PEWNO?" PRZY KASOWANIU ═══════════════════════════════
+
+     Samo pytanie — okienko, klawisze, domknięcie do krawędzi — siedzi
+     w js/ask.js, bo kasować da się nie tylko notatkę (spotkanie ginie
+     razem z nagraniem). Tutaj zostaje to, co dotyczy WYŁĄCZNIE notatki:
+     przy którym koszu stanąć i jakimi słowami zapytać. */
+  function askDelete(note) {
+    /* Szukamy WYŁĄCZNIE w pasku czynności i wyłącznie wśród widocznych.
+
+       `data-act="delete"` nie jest w oknie unikatowe: kosz ma też każdy
+       wpis historii na zakładce Start (`.entry__actions`), a tamtych jest
+       kilkanaście i stoją w dokumencie WCZEŚNIEJ. Zwykłe
+       `querySelector('[data-act="delete"]')` trafiało więc w kosz cudzego
+       wpisu, nie znajdowało przy nim slotu paska — i pytanie po cichu się
+       nie pokazywało, a notatka znikała bez słowa. Dokładnie ta usterka
+       wyszła przy pierwszym zrzucie po tej zmianie.
+
+       `offsetParent` odsiewa zakładki schowane: widoków jest siedem, a
+       pasek notatki stoi w trzech z nich (Notatki, Notatnik, kartka). */
+    const button = [...document.querySelectorAll('.note-acts__slot [data-act="delete"]')].find(
+      (candidate) => candidate.offsetParent,
+    );
+    if (!button || !window.CribroAsk) return Promise.resolve(true);
+
+    const title = note?.title?.trim();
+    return window.CribroAsk.danger({
+      anchor: button,
+      title: "Skasować notatkę?",
+      /* Tytuł notatki w pytaniu, jeżeli go ma: „Skasować notatkę?" nad
+         listą pięciu notatek nie mówi, o którą chodzi. */
+      body: title
+        ? `„${title}" ${t("zniknie na zawsze — nie da się jej przywrócić.")}`
+        : t("Notatka zniknie na zawsze — nie da się jej przywrócić."),
+      confirm: "Skasuj",
+      cancel: "Zostaw",
+    });
+  }
   /**
    * Wysyłka notatki tam, gdzie wskazano w menu „Udostępnij".
    *
@@ -630,6 +728,7 @@
     tagKey,
     cleanTag,
     foldersOf,
+    folderColorOf,
     allTags,
     groupNotes,
     isMeeting,
@@ -645,6 +744,7 @@
     paintActions,
     runAction,
     runShare,
+    fitMenu,
     specialsMenu,
     ACTIONS,
     SHARE,

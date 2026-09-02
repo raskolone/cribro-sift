@@ -20,8 +20,8 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  *
  * Te dwie rzeczy mogą chodzić RÓWNOLEGLE i to jest zamierzone: dyktowanie
  * notatki w trakcie spotkania jest jedną z sensowniejszych rzeczy, jakie
- * można wtedy zrobić. Mikrofon otwierają osobno (ScreenCaptureKit kontra
- * getUserMedia), więc nie wchodzą sobie w drogę.
+ * można wtedy zrobić. Mikrofon otwierają osobno (Core Audio w cribro-tap
+ * kontra getUserMedia w oknie HUD-a), więc nie wchodzą sobie w drogę.
  *
  * TRANSKRYPCJA IDZIE W BIEGU, nie po zakończeniu. Próbki lecą przez
  * krajalnicę (main/segments.js) i każdy odcinek, w którym coś słychać,

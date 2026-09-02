@@ -220,6 +220,10 @@ contextBridge.exposeInMainWorld("cribro", {
        "retry" — spytaj kalendarz jeszcze raz. W odpowiedzi wraca świeży
        stan, więc okno nie musi zgadywać, czy się udało. */
     calendar: (how) => ipcRenderer.invoke("meetings:calendar", how),
+    /* Przegląd tygodnia: pięć tygodni naraz, jednym zapytaniem (patrz
+       main/main.js po powód). `fresh: true` pomija pięciominutowy cache —
+       używa go tylko przycisk „Odśwież" w oknie przeglądu. */
+    week: (fresh = false) => ipcRenderer.invoke("meetings:week", { fresh }),
     /* Zwinięcie nagłówka w podsumowaniu. Strzałka stoi w treści, więc to
        jest zmiana podsumowania — a nie stan okna, który ginie przy
        najbliższym przerysowaniu. */

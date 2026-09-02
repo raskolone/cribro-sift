@@ -10,16 +10,18 @@
 # electron-builder pakuje dwa DMG-i i cichy brak architektury objawiłby się
 # dopiero u kogoś innego, jako „nagrywanie nie działa” bez żadnego błędu.
 #
-# Minimum to macOS 13: tam pojawiło się `capturesAudio`. Mikrofon w tym samym
-# strumieniu wymaga 15 i jest w kodzie pod `#available` — na starszym systemie
-# zostaje sam tor systemu, zamiast odmowy uruchomienia.
+# Minimum to macOS 14.4: tam Core Audio Process Taps (CATapDescription) stają
+# się w praktyce używalne — patrz nagłówek native/tap/main.swift po to,
+# dlaczego dźwięk systemu idzie tą drogą, a nie przez ScreenCaptureKit.
+# Mikrofon nie ma tu żadnego dodatkowego progu: to zwykłe urządzenie
+# wejściowe Core Audio, dostępne odkąd Core Audio w ogóle istnieje.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/native/tap/main.swift"
 OUT_DIR="$ROOT/native/build"
 OUT="$OUT_DIR/cribro-tap"
-DEPLOY="13.0"
+DEPLOY="14.4"
 
 NAME="${IDENTITY_NAME:-Cribro Sift Dev}"
 KEYCHAIN="$HOME/Library/Keychains/cribro-sign.keychain-db"
@@ -46,7 +48,7 @@ build() {
   local arch="$1" out="$2"
   swiftc -O \
     -target "${arch}-apple-macos${DEPLOY}" \
-    -framework ScreenCaptureKit -framework AVFoundation -framework CoreMedia \
+    -framework AppKit -framework AudioToolbox -framework AVFoundation -framework CoreAudio -framework EventKit \
     -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$PLIST" \
     -o "$out" "$SRC"
 }
@@ -67,10 +69,11 @@ else
   echo "       Build na Intela wyjdzie bez nagrywania spotkań."
 fi
 
-# Podpis tą samą tożsamością co aplikacja. Zgoda „Nagrywanie ekranu” pamięta,
-# CZYM program jest podpisany — dokładnie tak samo jak zgoda „Dostępność”
-# (patrz scripts/sign.sh i rozdział o cdhashu w README). Program pomocniczy
-# podpisany inaczej niż bundle to druga tożsamość i druga zgoda do klikania.
+# Podpis tą samą tożsamością co aplikacja. Zgoda „Nagrywanie dźwięku innych
+# aplikacji” pamięta, CZYM program jest podpisany — dokładnie tak samo jak
+# zgoda „Dostępność” (patrz scripts/sign.sh i rozdział o cdhashu w README).
+# Program pomocniczy podpisany inaczej niż bundle to druga tożsamość i druga
+# zgoda do klikania.
 IDENTITY=""
 if [ -f "$KEYCHAIN" ]; then
   security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN" 2>/dev/null || true
@@ -85,7 +88,7 @@ if [ -n "$IDENTITY" ]; then
 else
   codesign --force --sign - --timestamp=none "$OUT"
   echo "UWAGA: brak tożsamości „${NAME}” — podpis ad-hoc."
-  echo "       Zgoda „Nagrywanie ekranu” przepadnie przy przebudowie. Napraw: npm run identity"
+  echo "       Zgoda „Nagrywanie dźwięku innych aplikacji” przepadnie przy przebudowie. Napraw: npm run identity"
 fi
 
 # Sprawdzenie, że opis naprawdę wszedł do binarki. Brak tej sekcji nie

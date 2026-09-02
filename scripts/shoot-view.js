@@ -9,7 +9,7 @@ const CHROME="/Users/maciej/.cache/puppeteer/chrome/mac_arm-150.0.7871.24/chrome
  await p.goto("file://"+path.join(process.cwd(),"src/renderer/index.html"),{waitUntil:"networkidle0"});
  await p.evaluate(()=>document.fonts.ready);
  await new Promise(r=>setTimeout(r,900));
- if(view!=="sifted"){ await p.click(`.nav__item[data-view="${view}"]`); await new Promise(r=>setTimeout(r,700)); }
+ if(view!=="start"){ await p.click(`.nav__item[data-view="${view}"]`); await new Promise(r=>setTimeout(r,700)); }
  await p.screenshot({path:`.shots/app-${label}.png`});
  await b.close();
  console.log("→ .shots/app-"+label+".png", errs.length?("BŁĘDY: "+errs.join("|")):"czysto");

@@ -172,6 +172,10 @@ if (!window.cribro) {
        paska działa normalnie i tędy się go otwiera. */
     tutorial: { seen: true },
     spellcheck: { enabled: true, followDictation: true, languages: [] },
+    // Kolor szuflady „Projekty" (patrz notatka n2 niżej) — makieta ma
+    // pokazać siatkę szuflad (folderGrid) z choć jedną pomalowaną ręką,
+    // nie samą szarzyzną domyślnego koloru.
+    notesFolderColors: { projekty: "violet" },
     cloud: { enabled: false, url: "", anonKey: "", autoSync: true },
     /* Te same domyślne, co w main/store.js. Bez nich karta ustawień
        spotkań w makiecie rysuje się z niczym zaznaczonym — i wygląda jak
@@ -181,7 +185,6 @@ if (!window.cribro) {
       detect: "ask",
       keepAudio: false,
       minSeconds: 90,
-      folder: "Spotkania",
       exclude: ["Spotify", "Music"],
       summarize: true,
       template: "generic",
@@ -312,6 +315,9 @@ if (!window.cribro) {
           at: minutesAgo(180),
           updatedAt: minutesAgo(140),
           pinned: false,
+          // Szuflada założona ręką — makieta ma pokazać, że siatka szuflad
+          // (patrz folderGrid w js/notes-view.js) ma czym się wypełnić.
+          folder: "Projekty",
           text: "Pomysły na landing\n\nKonstelacja przesypująca się przez sito. Nagłówek, który sam się przesiewa.",
         },
         {
@@ -332,16 +338,16 @@ if (!window.cribro) {
           text: "Sprawdzić, czy limity odnawiają się o północy czasu lokalnego.",
         },
         /* Notatka ze spotkania — jedyna, której nikt nie pisał. Powstaje
-           sama po każdej nagranej rozmowie i ma w Notatniku własną
-           przegródkę (patrz groupNotes w js/notes-core.js). Makieta musi ją
-           mieć, bo bez niej nie widać, po co ta przegródka istnieje. */
+           sama po każdej nagranej rozmowie i ma w Notatniku własną,
+           zwijaną przegródkę (patrz groupNotes w js/notes-core.js) — BEZ
+           szuflady, dokładnie jak „Szybkie notatki". Makieta musi ją mieć,
+           bo bez niej nie widać, po co ta przegródka istnieje. */
         {
           id: "n5",
           at: minutesAgo(96),
           updatedAt: minutesAgo(94),
           pinned: false,
           kind: "meeting",
-          folder: "Spotkania",
           text:
             "# Przegląd tygodnia · Ania Kowalska\n\n30 sierpnia 2026, 09:00 · Google Meet\n\n" +
             "**Kto był:** Maciej Wyrozumski, Ania Kowalska\n\n" +
@@ -354,8 +360,25 @@ if (!window.cribro) {
       ];
       return {
         get: async () => structuredClone(notes),
-        create: async () => {
-          const note = { id: `n${Date.now()}`, at: new Date().toISOString(), updatedAt: new Date().toISOString(), text: "", pinned: false };
+        /* Atrapa przyjmuje TO SAMO, co prawdziwy `store.createNote`:
+           pola z wywołania nadpisują domyślne (tam robi to `...patch`).
+           Wcześniej je milcząco gubiła — więc notatka założona plusikiem
+           w tacy widgetu nie dostawała `widget: true` i nie pokazywała się
+           na pulpicie, choć w prawdziwej aplikacji się pokazuje. Atrapa,
+           która kłamie w tę stronę, jest gorsza niż jej brak: chowa
+           usterkę i wymyśla nieistniejącą. */
+        create: async (patch = {}) => {
+          const note = {
+            id: `n${Date.now()}`,
+            at: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            text: "",
+            pinned: false,
+            color: "default",
+            folder: null,
+            tags: [],
+            ...patch,
+          };
           notes.unshift(note);
           return note;
         },
@@ -562,6 +585,25 @@ if (!window.cribro) {
            atrapa oddaje ten sam plan, co dotąd — makieta ma pokazywać
            kalendarz, a nie okno z odmową. */
         calendar: async () => plan,
+        /* Przegląd tygodnia. Kilka spotkań rozłożonych na kilka dni w obie
+           strony od dziś — makieta ma pokazać PRZEWIJANIE, nie tylko
+           pojedynczy tydzień pełen wpisów. */
+        week: async () => {
+          const day = 24 * hour;
+          const at = (offsetDays, h) => Date.now() + offsetDays * day + h * hour - (Date.now() % day);
+          return {
+            access: "granted",
+            events: [
+              { id: "w1", title: "Przegląd tygodnia", from: at(0, 9.5), to: at(0, 10.5), link: "https://meet.google.com/abc-defg-hij" },
+              { id: "w2", title: "Rozmowa z klientem", from: at(0, 14), to: at(0, 14.75), link: null },
+              { id: "w3", title: "1:1 z Anią", from: at(1, 11), to: at(1, 11.5), link: "https://zoom.us/j/1234567890" },
+              { id: "w4", title: "Planowanie sprintu", from: at(2, 10), to: at(2, 11), link: "https://meet.google.com/xyz-uvwq-rst" },
+              { id: "w5", title: "Retro", from: at(-2, 15), to: at(-2, 15.5), link: "https://teams.microsoft.com/l/meetup-join/abc" },
+              { id: "w6", title: "Demo dla klienta", from: at(4, 16), to: at(4, 17), link: "https://meet.google.com/def-ghij-klm" },
+              { id: "w7", title: "Poranna kawa i sync", from: at(-4, 9), to: at(-4, 9.25), link: "https://zoom.us/j/9876543210" },
+            ],
+          };
+        },
         arm: async (which, on) => {
           const armed = new Set(plan.armed);
           if (on) armed.add(which);

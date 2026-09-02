@@ -46,10 +46,32 @@
   });
 
   var ctx = cv.getContext('2d', { alpha: true, desynchronized: true });
-  /* Retina liczy się cztery razy dłużej, a rysujemy rozmyte kropki i kreski
-     o kryciu poniżej 0,2. Półtora piksela na piksel wystarcza, żeby nie było
-     widać schodków, i zdejmuje połowę powierzchni do wypełnienia. */
-  var dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+  /* ══ GĘSTOŚĆ RYSOWANIA — I DLACZEGO NIE 1,5 ══
+
+     Było tu `Math.min(devicePixelRatio, 1.5)` z rachunkiem, że rozmytych
+     kropek o kryciu poniżej 0,2 nie warto liczyć w pełnej rozdzielczości.
+     Rachunek był dobry, ale pomijał to, że OPRÓCZ kropek rysujemy KRESKI
+     grubości jednego piksela — a te 1,5 nie znosi.
+
+     Na ekranie Retina (dpr 2) kanwa rysowana w 1,5 jest przez kompozytor
+     ROZCIĄGANA o jedną trzecią. Kreska grubości piksela wypada wtedy na
+     1,33 piksela ekranu, czyli NIGDY na granicy piksela: zawsze rozkłada
+     się na dwa sąsiednie, w proporcji zależnej od tego, gdzie dokładnie
+     leży. A punkty dryfują — więc ta proporcja zmienia się w KAŻDEJ
+     klatce i każda kreska nieustannie migocze między dwoma odcieniami.
+
+     Nad tłem leży jeszcze szkło (`backdrop-filter`), które to migotanie
+     rozmazuje wzdłuż krawędzi paneli — i stamtąd bierze się „drżenie
+     górnej krawędzi", które widać było przy nieruchomej aplikacji.
+     Zmierzone: przy stojącej konstelacji ekran nie zmienia ANI JEDNEGO
+     piksela między klatkami, przy chodzącej — kilkaset.
+
+     Gęstość ekranu, jeden do jednego, stawia kreski na granicach pikseli
+     i migotanie znika u źródła. Powyżej dwóch nie idziemy: trzykrotnej
+     gęstości nie ma dziś na czym pokazać, a powierzchnia rośnie
+     z kwadratem. */
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
   var w = 0, h = 0, pts = [], raf = null;
 
   var CFG = {
@@ -59,7 +81,20 @@
     dotAlpha: 0.483,       // 0.42 z pakietu +15%
     density: 15500,        // one point per N px² — higher is sparser
     min: 38, max: 120,
-    speed: 0.16,           // px per frame
+    /* Krok o połowę mniejszy niż wcześniej (0,16) — i tło rzeczywiście
+       dryfuje teraz DWA RAZY WOLNIEJ: 2,4 piksela na sekundę zamiast 4,8.
+       To jest zamierzone, a nie skutek uboczny. Przy trzydziestu klatkach
+       pojedynczy przeskok jest tym, co oko łapie jako drgnienie, a nie
+       prędkość, z jaką punkt przemierza ekran; mniejszy krok to mniejsze
+       drgnienie. Minuta ruchu to i tak sto pięćdziesiąt pikseli, czyli
+       tło nadal żyje — tylko spokojniej.
+
+       Prędkość dałoby się utrzymać, podnosząc liczbę klatek do
+       sześćdziesięciu. Nie robimy tego: KAŻDA klatka tła każe przeliczyć
+       `backdrop-filter` na wszystkich szybach naraz (patrz nagłówek tego
+       pliku), więc byłby to podwójny rachunek za rzecz, która ma być
+       tłem — i ten sam rachunek, który kiedyś zszedł z 60 na 30. */
+    speed: 0.08,           // px per frame
     fps: 30,               // klatek na sekundę
     bands: 5               // ile stopni krycia dla linii
   };

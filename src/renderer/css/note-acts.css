@@ -32,9 +32,27 @@
   container-type: inline-size;
 }
 
-/* Próg zmierzony, nie zgadnięty: pięć podpisanych przycisków to około
-   550 px, stan zapisu i licznik słów kolejne 180. Poniżej siedmiuset
-   czterdziestu pasek zaczyna wychodzić poza kafel. */
+/* ── PRÓG: 740 px ──
+
+   Zmierzony, nie zgadnięty, i zmierzony ponownie przy okazji dymków:
+
+     pasek z podpisami        522 px
+     stan zapisu i licznik    ~180 px
+     ────────────────────────────────
+     razem                    ~700 px
+
+   Stąd 740 — z zapasem na dłuższe napisy po przełączeniu języka
+   („Off the desktop" jest dłuższe niż „Z pulpitu").
+
+   CO Z TEGO WYNIKA W PRAKTYCE, bo to nie jest oczywiste: stopka notatki
+   jest węższa od okna o pas boczny i listę, czyli mniej więcej o 610 px.
+   Zmierzone: okno 1080 px (domyślne) → stopka 470 px, PODPISY SCHOWANE;
+   okno 1440 px → stopka 830 px, podpisy widoczne.
+
+   Przy domyślnym rozmiarze okna pasek jest więc SAMYMI ZNACZKAMI i to
+   jest jego postać podstawowa, a nie awaryjna — podpisy są dodatkiem dla
+   szerokich okien. Dlatego dymek niżej nie jest ozdobą: w domyślnym oknie
+   jest jedynym miejscem, w którym pisze, co robi dany znaczek. */
 @container (max-width: 740px) {
   .note-act span {
     display: none;
@@ -42,6 +60,84 @@
   .note-act {
     padding: 0 8px;
   }
+
+  /* ── DYMEK, I TO OD RAZU ──
+
+     Podpis zniknął, więc znaczek został zagadką — a to jest ten sam pasek,
+     w którym stoi „Usuń". Systemowy dymek (atrybut `title`) tu nie
+     wystarcza z dwóch powodów: budzi się po sekundzie z okładem, czyli po
+     czasie, w którym ręka zdążyła już kliknąć, i rysuje go system, więc
+     w oknie o własnym motywie wygląda jak wklejka z innego programu.
+
+     Ten wychodzi natychmiast (`transition-delay: 0s`) i wygląda jak
+     reszta okna. Znika też natychmiast — dymek, który zostaje po zejściu
+     kursora, myli bardziej niż pomaga.
+
+     Pokazuje się TYLKO tutaj, w wąskiej stopce. Przy widocznym podpisie
+     powtarzałby słowo leżące sześć pikseli obok. */
+  .note-act::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%) translateY(3px);
+    padding: 4px 8px;
+    border-radius: var(--r-sm);
+    background: var(--surface-hi, rgba(22, 30, 28, 0.96));
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-drop);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 11px;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 40;
+    transition:
+      opacity 0.1s var(--ease, ease),
+      transform 0.1s var(--ease, ease);
+  }
+  .note-act:hover::after,
+  .note-act:focus-visible::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  /* Dymek kosza mówi czerwonym — tak jak sam kubełek. */
+  .note-act--danger::after {
+    color: var(--danger);
+    border-color: var(--danger-30, rgb(240 114 111 / 0.35));
+  }
+
+  /* Skrajne przyciski: dymek wyśrodkowany pod pierwszym i ostatnim
+     wychodziłby poza kafel. Pierwszy równa się więc do lewej krawędzi,
+     ostatni do prawej — a że „Usuń" jest zawsze ostatni, dotyczy to
+     właśnie jego. */
+  .note-acts__slot:first-child .note-act::after {
+    left: 0;
+    transform: translateX(0) translateY(3px);
+  }
+  .note-acts__slot:first-child .note-act:hover::after,
+  .note-acts__slot:first-child .note-act:focus-visible::after {
+    transform: translateX(0) translateY(0);
+  }
+  .note-acts__slot:last-child .note-act::after {
+    left: auto;
+    right: 0;
+    transform: translateX(0) translateY(3px);
+  }
+  .note-acts__slot:last-child .note-act:hover::after,
+  .note-acts__slot:last-child .note-act:focus-visible::after {
+    transform: translateX(0) translateY(0);
+  }
+}
+
+/* Dymek wychodzi POZA przycisk i poza slot — obu trzeba to pozwolić,
+   inaczej stopka utnie go tak samo, jak ucinała menu „Udostępnij". */
+.note-act {
+  position: relative;
+  overflow: visible;
 }
 
 /* ── Przyciski ─────────────────────────────────
@@ -91,9 +187,37 @@
   height: 15px;
   flex: none;
 }
+/* ── HOVER: minimalny, czyli tło i kolor, plus drgnienie samego znaczka ──
+
+   Podniesienie całego przycisku przesuwałoby sąsiadów w oku (pasek jest
+   ciasny, pięć rzeczy obok siebie), więc rusza się TYLKO ikona i tylko
+   o pół piksela w górę. Tyle wystarczy, żeby ręka wiedziała, że trafiła,
+   a pasek nadal stoi. */
 .note-act:hover {
   background: var(--accent-08);
   color: var(--accent);
+}
+.note-act svg {
+  transition: transform var(--t-fast, 0.12s) var(--ease, ease);
+}
+.note-act:hover svg {
+  transform: translateY(-0.5px) scale(1.06);
+}
+.note-act:active svg {
+  transform: translateY(0) scale(0.96);
+}
+
+/* ── KOSZ JEST CZERWONY ZAWSZE ──
+
+   Wcześniej czerwieniał dopiero pod kursorem, z rozumowaniem, że stały
+   czerwony ściąga oko do czynności, której nikt nie szuka. To prawda przy
+   przycisku Z PODPISEM — słowo „Usuń" samo mówi, czym jest. Ale w wąskiej
+   stopce podpisy znikają (patrz @container wyżej) i zostaje sam kubełek
+   w tym samym szarym co cztery pozostałe: rzecz nieodwracalna wygląda
+   wtedy dokładnie jak „przypnij". Kolor jest tu jedynym ostrzeżeniem,
+   jakie zostaje, więc świeci od razu, a nie po najechaniu. */
+.note-act--danger {
+  color: var(--danger);
 }
 
 /* Włączone znaczy WIDOCZNIE włączone: notatka przypięta i notatka leżąca
@@ -104,19 +228,31 @@
   color: var(--accent);
 }
 
-/* Kasowanie czerwienieje dopiero pod kursorem. Czerwony przycisk stojący
-   tak przez cały czas ściąga oko do jedynej czynności w tym pasku, której
-   nikt nie szuka. */
 .note-act--danger:hover {
   background: var(--danger-12, rgb(240 114 111 / 0.14));
   color: var(--danger);
 }
 
 /* Menu „Udostępnij" wychodzi W GÓRĘ — pasek stoi przy dolnej krawędzi
-   okna i menu opuszczone w dół wyszłoby poza nie. */
+   okna i menu opuszczone w dół wyszłoby poza nie.
+
+   ── I W LEWO, A NIE W PRAWO ──
+
+   Wcześniej równało się do LEWEJ krawędzi swojego przycisku (`left: 0`)
+   i rozwijało w prawo. „Udostępnij" jest czwarte z pięciu, czyli stoi
+   przy prawej krawędzi stopki — dwieście dwadzieścia pikseli w prawo od
+   niego to już nie okno. Menu było więc UCIĘTE przy krawędzi: pozycje
+   „Zapisz jako PDF…" i „Zapisz jako plik .md…" widać było w połowie,
+   a drugiej połowy nie dawało się nawet przeczytać.
+
+   Teraz równa się do PRAWEJ krawędzi przycisku i rozwija w lewo, w stronę
+   środka okna — czyli tam, gdzie miejsce jest zawsze. Wąskie okna
+   (kartka na pulpicie miewa trzysta pikseli) domyka `fitMenu`
+   w js/notes-core.js: CSS zna geometrię paska, ale nie zna szerokości
+   okna, w którym ten pasek akurat stoi. */
 .note-acts__menu {
   position: absolute;
-  left: 0;
+  right: 0;
   bottom: calc(100% + 8px);
   min-width: 218px;
   padding: 5px;

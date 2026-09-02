@@ -4,7 +4,7 @@
  * Zrzuty do README — te, które ktoś obcy zobaczy pierwsze.
  *
  *   npm run screens            wszystko
- *   npm run screens sifted     jeden zrzut po nazwie
+ *   npm run screens start      jeden zrzut po nazwie
  *
  * DLACZEGO ELECTRON, A NIE PUPPETEER. Puppeteerowe `page.screenshot()` na
  * tej maszynie nie wraca nigdy — strona wczytuje się poprawnie, `evaluate`
@@ -101,19 +101,6 @@ const grantAccess = `
 `;
 
 /**
- * Karta rozwinięta na różnicy — bez tego nie widać, na czym rzecz polega.
- * UPEWNIA SIĘ, że jest otwarta, zamiast przełączać: makieta otwiera
- * pierwszą kartę sama, więc ślepe kliknięcie ją ZAMYKAŁO.
- */
-const openFirstDiff = `
-  (() => {
-    const btn = document.querySelector('#view-sifted [data-act="toggle"]');
-    if (btn && btn.textContent.includes("Co odpadło")) btn.click();
-    return true;
-  })()
-`;
-
-/**
  * Spotkanie wybrane z listy i otwarte na TRANSKRYPCJI — inaczej prawa
  * kolumna jest pustym prostokątem z zaproszeniem do napisania podsumowania,
  * a to akurat najmniej mówi o tym, co ta zakładka robi. Na transkrypcji
@@ -131,19 +118,22 @@ const pickFirstMeeting = `
 `;
 
 /**
- * Zakładki głównego okna. Jedno okno, osiem widoków, jedno wczytanie.
+ * Zakładki głównego okna. Jedno okno, siedem widoków, jedno wczytanie.
  * `height` przycina okno tam, gdzie widok jest krótki — pół zrzutu pustego
  * tła nie mówi o aplikacji nic.
+ *
+ * „start" jest pierwsza i celowo: to dawne „Start" i dawne „Przesiane"
+ * w jednym — statystyki, cztery kroki i cała historia pod kreską, z różnicą
+ * surowe→przesiane widoczną od razu przy pierwszym wpisie, bez klikania.
  */
 const VIEWS = [
-  { name: "sifted", view: "sifted", prepare: openFirstDiff },
+  { name: "start", view: "start" },
   { name: "notes", view: "notes" },
   { name: "meetings", view: "meetings", prepare: pickFirstMeeting },
   { name: "sieve", view: "sieve" },
   { name: "grains", view: "grains", height: 560 },
   { name: "commands", view: "commands" },
   { name: "settings", view: "settings" },
-  { name: "start", view: "start" },
 ];
 
 /**

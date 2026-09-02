@@ -47,11 +47,14 @@
     tagKey,
     cleanTag,
     foldersOf,
+    folderColorOf,
+    NOTE_COLORS,
     renameInPlace,
     ensureIcons,
     actionBar,
     paintActions,
     runAction,
+    fitMenu,
     runShare,
     specialsMenu,
   } = window.NotesCore;
@@ -73,9 +76,17 @@
        zwinięcie listy: zostaje między uruchomieniami, ale nie ma po co
        jeździć przez most do procesu głównego. */
     folder: localStorage.getItem("cribro:notes-folder") || null,
+    /* Czy lista pokazuje siatkę szuflad zamiast kafli notatek. Preferencja
+       widoku, nie stan trwały — otwiera się pusta przy każdym starcie,
+       tak jak zwinięcie listy. */
+    foldersOpen: false,
     // Kafel, którego tytuł jest właśnie przepisywany. Dopóki tu coś stoi,
     // lista nie przebudowuje się pod palcami piszącego.
     renaming: null,
+    /* Do koloru szuflad — patrz folderColorOf w notes-core.js. Ustawienia
+       aplikacji, nie tego okna, więc dogania zmiany zrobione gdzie indziej
+       (patrz subskrypcja w mount() niżej). */
+    settings: null,
   };
 
   let root = null;
@@ -111,9 +122,10 @@
           <svg><use href="#i-search" /></svg>
           <input type="text" id="noteSearch" placeholder="Szukaj w notatkach…" />
         </div>
-        <!-- Szuflady. Pas, nie drzewo: szuflad jest kilka, a nie kilkaset,
-             i wybiera się jedną — drzewo dokładałoby poziom, po którym
-             nie ma czego rozwijać. -->
+        <!-- Pasek szuflad — zawsze widoczny (patrz renderFolders w JS),
+             nie tylko wtedy, gdy ktoś już założył pierwszą. Siatka, do
+             której prowadzi, rysuje się w #noteItems: to samo miejsce na
+             ekranie, którym raz są kafle notatek, raz karty szuflad. -->
         <div class="notes__folders" id="noteFolders"></div>
         <div class="notes__items" id="noteItems"></div>
       </aside>
@@ -227,15 +239,27 @@
     // kursor — przebudowa listy zabrałaby go w połowie słowa.
     if (state.renaming) return;
 
+    renderFolders();
+
+    /* Siatka szuflad ZAJMUJE miejsce kafli, nie stoi obok nich — to jest
+       to samo miejsce na ekranie, tylko raz pokazuje notatki, raz foldery,
+       którymi się do nich dochodzi. Patrz folderGrid() niżej. */
+    if (state.foldersOpen) {
+      $("#noteCount").textContent = t("{n} szuflad", { n: foldersOf(state.notes).length });
+      $("#noteItems").innerHTML = folderGrid();
+      return;
+    }
+
     const query = state.query.trim();
     /* Szuflada zawęża, fraza szuka w tym, co zostało. Odwrotnie („szukaj
        wszędzie, mimo wybranej szuflady") znaczyłoby, że wybór szuflady
        przestaje cokolwiek znaczyć w chwili, w której zaczyna się pisać. */
-    const inFolder = (note) => !state.folder || folderOf(note) === state.folder;
+    // `state.folder === null` znaczy „nic nie wybrano" (wszystkie notatki).
+    // `""` jest realnym wyborem — „Bez szuflady" — więc porównanie musi
+    // być ścisłe, nie zwykłą prawdziwością (patrz komentarz przy onClick).
+    const inFolder = (note) => state.folder === null || folderOf(note) === (state.folder || null);
     const visible = state.notes.filter((note) => inFolder(note) && matches(note, query));
     const { groups, divided } = groupNotes(visible);
-
-    renderFolders();
 
     $("#noteCount").textContent = query
       ? t("{n} z {all}", { n: visible.length, all: state.notes.length })
@@ -306,44 +330,91 @@
   }
 
   /**
-   * Pas szuflad nad listą. „Wszystkie" zawsze pierwsze — bez niego nie
-   * byłoby drogi powrotnej z wybranej szuflady, a wybór jednej z nich
-   * to najczęstsza rzecz, którą się potem cofa.
+   * Pasek nad listą — zawsze widoczny, nie tylko wtedy, gdy ktoś już
+   * założył szufladę. Dawna listwa z chipami znikała CAŁKOWICIE, dopóki
+   * nikt nigdy nie użył szuflady — a to jest dokładnie ta niewidoczność,
+   * przez którą szuflady były trudne do znalezienia. Przycisk „Szuflady”
+   * stoi tu zawsze i otwiera siatkę (patrz folderGrid()), tak jak stały
+   * pasek „Foldery” w Notatkach Apple'a.
+   *
+   * Wewnątrz szuflady pasek zamienia się w drogę powrotną i eksport do
+   * PDF — te dwie rzeczy mają sens TYLKO tam, gdzie wiadomo, z czego się
+   * wraca i co eksportować.
    */
   function renderFolders() {
     const rail = root.querySelector("#noteFolders");
     if (!rail) return;
 
-    const folders = foldersOf(state.notes);
-    // Pas bez szuflad byłby pustą listwą nad listą. Póki nikt nie założył
-    // ani jednej, nie ma czego pokazywać — zakłada się je przy notatce.
-    rail.hidden = !folders.length;
-    if (!folders.length) return;
+    // Ścisłe `!== null`: „Bez szuflady" to `state.folder === ""`, realny
+    // wybór — a `if (state.folder)` by go pomylił z „nic nie wybrano".
+    if (state.folder !== null) {
+      rail.innerHTML = `
+        <button class="folder-chip folder-chip--back" data-note-act="folder-back"
+                title="${escape(t("Wróć do szuflad"))}">
+          <svg><use href="#i-chevron" /></svg>
+          <span data-i18n="skip">${escape(state.folder || t("Bez szuflady"))}</span>
+        </button>
+        <button class="folder-chip folder-chip--act" data-note-act="folder-pdf"
+                title="${escape(t("Cała szuflada jako jeden PDF"))}">
+          <span>${escape(t("Do PDF"))}</span>
+        </button>`;
+      return;
+    }
 
-    const chip = (key, label, count) => `
-      <button class="folder-chip" data-note-act="pick-folder" data-folder="${escape(key ?? "")}"
-              aria-pressed="${state.folder === key}">
-        <span data-i18n="skip">${escape(label)}</span><b data-i18n="skip">${count}</b>
+    const count = foldersOf(state.notes).length;
+    rail.innerHTML = `
+      <button class="folder-chip folder-chip--toggle" data-note-act="folders-toggle"
+              aria-pressed="${state.foldersOpen}" title="${escape(t("Szuflady — jak foldery, wchodzi się w nie"))}">
+        <svg><use href="#i-folder" /></svg>
+        <span>${escape(t("Szuflady"))}</span>
+        ${count ? `<b data-i18n="skip">${count}</b>` : ""}
       </button>`;
+  }
 
-    /* Wyjście całej szuflady na papier pokazuje się TYLKO przy wybranej
-       szufladzie. Przy „Wszystkich" nie byłoby czego eksportować jako
-       szufladę — to jest cały notatnik, a to inna rzecz i inna nazwa. */
-    const exportButton = state.folder
-      ? `<button class="folder-chip folder-chip--act" data-note-act="folder-pdf"
-                 title="${escape(t("Cała szuflada jako jeden PDF"))}">
-           <span>${escape(t("Do PDF"))}</span>
-         </button>`
-      : "";
+  /**
+   * Siatka szuflad — jedna karta na szufladę, plus „Bez szuflady", gdy są
+   * takie notatki. Kliknięcie w kartę WCHODZI do szuflady, tak jak
+   * kliknięcie w folder w Plikach albo w Notatkach Apple'a — a nie tylko
+   * zawęża listę, jak robił to dawny chip.
+   *
+   * Karta jest `<div role="button">`, nie `<button>`: w środku siedzi rząd
+   * przycisków zmiany koloru, a przycisk w przycisku jest nieprawidłowym
+   * HTML-em — przeglądarka wyciągnęłaby wewnętrzny poza zewnętrzny i cały
+   * układ by się rozjechał. Ten sam wzorzec, co przy `.note-card` wyżej.
+   */
+  function folderGrid() {
+    const folders = foldersOf(state.notes);
+    const withoutFolder = state.notes.filter((note) => !folderOf(note)).length;
 
-    rail.innerHTML =
-      chip(null, t("Wszystkie"), state.notes.length) +
-      folders
-        .map((name) =>
-          chip(name, name, state.notes.filter((note) => folderOf(note) === name).length),
-        )
-        .join("") +
-      exportButton;
+    if (!folders.length && !withoutFolder) {
+      return `<p class="notes__nothing">${escape(
+        t("Nie masz jeszcze żadnej szuflady — załóż ją przy notatce, w metryczce pod paskiem narzędzi."),
+      )}</p>`;
+    }
+
+    const swatches = (name) =>
+      NOTE_COLORS.map(
+        ([key, label]) => `
+          <button class="folder-card__swatch" data-note-act="folder-color"
+                  data-folder="${escape(name)}" data-color-pick="${key}"
+                  title="${escape(label)}" aria-pressed="${folderColorOf(name, state.settings) === key}">
+            <span class="swatch" data-color="${key}"></span>
+          </button>`,
+      ).join("");
+
+    const card = (name, count) => `
+      <div class="folder-card" role="button" tabindex="0" data-note-act="pick-folder"
+           data-folder="${escape(name ?? "")}" data-color="${folderColorOf(name, state.settings)}">
+        <span class="folder-card__icon"><svg><use href="#i-folder" /></svg></span>
+        <span class="folder-card__name" data-i18n="skip">${escape(name ?? t("Bez szuflady"))}</span>
+        <span class="folder-card__count" data-i18n="skip">${t("{n} notatek", { n: count })}</span>
+        ${name ? `<div class="folder-card__colors">${swatches(name)}</div>` : ""}
+      </div>`;
+
+    return `<div class="folder-grid">
+      ${folders.map((name) => card(name, state.notes.filter((note) => folderOf(note) === name).length)).join("")}
+      ${withoutFolder ? card(null, withoutFolder) : ""}
+    </div>`;
   }
 
   /**
@@ -787,6 +858,8 @@
     if (act) {
       if (act === "share") {
         toggleMenu('[data-acts-menu="share"]');
+        // Menu jest szersze niż przycisk i stoi przy krawędzi — patrz fitMenu.
+        fitMenu(root.querySelector('[data-acts-menu="share"]'));
         return;
       }
       closeMenus();
@@ -828,14 +901,54 @@
     }
 
     /* Czynności, które nie potrzebują otwartej notatki — a bywają robione
-       wtedy, gdy żadna nie jest wybrana (pusta szuflada, świeże okno). */
+       wtedy, gdy żadna nie jest wybrana (pusta szuflada, świeże okno).
+
+       ══ „" NIE JEST TYM SAMYM CO null ══
+       `state.folder === null` znaczy „nic nie wybrano, zwykła lista".
+       `state.folder === ""` znaczy „Bez szuflady" — realny wybór, tylko
+       akurat pusty jak string. Dlatego wszędzie tu stoi ścisłe `=== null`
+       (albo `?? null` przy zapisie), a nie sam `state.folder` w `if`: to
+       drugie potraktowałoby „Bez szuflady" tak samo jak „nic nie wybrano"
+       i pokazałoby WSZYSTKIE notatki zamiast tylko tych bez szuflady. */
+    if (action === "folders-toggle") {
+      state.foldersOpen = !state.foldersOpen;
+      state.folder = null;
+      renderCards();
+      translateTree(root);
+      return;
+    }
     if (action === "pick-folder") {
-      const name = event.target.closest("[data-folder]").dataset.folder || null;
-      state.folder = state.folder === name ? null : name;
+      // Klik w kartę wchodzi do szuflady — zawsze, nie przełącza. Wyjście
+      // z niej ma własny przycisk (folder-back), tak jak w prawdziwym
+      // folderze nie wychodzi się drugim kliknięciem w ten sam folder.
+      state.folder = event.target.closest("[data-folder]").dataset.folder ?? null;
+      state.foldersOpen = false;
+      // „Bez szuflady" (pusty string) nie ma po co przeżywać restartu
+      // aplikacji jako preferencja — to jest rzadki, tymczasowy podgląd,
+      // nie miejsce, do którego się wraca dzień po dniu.
       if (state.folder) localStorage.setItem("cribro:notes-folder", state.folder);
       else localStorage.removeItem("cribro:notes-folder");
       renderCards();
       translateTree(root);
+      return;
+    }
+    if (action === "folder-back") {
+      state.folder = null;
+      state.foldersOpen = true;
+      localStorage.removeItem("cribro:notes-folder");
+      renderCards();
+      translateTree(root);
+      return;
+    }
+    if (action === "folder-color") {
+      const el = event.target.closest("[data-folder]");
+      const name = el.dataset.folder;
+      const key = el.dataset.colorPick;
+      if (!name || !key) return;
+      await api.settings.save({ notesFolderColors: { [name.trim().toLowerCase()]: key } });
+      // Ustawienia wracają przez onChange (patrz mount()) i same przerysują
+      // siatkę — ale to jest w drodze, a oko ma zobaczyć wybór NATYCHMIAST.
+      renderCards();
       return;
     }
     if (action === "folder-pdf") {
@@ -1053,12 +1166,17 @@
         render();
       });
 
-      /* Pisownia. Ustawienie trzymamy obok, bo pole edytora powstaje
-         dopiero przy pierwszej notatce (patrz build) — a wtedy musi już
-         wiedzieć, czy podkreślać. */
+      /* Pisownia i kolory szuflad. Ustawienia trzymamy obok, bo pole
+         edytora powstaje dopiero przy pierwszej notatce (patrz build)
+         — a wtedy musi już wiedzieć, czy podkreślać. Kolor szuflady
+         (folderColorOf w notes-core.js) czyta z tego samego obiektu, więc
+         zmiana koloru w tym oknie — albo w Notatniku, bo ustawienia idą
+         tym samym mostem do obu — ma dogonić to okno bez przeładowania. */
       const spell = (settings) => {
+        state.settings = settings;
         spellcheckOn = settings.spellcheck?.enabled !== false;
         applySpellcheck();
+        if (state.loaded && NotesView.isVisible()) renderCards();
       };
       api.settings.get().then(spell);
       api.settings.onChange?.(spell);

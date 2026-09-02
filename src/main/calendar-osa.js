@@ -52,8 +52,16 @@ const { execFile } = require("child_process");
  * wpisów. Sprawdza je zwykły Node (scripts/agenda-test.js).
  */
 
-/** Ile najdłużej czekamy. Pierwsze pytanie budzi Kalendarz.app. */
-const PATIENCE = 25_000;
+/**
+ * Ile najdłużej czekamy. Pierwsze pytanie budzi Kalendarz.app.
+ *
+ * Zmierzone na koncie z dziesięcioma kalendarzami i ~1700 wydarzeniami:
+ * 15–40 sekund, zależnie od tego, czy Calendar.app ma coś w swoim
+ * wewnętrznym cache'u. Sześćdziesiąt sekund to zapas ponad najgorszy
+ * zmierzony przypadek, nie liczba wzięta z sufitu — patrz komentarz przy
+ * SCRIPT niżej po to, skąd w ogóle bierze się ten koszt.
+ */
+const PATIENCE = 60_000;
 
 /**
  * Skrypt w JXA — JavaScript, nie AppleScript.
@@ -62,10 +70,34 @@ const PATIENCE = 25_000;
  * arytmetyką, po której trzeba by je jeszcze przepisać na coś, co rozumie
  * Node; JXA oddaje je jako liczby milisekund i sprawa się kończy.
  *
- * Pytamy o wpisy z okna czasowego JEDNYM zapytaniem na kalendarz (`whose`),
- * a nie przeglądając wszystko po kolei. Różnica jest między sekundą
- * a minutą: Kalendarz.app filtruje po swojej stronie, a Apple Events płaci
- * się od każdego przekroczenia granicy procesu.
+ * ══ DLACZEGO TU NIE MA „whose" — I DLACZEGO WCZEŚNIEJ BYŁ BŁĄD ══
+ *
+ * Wcześniejsza wersja filtrowała datę PRZEZ `events.whose({...})` i potem
+ * czytała z wyniku siedem właściwości batchem — z komentarzem, że to jest
+ * „jedno pytanie na właściwość, nie na wpis". Brzmiało to jak optymalizacja
+ * i mierzyło się dobrze na małym koncie. Na koncie z tysiącem kilkuset
+ * wydarzeń w dziesięciu kalendarzach mierzy się inaczej: KAŻDY dostęp do
+ * właściwości na wyniku `whose()` PRZELICZA CAŁY FILTR OD NOWA. Siedem
+ * właściwości na kalendarzu z 723 wpisami to siedem pełnych przebiegów —
+ * zmierzone: 62 sekundy na SAM ten jeden kalendarz, z zerem trafień
+ * w oknie. Na dziesięciu kalendarzach całość nie kończyła się nawet po
+ * dwóch i pół minuty.
+ *
+ * Naprawa jest w tym, co NIE filtruje: `calendars[c].events.startDate()`
+ * (JEDNA właściwość, bez `whose`) czyta datę początku KAŻDEGO wydarzenia
+ * jednym przebiegiem — i to jest jedyny kosztowny krok, jaki tu został.
+ * Okno czasowe sprawdzamy POTEM, w zwykłym JavaScripcie, za darmo.
+ *
+ * Dla nielicznych trafień (w oknie kilkunastu godzin to zwykle
+ * pojedyncze wpisy) sięgamy po resztę danych przez INDEKS NA SUROWEJ
+ * KOLEKCJI — `calendars[c].events[i].properties()` — a nie przez indeks
+ * na wyniku `whose()`. Różnica zmierzona na tym samym koncie: 0,5 sekundy
+ * kontra 19. Indeks na surowej kolekcji jest zwykłym odwołaniem
+ * pozycyjnym; indeks na `whose()` wciąż jest indeksem W FILTRZE i wciąż
+ * go przelicza.
+ *
+ * Całość na tym koncie (dziesięć kalendarzy, ~1700 wydarzeń łącznie):
+ * niecałe 40 sekund, zawsze się kończy. Wcześniej: nieskończoność.
  */
 const SCRIPT = `
 function run(argv) {
@@ -88,41 +120,48 @@ function run(argv) {
      W tle pytamy tylko wtedy, gdy Kalendarz i tak już chodzi. */
   if (!mayLaunch && !cal.running()) return "ASLEEP";
 
-  const out = [];
-
   const calendars = cal.calendars();
+
+  /* PRZEBIEG PIERWSZY, KOSZTOWNY: która pozycja w którym kalendarzu leży
+     w oknie czasowym. Jedna właściwość, bez filtra — patrz komentarz nad
+     tym skryptem po to, żeby zrozumieć, czemu akurat tak. */
+  const hits = [];
   for (let c = 0; c < calendars.length; c += 1) {
-    let found;
+    let starts;
     try {
-      found = calendars[c].events.whose({
-        _and: [{ startDate: { _greaterThan: from } }, { startDate: { _lessThan: to } }],
-      });
-      // Jedno pytanie na WŁAŚCIWOŚĆ, nie na wpis. To jest cała różnica
-      // między dwiema sekundami a dwiema minutami.
-      var ids = found.uid();
-      var titles = found.summary();
-      var starts = found.startDate();
-      var ends = found.endDate();
-      var places = found.location();
-      var links = found.url();
-      var notes = found.description();
+      starts = calendars[c].events.startDate();
     } catch (e) {
       continue; // kalendarz, którego nie da się odpytać, po prostu pomijamy
     }
-    for (let e = 0; e < ids.length; e += 1) {
+    for (let i = 0; i < starts.length; i += 1) {
+      const s = starts[i];
+      if (s && s.getTime() > from.getTime() && s.getTime() < to.getTime()) hits.push([c, i]);
+    }
+  }
+
+  /* PRZEBIEG DRUGI, TANI: reszta danych — ale tylko dla tych nielicznych
+     pozycji, i indeksem na SUROWEJ kolekcji, nie na wyniku filtra. */
+  const out = [];
+  for (let h = 0; h < hits.length; h += 1) {
+    const c = hits[h][0];
+    const i = hits[h][1];
+    try {
+      const p = calendars[c].events[i].properties();
       out.push({
-        id: String(ids[e] || ""),
-        title: String(titles[e] || ""),
-        from: starts[e] ? starts[e].getTime() : 0,
-        to: ends[e] ? ends[e].getTime() : 0,
-        location: String(places[e] || ""),
-        url: String(links[e] || ""),
-        notes: String(notes[e] || ""),
+        id: String(p.uid || ""),
+        title: String(p.summary || ""),
+        from: p.startDate ? p.startDate.getTime() : 0,
+        to: p.endDate ? p.endDate.getTime() : 0,
+        location: String(p.location || ""),
+        url: String(p.url || ""),
+        notes: String(p.description || ""),
         people: [],
         emails: [],
         guests: 0,
-        ref: [c, e],
+        ref: [c, i],
       });
+    } catch (e) {
+      continue; // wpis, którego nie da się odczytać, po prostu pomijamy
     }
   }
 
@@ -143,12 +182,10 @@ function run(argv) {
   for (let i = 0; i < out.length && asked < detail; i += 1) {
     const ref = out[i].ref;
     try {
-      const ev = calendars[ref[0]].events.whose({
-        _and: [
-          { startDate: { _greaterThan: from } },
-          { startDate: { _lessThan: to } },
-        ],
-      })[ref[1]];
+      // Indeks na SUROWEJ kolekcji, tak samo jak wyżej przy .properties()
+      // — a nie ponowne whose(), które by tu znaczyło jeszcze jeden pełny
+      // przebieg przez kalendarz za każdego z tych kilku wpisów.
+      const ev = calendars[ref[0]].events[ref[1]];
       const who = ev.attendees();
       const names = [];
       const mails = [];

@@ -97,7 +97,9 @@ check("Koło zębate ma podpis, a nie tylko rysunek",
 check("…i mówi w podpowiedzi, co jest pod spodem",
   /title="\$\{t\("Ustawienia spotkań i wytyczne podsumowań"\)\}"/.test(widok));
 check("Ustawienia rysują się dopiero po otwarciu szuflady",
-  /\$\{state\.settingsOpen \? settingsCard\(\) : ""\}/.test(widok));
+  /host\.innerHTML = state\.settingsOpen \? settingsCard\(\) : "";/.test(widok));
+check("…w OSOBNEJ sekcji, nie doklejone na końcu spisu spotkań",
+  /paintSettings\(\)/.test(widok) && /getElementById\("meetSettings"\)|#meetSettings/.test(widok));
 check("Wybór szuflady zostaje między uruchomieniami",
   /localStorage\.setItem\("cribro:meet-settings"/.test(widok));
 check("Nagłówek „Jak działają spotkania” został tam, gdzie był — w środku",
@@ -142,7 +144,7 @@ check("Notatka zakłada się po zakończeniu nagrania",
 check("…i przyjmuje podsumowanie, gdy to dojdzie",
   /keepMeetingNote\(id\);\n    return patch;/.test(main));
 check("Notatka wie, kim jest właściciel konta — to część jej nazwy",
-  /keepNote\(store, id, \{\n\s*me: whoAmI\(\),/.test(main));
+  /keepNote\(store, id, \{ me: whoAmI\(\) \}\)/.test(main));
 check("Założenie i odświeżenie melduje się osobno",
   /if \(action === "created"\) broadcast\("note:new", note\);/.test(main) &&
     /else if \(action === "updated"\) broadcast\("note:changed", note\);/.test(main));
@@ -156,7 +158,9 @@ check("Rozstrzygnięcia leżą osobno i nie znają Electrona",
 check("Notatka niesie CAŁY zapis rozmowy — dlatego wolno skasować nagranie",
   /asNote\(meeting, \{ transcript: true, me \}\)/.test(reguły));
 check("Rodzaj „meeting” trafia do notatki — po nim poznaje ją przegródka",
-  /kind: "meeting",/.test(reguły));
+  /kind: "meeting"/.test(reguły));
+check("…i notatka nie trafia do żadnej szuflady — tylko do zwijanej przegródki",
+  /createNote\(\{ text, autoText: text, kind: "meeting" \}\)/.test(reguły));
 
 /* ── 5. Wytyczne podsumowania ─────────────────────────────────── */
 

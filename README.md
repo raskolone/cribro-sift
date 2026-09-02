@@ -8,7 +8,7 @@ a czysty tekst ląduje pod kursorem i w schowku.
 
 `cribro` (łac.) — *przesiewam*.
 
-![Przesiane — historia dyktowań z podglądem różnicy](docs/screens/sifted.png)
+![Start — statystyki, cztery kroki i historia dyktowań z podglądem różnicy](docs/screens/start.png)
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-Apple%20Silicon-1c2333?style=flat-square" alt="macOS, Apple Silicon" />
@@ -79,31 +79,28 @@ i gaśnie, żeby nie zasłaniać okna, do którego się właśnie mówi. Fioleto
 kolor należy do nagrywania i znaczy to samo na znaczku widgetu i na ikonie
 w pasku menu.
 
-### Przesiane — co powiedziałeś, a co z tego zostało
+### Start — statystyki, cztery kroki i co powiedziałeś
 
-![Zakładka Przesiane z rozwiniętą różnicą](docs/screens/sifted.png)
+![Start — statystyki, cztery kroki i historia dyktowań z podglądem różnicy](docs/screens/start.png)
 
-Zapis każdego dyktowania: tekst gotowy do wklejenia, a pod przyciskiem
-**„Co odpadło"** — różnica słowo po słowie. Na czerwono to, co odsiało sito
-(„yyy", „to znaczy", powtórzenia), na zielono poprawki. Właśnie po to
-transkrypcja i sito to **dwa osobne wywołania**: pierwsze ma być wierne,
-drugie sprząta, a w historii widać dokładnie, gdzie przebiegła granica.
-Kafle na górze liczą, ile słów zostało, ile zniknęło i ile czasu to oddało
-wobec pisania na klawiaturze.
+Jedna zakładka, nie dwie: na samej górze cztery kafle statystyk (ile słów
+zostało, ile zniknęło, ile czasu to oddało wobec pisania na klawiaturze),
+zawsze w jednym wierszu, choćby okno było wąskie. Pod nimi cztery kroki
+pierwszego uruchomienia — Mikrofon, Dostępność (**opcjonalna**: bez niej
+nagrywasz przyciskiem, a tekst ląduje w schowku zamiast pod kursorem), sito,
+pierwsze zdanie. Kluczy API nie ma tu wcale; zwykły użytkownik dostaje
+odpowiedź na jedyne pytanie, jakie zadaje — czy to działa.
 
-### Start — cztery kroki i koniec konfiguracji
+Pod kreską rośnie zapis każdego dyktowania: tekst gotowy do wklejenia,
+a od razu pod nim — bez klikania — różnica słowo po słowie. Na czerwono to,
+co odsiało sito („yyy", „to znaczy", powtórzenia), na zielono poprawki.
+Właśnie po to transkrypcja i sito to **dwa osobne wywołania**: pierwsze ma
+być wierne, drugie sprząta, a w historii widać dokładnie, gdzie przebiegła
+granica.
 
-![Zakładka Start z listą czterech kroków](docs/screens/start.png)
+### Funkcja sita — jedno pokrętło
 
-Mikrofon, Dostępność, sito, pierwsze zdanie. Każdy krok mówi, w jakim jest
-stanie i co dokładnie kliknąć — a „Dostępność" jest **opcjonalna**: bez niej
-nagrywasz przyciskiem, a tekst ląduje w schowku zamiast pod kursorem.
-Kluczy API nie ma tu wcale; zwykły użytkownik dostaje odpowiedź na jedyne
-pytanie, jakie zadaje — czy to działa.
-
-### Sito — jedno pokrętło
-
-![Zakładka Sito: trzy gęstości oczek i ustawienia języka](docs/screens/sieve.png)
+![Zakładka Funkcja sita: trzy gęstości oczek i ustawienia języka](docs/screens/sieve.png)
 
 Trzy gęstości oczek: **zgrubne** zdejmuje same zacięcia, **średnie** zostawia
 czystą wypowiedź twoim głosem, **drobne** oddaje tekst zwięzły i gotowy do
@@ -420,7 +417,7 @@ Stąd **osiem slajdów**, które pokazują się raz, same, przy pierwszym starci
 
 | # | Slajd | O czym |
 | --- | --- | --- |
-| 1 | Sito | co ta aplikacja właściwie robi |
+| 1 | Funkcja sita | co ta aplikacja właściwie robi |
 | 2 | Skrót | ⌃⌥ trzymane i stuknięte dwa razy, Escape kasuje |
 | 3 | Gęstość | zgrubne · średnie · drobne |
 | 4 | Polecenia | „zrób z tego maila" i własne frazy |
@@ -485,7 +482,7 @@ w którąkolwiek stronę.
 | **Jeden język** | kod języka idzie do dostawcy wprost | wiadomo, co padnie |
 | **Automat** | model rozpoznaje sam | nie wiadomo, co padnie |
 
-Ustawisz to w zakładce **Sito → Język**, z paska menu albo jednym kliknięciem
+Ustawisz to w zakładce **Funkcja sita → Język**, z paska menu albo jednym kliknięciem
 na tacy widgetu. Ten sam opis języka dostają **oba kroki** — transkrypcja i sito.
 Gdyby dostał go tylko pierwszy, sito „poprawiłoby" angielskie wtrącenia
 na polskie, bo bez tej wiedzy wyglądają jak przekręcenia.
@@ -502,7 +499,7 @@ a napis, którego w nim nie ma, zostaje po polsku zamiast zniknąć.
 
 ### Gęstość sita
 
-Jedyne pokrętło. Zmienisz je w zakładce **Sito** albo z paska menu.
+Jedyne pokrętło. Zmienisz je w zakładce **Funkcja sita** albo z paska menu.
 
 - **Zgrubne** — znikają tylko zacięcia i „yyy", reszta słowo w słowo
 - **Średnie** — czysta wypowiedź, twoja składnia i rejestr *(domyślne)*
@@ -598,8 +595,8 @@ tej pory nie było ich widać nigdzie, choć chodzą przy każdym dyktowaniu.
 
 ### Notatki
 
-Zakładka **Notatki** w oknie głównym — otwiera się tak samo jak Start,
-Przesiane czy Sito. Wcześniej ta jedna pozycja na pasku bocznym zachowywała
+Zakładka **Notatki** w oknie głównym — otwiera się tak samo jak Start czy
+Funkcja sita. Wcześniej ta jedna pozycja na pasku bocznym zachowywała
 się inaczej niż wszystkie pozostałe: otwierała okno obok, zamiast zmienić widok.
 
 Schemat widoku jest stały i płaski, żeby jedno spojrzenie wystarczyło:
@@ -710,14 +707,23 @@ które już są, plus „Nowa szuflada…" — a nazwę nowej wpisuje się wpros
 sam przycisk, w którym potem stoi. Osobne okienko z pytaniem byłoby trzecim
 oknem dla jednego słowa.
 
-Nad listą notatek stoi wtedy **pas szuflad** z licznikami; kliknięcie zawęża
-listę, drugie kliknięcie w tę samą wraca do wszystkich. Pas pokazuje się
-dopiero wtedy, gdy jest choć jedna szuflada — pusta listwa nad listą nie
-mówi nic. Wybrana szuflada zostaje między uruchomieniami.
+Nad listą notatek stoi **przycisk „Szuflady"** — zawsze widoczny, nawet zanim
+ktokolwiek założy pierwszą. Kliknięcie otwiera siatkę: jedna karta na
+szufladę, tak jak foldery w Notatkach Apple'a — kliknięcie w kartę **wchodzi**
+do środka, zamiast tylko zawężać listę. „‹ Wróć" prowadzi z powrotem do
+siatki; drugie kliknięcie w „Szuflady" robi to samo. Wybrana szuflada zostaje
+między uruchomieniami, sama siatka — nie, otwiera się pusta przy każdym starcie.
 
-Szuflad nie ma osobnego rejestru: powstają z samych notatek. Szuflada, z której
-wyszła ostatnia notatka, przestaje istnieć sama — nie ma czego sprzątać
-i nie ma czemu rozjechać się z tym, co naprawdę leży w notatkach.
+Każda karta ma **kolor** — najedź, żeby zobaczyć rząd próbek, kliknij, żeby
+wybrać. Kolor mieszka w ustawieniach aplikacji, nie w notatkach: notatka
+w szufladzie nie niesie o nim żadnej wiedzy, więc nie ma czego rozjechać się
+między kopiami.
+
+Szuflad samych w sobie nie ma osobnego rejestru: powstają z samych notatek.
+Szuflada, z której wyszła ostatnia notatka, przestaje istnieć sama — kolor,
+który jej nadano, zostaje na wszelki wypadek w ustawieniach (kilka bajtów,
+bez wpływu na to, co widać) i wraca za darmo, gdy szuflada powstanie znowu
+pod tą samą nazwą.
 
 **Etykiety** dopisuje się w polu „+ etykieta" w metryczce. Enter albo przecinek
 kończy jedną, Backspace w pustym polu zdejmuje ostatnią. Widać je na kaflu
@@ -1193,7 +1199,7 @@ w drodze między kółkami. Zwijanie idzie od końca kolumny i szybciej niż
 rozkładanie: zamykanie ma być mniej widowiskowe, bo dzieje się wtedy, gdy
 uwaga jest już gdzie indziej.
 
-Przesiane i Ustawienia **na tacy nie są** — to widoki w oknie, a do samego
+Start i Ustawienia **na tacy nie są** — to widoki w oknie, a do samego
 okna prowadzi już jedno kółko; poza tym siedzą w menu aplikacji i mają klawisze
 skrótu. Taca jest od czynności, przy których nie odchodzi się od tego, co się
 robi.
@@ -1430,14 +1436,14 @@ Wszystko, co otwiera okno, mieszka w głównym menu — i tam ma klawisze:
 | **Cribro Sift** | O programie · Ustawienia ⌘, · Ukryj · Zakończ |
 | **Plik** | Nowa notatka ⌘N · Szybka notatka ⌘⇧N · Notatnik ⌘⇧O · Dyktuj ⌘D |
 | **Edycja** | cofnij, powtórz, wytnij, kopiuj, wklej, wklej jako zwykły tekst · Sprawdzaj pisownię |
-| **Widok** | Start ⌘1 · Przesiane ⌘2 · Notatki ⌘3 · Sito ⌘4 · Ziarna ⌘5 · Ustawienia ⌘6 |
+| **Widok** | Start ⌘1 · Notatki ⌘2 · Funkcja sita ⌘3 · Ziarna ⌘4 · Ustawienia ⌘5 |
 | **Okno** | zminimalizuj, powiększ, Otwórz Cribro Sift |
 
 „Nowa notatka" trafia tam, gdzie właśnie patrzysz: przy otwartym oknie głównym
 zakłada notatkę w zakładce Notatki, w każdym innym razie w Notatniku.
 
 To samo, czego najczęściej potrzeba bez okna, siedzi dalej w **pasku menu**:
-Przesiane, Notatnik, Szybka notatka, Ustawienia, gęstość sita, język
+Start, Notatnik, Szybka notatka, Ustawienia, gęstość sita, język
 dyktowania i automatyczne wklejanie.
 
 ### Spotkania
@@ -1645,10 +1651,11 @@ miejscach wymaga tego prawo. Zakładka ma gotowe zdanie do wklejenia na czat.
 
 ### Historia
 
-Zakładka **Przesiane** trzyma wszystkie dyktowania. Przy każdym wpisie:
-przycisk **„Co odpadło"** pokazuje surową transkrypcję z przekreślonym szumem,
-**„Przesiej ponownie"** przepuszcza ten sam zapis przez inną gęstość sita,
-a **„Przypnij"** chroni wpis przed czyszczeniem historii.
+Dolna połowa zakładki **Start**, pod kreską, trzyma wszystkie dyktowania.
+Różnica surowe→przesiane pokazuje się przy każdym wpisie **od razu** — to
+jest sedno tego, co tu widać, a przycisk **„Ukryj różnicę"** ją chowa, gdy
+akurat przeszkadza. **„Przesiej ponownie"** przepuszcza ten sam zapis przez
+inną gęstość sita, a **„Przypnij"** chroni wpis przed czyszczeniem historii.
 
 Historia leży w `~/Library/Application Support/Cribro Sift/history.json`.
 Nagranie audio **nie jest zapisywane** — ginie zaraz po transkrypcji.
@@ -1909,7 +1916,7 @@ src/main/
   oauth.js       logowanie przez Google: przeglądarka, PKCE, pętla zwrotna
   sync.js        uzgadnianie notatek: nagrobki, kursor, kto wygrywa spór
 src/renderer/
-  index.html     Start · Przesiane · Notatki · Sito · Ziarna · Polecenia · Ustawienia
+  index.html     Start · Notatki · Funkcja sita · Ziarna · Polecenia · Ustawienia
   hud.html       pierścień widoczny podczas dyktowania
   notes.html     Notatnik — osobne okno; z „?note=id" jedna notatka bez listy
   quick.html     szybka notatka — małe okno z jednym polem

@@ -11,10 +11,10 @@
  *   Błąd w tym miejscu nie wygląda na błąd: dźwięk po prostu zaczyna
  *   trzeszczeć, a transkrypcja robi się bełkotem.
  *
- *   NAGRANIE wymaga zgody „Nagrywanie ekranu" i sprzętu, więc uruchamia się
- *   tylko wtedy, gdy program pomocniczy jest zbudowany. Bez zgody kończy się
- *   głośnym pominięciem, a nie cichym przejściem — cicho przechodzący test
- *   nagrywania jest gorszy niż jego brak.
+ *   NAGRANIE wymaga zgody „Nagrywanie dźwięku innych aplikacji" i sprzętu,
+ *   więc uruchamia się tylko wtedy, gdy program pomocniczy jest zbudowany.
+ *   Bez zgody kończy się głośnym pominięciem, a nie cichym przejściem —
+ *   cicho przechodzący test nagrywania jest gorszy niż jego brak.
  */
 const assert = require("assert");
 const fs = require("fs");
@@ -25,12 +25,13 @@ const { parse, record, helperPath, wavHeader } = require("../src/main/tap");
 
 /* Ekran nie może zasnąć w trakcie tego testu.
 
-   ScreenCaptureKit przy uśpionym ekranie nie zgłasza ŻADNEGO ekranu, więc
-   nagrywanie odpada — i wygląda to na zepsutą funkcję, choć zepsuty jest
-   tylko moment. `caffeinate -w` trzyma czuwanie dokładnie tak długo, jak
-   żyje ten proces — a `-u` budzi ekran, jeśli zdążył już zasnąć. Bez tego
-   drugiego cały ten test milczy na maszynie zostawionej na chwilę samej,
-   i milczy w sposób, który wygląda jak brak zgody. */
+   Dźwięk systemu idzie dziś przez Core Audio Process Tap, nie przez
+   ScreenCaptureKit — i tapowi ekran do niczego nie jest potrzebny. Zostaje
+   tu mimo to: mikrofon i pozostałe drogi tej aplikacji (m.in. wykrywanie
+   okien gdzie indziej w kodzie) nadal korzystają z tego, że system nie śpi,
+   a `caffeinate -w` kosztuje tyle co nic. `-u` budzi ekran, jeśli zdążył już
+   zasnąć — bez tego test milczałby na maszynie zostawionej na chwilę samej,
+   w sposób, który wygląda jak brak zgody. */
 try {
   require("child_process").execFileSync("caffeinate", ["-u", "-t", "1"], { stdio: "ignore" });
 } catch {
@@ -146,7 +147,7 @@ check("Długość danych zgadza się z tym, co zapisano", head.readUInt32LE(40) 
 
   if (failure) {
     console.log(`\n⚠ nagranie pominięte: ${failure}`);
-    console.log("  Zgoda „Nagrywanie ekranu” pamięta TOŻSAMOŚĆ programu, który o nią prosi,");
+    console.log("  Zgoda „Nagrywanie dźwięku innych aplikacji” pamięta TOŻSAMOŚĆ programu, który o nią prosi,");
     console.log("  a goły plik uruchamiany z terminala żadnej stabilnej nie ma — przy każdej");
     console.log("  przebudowie jest dla systemu innym programem. Zgody udziela się więc");
     console.log("  zainstalowanej aplikacji, przy pierwszym nagraniu spotkania, i wtedy");
