@@ -488,6 +488,27 @@
         --dx: calc(-1 * var(--side-2));
         --dy: 0px;
       }
+
+      /* Notatnik — trzecie i ostatnie gniazdo tego rzędu. Rząd czyta się
+         od znaczka na zewnątrz jak zdanie o rosnącej powadze: pokaż to,
+         co leży na pulpicie → dołóż tam kartkę → otwórz całe archiwum.
+         Dlatego stoi najdalej, a nie w kolumnie czynności: kolumna jest
+         od rzeczy robionych w biegu, a Notatnik to miejsce, w którym się
+         siada. */
+      .slot--book {
+        --side-3: calc(
+          var(--badge) / 2 + var(--tray-gap, 12px) + var(--tray-item, 34px) / 2 + 2 *
+            (var(--tray-gap, 12px) + var(--tray-item, 34px))
+        );
+      }
+      #stage[data-tray-side="right"] .slot--book {
+        --dx: var(--side-3);
+        --dy: 0px;
+      }
+      #stage[data-tray-side="left"] .slot--book {
+        --dx: calc(-1 * var(--side-3));
+        --dy: 0px;
+      }
       #stage[data-view="tray"] .slot {
         opacity: 1;
         pointer-events: auto;
@@ -607,12 +628,47 @@
         right: calc(100% + 8px);
         transform: translateY(-50%) translateX(3px);
       }
-      /* Dymek notatek stoi najdalej od znaczka, więc jako jedyny musiałby
-         wyjść poza okno — dostaje go po tej samej stronie, ale okno ma na
-         niego zapas (patrz traySide w main/main.js). */
       #stage[data-view="tray"] .slot:hover .tip {
         opacity: 1;
         transform: translateY(-50%) translateX(0);
+      }
+
+      /* ══ DYMEK RZĘDU BOCZNEGO IDZIE W PION ══
+
+         Notatki, nowa kartka i Notatnik stoją w JEDNYM RZĘDZIE, jedno
+         kółko obok drugiego. Dymek położony z boku ląduje więc dokładnie
+         na sąsiedzie — i tak było: napis „Notatki" chował się pod plusikiem
+         i widać było z niego trzy litery.
+
+         Idzie więc w pion, i to w stronę PRZECIWNĄ do kolumny czynności:
+         tam nie ma ani kółek, ani drugiego dymka, a okno ma na to zapas
+         (patrz trayBack w main/main.js). Kolumnie zostaje dymek z boku —
+         tam jest w porządku, bo obok kolumny nie stoi nic. */
+      #stage[data-tray-dir="down"] .slot--side .tip {
+        top: auto;
+        left: 50%;
+        right: auto;
+        bottom: calc(100% + 8px);
+        transform: translateX(-50%) translateY(3px);
+      }
+      #stage[data-tray-dir="up"] .slot--side .tip {
+        top: calc(100% + 8px);
+        left: 50%;
+        right: auto;
+        bottom: auto;
+        transform: translateX(-50%) translateY(-3px);
+      }
+      /* Po regule wspólnej wyżej, bo ma tę samą moc i wygrywa kolejnością. */
+      #stage[data-view="tray"] .slot--side:hover .tip {
+        transform: translateX(-50%) translateY(0);
+      }
+
+      /* Kółko pod kursorem idzie na wierzch razem ze swoim dymkiem.
+         Bez tego o pierwszeństwie decydowałaby kolejność w dokumencie —
+         czyli dymek gniazda wcześniejszego chowałby się pod gniazdem
+         późniejszym, choćby leżał w wolnym miejscu. */
+      .slot:hover {
+        z-index: 2;
       }
 
       #stage[data-view="list"] #badge,
@@ -1106,6 +1162,14 @@
         <symbol id="w-plus" viewBox="0 0 24 24">
           <path d="M12 5v14M5 12h14" />
         </symbol>
+        <!-- Notatnik: zeszyt spięty przy grzbiecie. Od `w-note` (jedna
+             kartka) różni się tym, czym różni się naprawdę — kartek jest
+             wiele i trzymają się razem. -->
+        <symbol id="w-book" viewBox="0 0 24 24">
+          <rect x="5" y="3.5" width="14" height="17" rx="2.2" />
+          <path d="M9 3.5v17" />
+          <path d="M12 8.5h4M12 12h4" opacity=".75" />
+        </symbol>
         <symbol id="w-back" viewBox="0 0 24 24">
           <path d="M15 5l-7 7 7 7" />
         </symbol>
@@ -1262,7 +1326,12 @@
           <span class="tip">Otwórz Cribro Sift</span>
         </button>
 
-        <button class="slot slot--notes" id="slotNotes">
+        <!-- ══ RZĄD NOTATEK ══
+             Trzy gniazda w bok od znaczka, w kolejności od najlżejszego
+             do najcięższego: pokaż kartki z pulpitu, dołóż nową, otwórz
+             Notatnik. Dymki tego rzędu idą w PION — patrz .slot--side
+             w arkuszu wyżej po powód. -->
+        <button class="slot slot--side slot--notes" id="slotNotes">
           <span class="slot__face"><svg><use href="#w-note" /></svg></span>
           <span class="tip">Notatki</span>
         </button>
@@ -1271,9 +1340,17 @@
              pokazuje się i tutaj, i w „Notatkach" okna głównego, gdzie da
              się ją spokojnie dopisać. Patrz obsługa #slotNewNote
              w js/widget.js. -->
-        <button class="slot slot--new" id="slotNewNote">
+        <button class="slot slot--side slot--new" id="slotNewNote">
           <span class="slot__face"><svg><use href="#w-plus" /></svg></span>
           <span class="tip">Nowa notatka</span>
+        </button>
+
+        <!-- Notatnik: całe archiwum notatek, w osobnym oknie. Nie to samo
+             co „Notatki" obok — tamto pokazuje kartki leżące na pulpicie,
+             to otwiera wszystkie, z szukaniem, szufladami i etykietami. -->
+        <button class="slot slot--side slot--book" data-do="notebook" id="slotBook">
+          <span class="slot__face"><svg><use href="#w-book" /></svg></span>
+          <span class="tip">Otwórz Notatnik</span>
         </button>
       </div>
 

@@ -180,4 +180,38 @@ check("Nowa kartka dostaje kursor od pierwszej chwili", /onWrite\?\.\(\(\) => ed
 const main = fs.readFileSync(path.join(__dirname, "..", "src", "main", "main.js"), "utf8");
 check("…ale zwykłe wyłożenie talii uwagi nie zabiera", /if \(wanted\) win\.show\(\);\s*\n\s*else win\.showInactive\(\);/.test(main));
 
+/* ── Rząd notatek w tacy widgetu ───────────────────────────────────
+   Trzy kółka w bok od znaczka: pokaż kartki z pulpitu, dołóż nową, otwórz
+   Notatnik. Stoją jedno przy drugim, więc ich dymki NIE MOGĄ wychodzić
+   w bok — lądowały wtedy na sąsiedzie i z „Notatek" widać było trzy
+   litery. */
+const html = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "widget.html"), "utf8");
+
+check(
+  "Rząd notatek ma trzy gniazda",
+  (html.match(/class="slot slot--side/g) ?? []).length === 3,
+);
+check("…a ostatnie z nich otwiera Notatnik", /data-do="notebook"/.test(html));
+check(
+  "Dymek rzędu bocznego idzie w pion, przeciwnie do kolumny",
+  /#stage\[data-tray-dir="down"\] \.slot--side \.tip \{[\s\S]{0,200}bottom: calc\(100% \+ 8px\)/.test(html) &&
+    /#stage\[data-tray-dir="up"\] \.slot--side \.tip \{[\s\S]{0,200}top: calc\(100% \+ 8px\)/.test(html),
+);
+check(
+  "…a kółko pod kursorem idzie na wierzch razem z nim",
+  /\.slot:hover \{\s*\n\s*z-index: 2;/.test(html),
+);
+check(
+  "Okno zostawia miejsce na dymek po stronie przeciwnej do kolumny",
+  /const trayBack =/.test(main) && /const back = Math\.max\(half, trayBack\);/.test(main),
+);
+check(
+  "…i mieści cały rząd boczny w szerokości",
+  /\(WIDGET_TRAY\.sideCount - 1\) \* \(WIDGET_TRAY\.gap \+ WIDGET_TRAY\.item\)/.test(main),
+);
+check(
+  "Notatnik otwiera się osobnym oknem, nie oknem aplikacji",
+  /if \(action === "notebook"\) \{\s*\n\s*createNotesWindow\(\);/.test(main),
+);
+
 console.log("\nNotatki: dopisywanie, tytuł i przegródki działają poprawnie.");

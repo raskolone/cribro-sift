@@ -1042,6 +1042,8 @@ const EN = {
 
   /* ── Pasek menu ── */
   "Otwórz Cribro Sift": "Open Cribro Sift",
+  // Dymek gniazda w rzędzie notatek — patrz .slot--book w widget.html.
+  "Otwórz Notatnik": "Open Notes",
   "Wklejaj automatycznie": "Paste automatically",
   Zakończ: "Quit",
   "Cribro Sift — trzymaj ⌃⌥ i mów": "Cribro Sift — hold ⌃⌥ and speak",

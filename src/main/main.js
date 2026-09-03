@@ -905,13 +905,13 @@ const WIDGET_TRAY = {
   gap: 12, // odstęp od krawędzi znaczka
   tip: 8, // odstęp ikona ↔ dymek
   room: 168, // najszerszy dymek kolumny („Gęstość sita — Zgrubne")
-  roomNotes: 96, // dymek przy notatkach — jedno słowo, więc węższy
-  /* Nowa notatka stoi o jedno kółko DALEJ niż notatki, na tej samej osi
-     w bok (patrz .slot--new w widget.html). Dymek ma więc mniej miejsca
-     do krawędzi okna niż tamten — stąd osobna liczba i krótki napis
-     („Nowa notatka", nie „Nowa notatka na pulpicie", które by się tam
-     nie zmieściło). */
-  roomNew: 96,
+  /* Wysokość dymka: dziesięciopunktowy napis w ramce z odstępami.
+     Potrzebna, odkąd dymki rzędu bocznego idą w PION (patrz .slot--side
+     w widget.html) — bo od niej zależy, ile okna musi zostać po stronie
+     przeciwnej do kolumny. */
+  tipHeight: 20,
+  /* Ile gniazd stoi w bok od znaczka: notatki, nowa kartka, Notatnik. */
+  sideCount: 3,
   /* Pytanie o notatki ze spotkania wychodzi w tę samą stronę co ikonka
      notatek i jest z nich wszystkich najszersze — bo jako jedyne ma dwa
      przyciski. Ta sama liczba stoi w widget.html jako --ask-w; okno musi
@@ -928,30 +928,35 @@ const trayReach =
   (WIDGET_TRAY.count - 1) * WIDGET_TRAY.step +
   WIDGET_TRAY.margin;
 
-/** Jak daleko sięga w bok. Dwie rzeczy walczą tu o miejsce i wygrywa
-    szersza: dymek przy ikonce notatek (stoi dalej, ale jest krótki) albo
-    dymek przy kolumnie (zaczyna się przy samym znaczku, za to bywa długi).
-    Okno przycięte na którymkolwiek z nich ucinałoby napis w pół słowa. */
+/** Jak daleko sięga w bok. Trzy rzeczy walczą tu o miejsce i wygrywa
+    najszersza — okno przycięte na którejkolwiek ucinałoby to, co widać. */
 const traySide =
   Math.max(
-    WIDGET_BADGE / 2 + WIDGET_TRAY.gap + WIDGET_TRAY.item + WIDGET_TRAY.tip + WIDGET_TRAY.roomNotes,
-    /* Nowa notatka: o jedno kółko i jedną przerwę dalej niż notatki,
-       plus jej własny dymek. Liczba wychodzi mniejsza od tej przy pytaniu
-       o spotkanie, więc dziś okna nie poszerza — ale stoi tu wprost, żeby
-       poszerzyła je sama, gdyby napis albo kółka kiedyś urosły. */
+    /* RZĄD BOCZNY: notatki, nowa kartka, Notatnik. Liczy się tu samo
+       ostatnie kółko, bo dymki tego rzędu idą w PION (patrz .slot--side
+       w widget.html) i w bok nie zabierają już nic. Wcześniej to one
+       decydowały o szerokości — i mimo tego zapasu i tak lądowały jeden
+       na drugim, bo problem nie był w krawędzi okna, tylko w sąsiedzie. */
     WIDGET_BADGE / 2 +
       WIDGET_TRAY.gap +
-      WIDGET_TRAY.item / 2 +
-      WIDGET_TRAY.gap +
-      WIDGET_TRAY.item +
-      WIDGET_TRAY.item / 2 +
-      WIDGET_TRAY.tip +
-      WIDGET_TRAY.roomNew,
+      (WIDGET_TRAY.sideCount - 1) * (WIDGET_TRAY.gap + WIDGET_TRAY.item) +
+      WIDGET_TRAY.item,
+    // Dymek kolumny czynności — ten zostaje z boku i bywa długi.
     WIDGET_TRAY.item / 2 + WIDGET_TRAY.tip + WIDGET_TRAY.room,
     // Pytanie o notatki ze spotkania — stoi przy samym znaczku i jest
     // szersze od każdego dymka.
     WIDGET_BADGE / 2 + WIDGET_TRAY.gap + WIDGET_TRAY.roomAsk,
   ) + WIDGET_TRAY.margin;
+
+/**
+ * Ile okna zostaje po stronie PRZECIWNEJ do kolumny czynności.
+ *
+ * Tam wychodzą dymki rzędu bocznego, odkąd poszły w pion. Wcześniej po tej
+ * stronie zostawał sam promień znaczka z aureolą i wystarczał, bo nie było
+ * tam nic do pokazania.
+ */
+const trayBack =
+  WIDGET_TRAY.item / 2 + WIDGET_TRAY.tip + WIDGET_TRAY.tipHeight + WIDGET_TRAY.margin;
 
 const clamp = (value, low, high) => Math.min(Math.max(value, low), high);
 
@@ -1200,8 +1205,12 @@ function placeWidget(anchor, view, dirHint = null) {
      po pozostałych zostaje sam znaczek z aureolą. Okno symetryczne byłoby
      o połowę większe i o tę połowę bardziej zasłaniało cudzą pracę. */
   if (view === "badge" || view === "tray") {
-    const up = tray.dir === "up" ? trayReach : half;
-    const down = tray.dir === "down" ? trayReach : half;
+    /* Po stronie kolumny — jej zasięg. Po przeciwnej tyle, ile potrzeba na
+       dymki rzędu bocznego; nigdy mniej niż połowa pola znaczka, żeby
+       aureola miała gdzie się zmieścić. */
+    const back = Math.max(half, trayBack);
+    const up = tray.dir === "up" ? trayReach : back;
+    const down = tray.dir === "down" ? trayReach : back;
     const left = tray.side === "left" ? traySide : half;
     const right = tray.side === "right" ? traySide : half;
     return settle(
@@ -4462,12 +4471,25 @@ function registerIpc() {
       return next;
     }
 
-    /* Okno aplikacji — jedyna droga z tacy do pełnego okna i jedyne
-       gniazdo, które je otwiera. Poza widgetem prowadzi tam znaczek
-       w pasku menu; tutaj jest po to, żeby nie trzeba było celować
-       w pasek, gdy widget stoi na drugim końcu ekranu. */
+    /* Okno aplikacji — jedyna droga z tacy do PEŁNEGO okna. Poza widgetem
+       prowadzi tam znaczek w pasku menu; tutaj jest po to, żeby nie trzeba
+       było celować w pasek, gdy widget stoi na drugim końcu ekranu. */
     if (action === "app") {
       createMainWindow();
+      return true;
+    }
+
+    /* Notatnik — osobne okno na wszystkie notatki. Stoi w rzędzie notatek,
+       a nie w kolumnie czynności, bo nie jest czynnością robioną w biegu:
+       „Notatki" obok pokazują kartki leżące na pulpicie, a tutaj otwiera się
+       całość, z szukaniem i szufladami.
+
+       To DRUGIE gniazdo tacy otwierające duże okno i jedyne poza „app".
+       Znaczek nadal nie otwiera żadnego z nich — patrz komentarz przy
+       kliknięciu w znaczek w renderer/js/widget.js po powód, dla którego
+       to rozróżnienie jest pilnowane. */
+    if (action === "notebook") {
+      createNotesWindow();
       return true;
     }
     return false;
