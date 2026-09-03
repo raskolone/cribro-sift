@@ -431,6 +431,10 @@
 
   api.deck.onFold?.(fold);
   api.deck.onScale?.(applyScale);
+  /* Kartka założona plusikiem — kursor stoi w niej od pierwszej chwili.
+     Zwykłe wyłożenie talii tego nie robi i nie ma robić: talia wychodzi
+     obok tego, co ktoś właśnie pisze gdzie indziej. */
+  api.deck.onWrite?.(() => editor.focusEnd());
 
   /* Kartka pokazuje nagrywanie samą belką — jej tło robi się czerwone,
      tak samo jak znaczek w pasku menu. Przycisku mikrofonu w belce NIE MA

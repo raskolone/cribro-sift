@@ -1879,7 +1879,7 @@ function createStickyWindow(note, bounds) {
  * syncDeck) — a notatka odłożona na wierzch nie jest powodem, żeby wszystko
  * inne mrugnęło i ułożyło się od nowa.
  */
-function openDeck() {
+function openDeck(focusId = null) {
   const notes = deckNotes();
   if (!notes.length) {
     deckOpen = false;
@@ -1916,10 +1916,20 @@ function openDeck() {
     }
 
     const delay = shown++ * STICKY_STEP;
+    const wanted = note.id === focusId;
     const fold = () => {
       if (win.isDestroyed()) return;
-      win.showInactive();
+      /* Kartki wychodzą BEZ zabierania uwagi — talia ma się wyłożyć obok
+         tego, co ktoś właśnie robi. Wyjątkiem jest kartka, o którą właśnie
+         poproszono plusikiem: po ten przycisk sięga się wtedy, gdy się ma
+         co napisać, więc ma być gdzie pisać od razu. */
+      if (wanted) win.show();
+      else win.showInactive();
       win.webContents.send("sticky:fold", { dir: "out", delay, gen });
+      if (wanted) {
+        win.focus();
+        win.webContents.send("sticky:write");
+      }
     };
     if (win.webContents.isLoading()) win.webContents.once("did-finish-load", fold);
     else fold();
@@ -4613,6 +4623,10 @@ function registerIpc() {
      żeby znaczek nie musiał trzymać własnej kopii tego stanu. */
   ipcMain.handle("deck:toggle", () => toggleDeck());
   ipcMain.handle("deck:show", (_e, show) => (show ? openDeck() : hideDeck()));
+  /* Wyłożenie talii z kartką WSKAZANĄ na wierzchu i pod kursorem. Woła to
+     plusik: notatka właśnie powstała i ma się pojawić na pulpicie gotowa
+     do pisania, a nie czekać, aż ktoś ją odszuka. */
+  ipcMain.handle("deck:reveal", (_e, id) => openDeck(id));
   ipcMain.handle("deck:state", () => ({ open: deckOpen, count: deckNotes().length }));
 
   /* Escape w oknie, które samo nie ma już czego zdjąć. Talia jest ostatnią

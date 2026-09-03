@@ -146,4 +146,38 @@ const one = groupNotes([{ id: "a", updatedAt: "2026-08-20T10:00:00Z", text: "Sam
 assert.strictEqual(one.divided, false, "Jedna przegródka nie potrzebuje nagłówka");
 console.log("✓", "Jedna przegródka obywa się bez nagłówka");
 
+/* ── Plusik zakłada notatkę TAM, GDZIE ONE MIESZKAJĄ ────────────────
+   Dwie awarie pod rząd na tym jednym przycisku, obie tego samego rodzaju:
+   plusik otwierał okno zarządzania notatkami w miejscu, w którym miała
+   powstać notatka. W trybie „pulpit" notatka to kartka na pulpicie —
+   i to ona ma się pojawić, gotowa do pisania. */
+const widget = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "js", "widget.js"), "utf8");
+const check = (label, condition) => {
+  assert.ok(condition, label);
+  console.log("✓", label);
+};
+
+check(
+  "Plusik zakłada zwykłą notatkę leżącą od razu na pulpicie",
+  /api\.notes\.create\(\{ widget: true \}\)/.test(widget),
+);
+check(
+  "W trybie pulpitu wykłada ją KARTKĄ, a nie szybą nad znaczkiem",
+  /if \(mode === "desk"\) \{[\s\S]{0,320}api\.deck\.reveal\(note\.id\)/.test(widget),
+);
+check(
+  "…i taca schodzi, bo patrzy się teraz na kartkę",
+  /api\.deck\.reveal\(note\.id\);[\s\S]{0,120}return toBadge\(\);/.test(widget),
+);
+check(
+  "W trybie zwartym, gdzie kartek nie ma, zostaje po staremu",
+  /return toSticky\(note\);\n  \}/.test(widget),
+);
+
+const sticky = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "js", "sticky.js"), "utf8");
+check("Nowa kartka dostaje kursor od pierwszej chwili", /onWrite\?\.\(\(\) => editor\.focusEnd\(\)\)/.test(sticky));
+
+const main = fs.readFileSync(path.join(__dirname, "..", "src", "main", "main.js"), "utf8");
+check("…ale zwykłe wyłożenie talii uwagi nie zabiera", /if \(wanted\) win\.show\(\);\s*\n\s*else win\.showInactive\(\);/.test(main));
+
 console.log("\nNotatki: dopisywanie, tytuł i przegródki działają poprawnie.");

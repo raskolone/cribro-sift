@@ -155,6 +155,9 @@ contextBridge.exposeInMainWorld("cribro", {
   deck: {
     toggle: () => ipcRenderer.invoke("deck:toggle"),
     show: (open) => ipcRenderer.invoke("deck:show", open),
+    /* Wyłóż talię i postaw WSKAZANĄ kartkę pod kursorem. Woła to plusik:
+       notatka właśnie powstała i ma być gotowa do pisania. */
+    reveal: (id) => ipcRenderer.invoke("deck:reveal", id),
     state: () => ipcRenderer.invoke("deck:state"),
     /* Escape: schowaj talię, jeśli leży. Odpowiedź mówi, czy było co chować —
        okno pyta o to, zanim zdejmie następną własną warstwę. */
@@ -179,6 +182,8 @@ contextBridge.exposeInMainWorld("cribro", {
     // tylko kiedy i z jakim opóźnieniem, a kartka melduje, gdy skończy.
     onFold: on("sticky:fold"),
     onScale: on("sticky:scale"),
+    // „Masz tu pisać" — kartka założona plusikiem dostaje kursor od razu.
+    onWrite: on("sticky:write"),
     folded: (gen) => ipcRenderer.send("deck:folded", { gen }),
   },
 

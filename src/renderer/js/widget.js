@@ -448,10 +448,33 @@
    * Wołają to DWA przyciski — plusik w tacy (obok „Notatek") i plusik
    * w nagłówku listy. Obydwa mają zakładać dokładnie to samo, więc mają
    * jedno miejsce, w którym to robią.
+   *
+   * ══ GDZIE NOWA NOTATKA MA SIĘ POJAWIĆ ══
+   *
+   * Tam, gdzie w tym trybie mieszkają notatki — a tryby są dwa i mieszkają
+   * w nich gdzie indziej.
+   *
+   * W trybie PULPIT notatka to KARTKA NA PULPICIE, w osobnym oknie. Plusik
+   * otwierał zamiast niej szybę nad znaczkiem: okno zarządzania notatkami
+   * w miejscu, w którym miała powstać notatka. Nowa kartka leżała wtedy na
+   * pulpicie dopiero po zamknięciu tej szyby i wyłożeniu talii — czyli po
+   * dwóch krokach, o których nikt nie ma powodu wiedzieć.
+   *
+   * W trybie ZWARTYM kartek na pulpicie nie ma i szyba JEST notatką — tam
+   * zostaje po staremu.
    */
   async function newDeskNote() {
     const note = await api.notes.create({ widget: true });
     await refresh();
+
+    if (mode === "desk") {
+      /* Kartka na pulpicie, z kursorem w środku. Taca schodzi, bo to nie
+         ona jest teraz tym, na co się patrzy. */
+      deck = await api.deck.reveal(note.id);
+      renderDeck();
+      return toBadge();
+    }
+
     /* Od razu otwarta do pisania. Notatka założona i schowana pod listą
        kazałaby ją jeszcze odszukać — a sięga się po plusik wtedy, gdy się
        ma co napisać, nie kiedyś potem. */
