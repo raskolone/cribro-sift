@@ -394,6 +394,16 @@ function renderEntry(entry) {
             : ""
         }
         ${entry.pinned ? `<span class="pill pill--mint" style="padding:2px 8px">Przypięte</span>` : ""}
+        ${
+          entry.degraded
+            ? `<span class="pill pill--amber" style="padding:2px 8px" title="Sieć zawiodła przy czyszczeniu — to surowa transkrypcja">Sito niedostępne</span>`
+            : ""
+        }
+        ${
+          entry.rescued
+            ? `<span class="pill pill--mint" style="padding:2px 8px" title="Nagranie czekało lokalnie, aż wróciła sieć">Odzyskane</span>`
+            : ""
+        }
       </div>
 
       <div class="entry__text">${escape(entry.text)}</div>
@@ -422,6 +432,19 @@ function renderEntry(entry) {
 
 function renderDiff(entry) {
   const parts = window.diffWords(entry.raw, entry.text);
+
+  /* Dyktowanie tak długie, że porównanie słowo po słowie zatrzymałoby okno
+     (patrz MAX_CELLS w js/diff.js). Mówimy to wprost, zamiast pokazywać
+     pustą ramkę albo kazać czekać — sam przesiany tekst stoi wyżej i jest
+     tym, po co się tu przychodzi. */
+  if (!parts) {
+    const words = String(entry.raw ?? "").trim().split(/\s+/).filter(Boolean).length;
+    return `
+      <div class="sifted-out sifted-out--too-big">
+        ${t("Za długie dyktowanie, żeby pokazać różnicę słowo po słowie ({n} słów).", { n: words })}
+      </div>`;
+  }
+
   const body = parts
     .map((part) => `<span class="${part.type}">${escape(part.text)}</span>`)
     .join("");
@@ -3141,6 +3164,15 @@ api.onError(({ message, stage, empty }) => {
   state.error = { message, stage, empty };
   render();
 });
+
+/* Zaległości z ratunku (main/rescue.js) same wjeżdżają do historii przez
+   api.history.onNew — ten toast mówi tylko, że w ogóle coś się odzyskało,
+   bo inaczej odzyskane wpisy pojawiałyby się w spisie bez wyjaśnienia. */
+api.onRescue?.(({ done }) => {
+  if (!done) return;
+  toast(t(done === 1 ? "Odzyskano {n} zaległe nagranie" : "Odzyskano {n} zaległych nagrań", { n: done }));
+});
+
 api.settings.onChange((settings) => {
   state.settings = settings;
   window.CribroOwner = !!settings.owner;

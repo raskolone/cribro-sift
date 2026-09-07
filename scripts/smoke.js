@@ -120,6 +120,71 @@ const audio = Buffer.from("RIFFfake");
   assert.ok(bilingualPrompt.includes("NIE TŁUMACZ"), "brak zakazu tłumaczenia");
   console.log("✓ Sito wie o parze języków i ma zakaz tłumaczenia");
 
+  /* 7. Sieć potyka się raz i wraca za drugim razem — bez powtórki ginęłoby całe nagranie */
+  {
+    const originalFetch = global.fetch;
+    let attempt = 0;
+    global.fetch = async (url, init) => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("fetch failed");
+      return originalFetch(url, init);
+    };
+    out = await transcribe(audio, base);
+    assert.equal(attempt, 2, "powinna paść dokładnie jedna powtórka");
+    assert.equal(out.text, "odpowiedź gemini");
+    global.fetch = originalFetch;
+    console.log("✓ Transkrypcja: jedna potknięta sieć nie kosztuje nagrania");
+  }
+
+  /* 8. Sito padło mimo powtórki → surowy transkrypt zamiast utraty całości */
+  {
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({ ok: false, status: 500, text: async () => "" });
+    const rawText = "yyy no wiesz to działa";
+    out = await sift({ raw: rawText, settings: base });
+    assert.equal(out.text, rawText, "sito padłe powinno oddać surowy transkrypt");
+    assert.equal(out.degraded, true, "brak flagi degraded przy awarii sita");
+    global.fetch = originalFetch;
+    console.log("✓ Sito: awaria dostawcy po powtórce oddaje surowy tekst, nie wyjątek");
+  }
+
+  /* 9. Zapętlona odpowiedź dostawcy — nie wolno jej wpuścić do historii.
+
+     Prawdziwy przypadek z 7 września 2026: dwadzieścia trzy sekundy wahania
+     wróciły jako 32 765 słów, z czego 32 760 razy „no,". Taki wpis potem
+     zamrażał okno przy każdym rysowaniu listy. */
+  {
+    const { loopedTranscript } = require("../src/main/stt");
+
+    const zapetlone = ("No, yyy, wiesz, " + "no, ".repeat(32760)).trim();
+    assert.ok(loopedTranscript(zapetlone), "powtórzone no ma zostać wyłapane");
+    assert.match(loopedTranscript(zapetlone), /zaciął się na słowie/);
+
+    assert.ok(loopedTranscript("no, yyy, ".repeat(200)), "krążenie po dwóch słowach to też zapętlenie");
+
+    /* Zwykłe długie dyktowanie ma przejść — próg bez tego byłby cenzurą
+       na wypowiedzi, a nie sitem na usterki. */
+    const zwykle = Array.from({ length: 400 }, (_, i) => `słowo${i % 180}`).join(" ");
+    assert.equal(loopedTranscript(zwykle), null, "prawdziwe dyktowanie nie jest zapętleniem");
+
+    /* Krótkie powtórzenie to zniecierpliwienie, nie awaria. */
+    assert.equal(loopedTranscript("tak, tak, tak"), null, "krótkie powtórzenie ma przejść");
+    assert.equal(loopedTranscript(""), null, "pusty tekst nie jest zapętleniem");
+
+    console.log("✓ Zapętlona transkrypcja jest wyłapywana, a zwykłe dyktowanie przechodzi");
+  }
+
+  /* 10. Zapętlenie dostaje JEDNĄ powtórkę — jest losowe, więc drugi strzał
+        zwykle wraca normalnym tekstem. */
+  {
+    const { isTransient } = require("../src/main/stt");
+    const error = new Error("Transkrypcja się zapętliła — …");
+    error.kind = "zapętlenie";
+    assert.equal(isTransient(error), true, "zapętlenie ma prawo do powtórki");
+    assert.equal(isTransient(new Error("Brak klucza API")), false, "zły klucz powtórki nie dostaje");
+    console.log("✓ Zapętlenie jest ponawiane raz, a błąd klucza nie");
+  }
+
   console.log("\nWszystkie sprawdzenia przeszły.");
 })().catch((error) => {
   console.error("✗", error.message);

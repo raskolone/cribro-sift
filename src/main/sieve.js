@@ -1,7 +1,7 @@
 "use strict";
 
 const { keyFor } = require("./providers");
-const { describeError } = require("./stt");
+const { describeError, withRetry } = require("./stt");
 const { directive } = require("./languages");
 const { catalog, readMarker } = require("./commands");
 
@@ -130,7 +130,9 @@ function buildSystemPrompt(mesh, grains, customInstruction, language, command, c
  * @param {boolean} detect  czy sito ma dostać zamkniętą listę wywołań
  *   i samo rozpoznać wariant frazy (warstwa B). Włączone wyłącznie dla
  *   dyktowania — przesianie notatki na żądanie poleceń nie szuka.
- * @returns {Promise<{text, provider, model, refused, command, commandBy}>}
+ * @returns {Promise<{text, provider, model, refused, degraded, command, commandBy}>}
+ *   `degraded` oznacza, że sito zawiodło (sieć, awaria dostawcy) i `text`
+ *   to surowa, nieoczyszczona transkrypcja — patrz niżej.
  */
 async function sift({ raw, settings, command = null, detect = false }) {
   const clean = (raw ?? "").trim();
@@ -162,11 +164,29 @@ async function sift({ raw, settings, command = null, detect = false }) {
     };
   }
 
+  const dispatch = { gemini: geminiSift, openai: openaiSift, anthropic: anthropicSift }[provider];
+  if (!dispatch) throw new Error(`Nieznany dostawca sita: ${provider}`);
+
+  /*
+   * Sito padło mimo powtórki (main/stt.js:withRetry) — sieć nadal nie
+   * odpowiada albo dostawca ma awarię. Transkrypcja przeżyła, więc nie ma
+   * powodu wyrzucać całego nagrania: oddajemy surową wypowiedź tak, jak
+   * przy braku klucza wyżej, tylko z inną nazwą modelu w historii, żeby dało
+   * się to odróżnić od świadomego pominięcia sita.
+   */
   let result;
-  if (provider === "gemini") result = await geminiSift(clean, system, model, apiKey);
-  else if (provider === "openai") result = await openaiSift(clean, system, model, apiKey);
-  else if (provider === "anthropic") result = await anthropicSift(clean, system, model, apiKey);
-  else throw new Error(`Nieznany dostawca sita: ${provider}`);
+  try {
+    result = await withRetry(() => dispatch(clean, system, model, apiKey));
+  } catch (error) {
+    result = {
+      text: clean,
+      provider,
+      model: "sito niedostępne",
+      refused: false,
+      degraded: true,
+      error: String(error.message || error),
+    };
+  }
 
   /* Trafienie lokalne jest już rozstrzygnięte — znacznika wtedy nie ma po co
      szukać. Przy warstwie B pierwszą linią odpowiedzi bywa ⟦polecenie: id⟧

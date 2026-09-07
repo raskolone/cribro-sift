@@ -800,6 +800,13 @@ main:has(#view-notes:not([hidden])) {
 .sifted-out .added {
   color: var(--accent);
 }
+/* Wpis, dla którego różnicy nie liczymy (patrz MAX_CELLS w js/diff.js).
+   Ta sama ramka, ale to jest zdanie od nas, a nie cudza treść — więc
+   kursywa i przygaszony kolor, żeby nikt nie wziął go za dyktowanie. */
+.sifted-out--too-big {
+  font-style: italic;
+  color: var(--text-mute);
+}
 .sifted-out__legend {
   display: flex;
   gap: var(--s-4);

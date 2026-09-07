@@ -294,6 +294,8 @@ contextBridge.exposeInMainWorld("cribro", {
   onError: on("pipeline:error"),
   onBackend: on("hotkey:backend"),
   onPermissions: on("permissions:changed"),
+  // Nagrania z ratunku (main/rescue.js) odzyskane po powrocie sieci.
+  onRescue: on("rescue:flushed"),
 
   // Kanały wyłącznie dla HUD-a
   hud: {

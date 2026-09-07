@@ -416,6 +416,12 @@ const EN = {
   Usunięte: "Deleted",
   "Wyczyszczone. Przypięte zostały.": "Cleared. Pinned entries stayed.",
   "Połączono.": "Connected.",
+  "Za długie dyktowanie, żeby pokazać różnicę słowo po słowie ({n} słów).":
+    "Too long a dictation to show a word-by-word difference ({n} words).",
+  "Sito niedostępne": "Sieve unavailable",
+  Odzyskane: "Recovered",
+  "Odzyskano {n} zaległe nagranie": "Recovered {n} pending recording",
+  "Odzyskano {n} zaległych nagrań": "Recovered {n} pending recordings",
 
   /* ── Czas ── */
   "przed chwilą": "just now",

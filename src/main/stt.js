@@ -59,6 +59,103 @@ async function fetchWithin(url, options, ms = DEADLINE) {
   }
 }
 
+/**
+ * Usterki, po których ma sens spróbować jeszcze raz: sieć się potknęła,
+ * limit żądań akurat minął, dostawca ma chwilową czkawkę. Klucz odrzucony
+ * albo model, którego nie ma, nie znikną same po odczekaniu — te lecą dalej
+ * bez ponawiania.
+ */
+function isTransient(error) {
+  /* Zapętlenie jest LOSOWE — ten sam plik wysłany drugi raz zwykle wraca
+     normalną transkrypcją, bo model generuje za każdym razem od nowa.
+     Dlatego traktujemy je jak czkawkę sieci: jedna powtórka, a dopiero
+     druga porażka z rzędu znaczy, że to nie pech. */
+  if (error?.kind === "zapętlenie") return true;
+  const msg = String(error?.message || error || "");
+  if (/nie odpowiedział w \d+ s/.test(msg)) return true; // nasz własny czas z fetchWithin
+  if (/zwrócił błąd (429|500|502|503|504)\b/.test(msg)) return true;
+  if (/przekroczony limit zapytań/.test(msg)) return true;
+  if (/fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED/i.test(msg)) return true;
+  return false;
+}
+
+/* ══ ZAPĘTLONA TRANSKRYPCJA ══
+
+   Model potrafi zaciąć się na jednym słowie i powtarzać je aż do własnego
+   limitu odpowiedzi. Zdarzyło się to naprawdę: 7 września 2026, dwadzieścia
+   trzy sekundy wahania („No, yyy, wiesz, no, yyy…") wróciły jako 32 765 słów,
+   z czego 32 760 razy „no,". Model mielił to przez 143 sekundy — czyli sześć
+   razy dłużej, niż trwało samo nagranie, i wciąż poniżej terminu z DEADLINE,
+   więc nic tego nie przerwało.
+
+   Taki wpis nie jest tylko bezużyteczny. Jest 131 kilobajtami, które potem
+   przy KAŻDYM narysowaniu listy trzeba porównać słowo po słowie z surówką —
+   i to on zamrażał okno na kilkanaście sekund (patrz sufit w js/diff.js;
+   ten drugi próg jest po to, żeby takie coś w ogóle nie weszło do historii).
+
+   Dwa sita, oba odporne na zwykłą wypowiedź:
+
+     JEDNO SŁOWO NAD WSZYSTKIM   powyżej połowy tekstu. Nikt nie dyktuje
+                                 dwustu słów, z których co drugie jest tym
+                                 samym słowem.
+     UBOGI SŁOWNIK               mniej niż jedno słowo na dwadzieścia jest
+                                 nowe. Łapie zapętlenia, które krążą po
+                                 kilku słowach („no, yyy, no, yyy…") i tym
+                                 samym rozmywają pierwszy próg.
+
+   Oba dotyczą wyłącznie tekstów DŁUGICH. Krótkie powtórzenie bywa prawdą —
+   „tak, tak, tak" to zwykłe zniecierpliwienie, a nie usterka. */
+const LOOP_MIN_WORDS = 200;
+const LOOP_TOP_SHARE = 0.5;
+const LOOP_VOCABULARY = 0.05;
+
+/**
+ * Czy transkrypcja wygląda na zapętloną. Zwraca powód albo null.
+ *
+ * @param {string} text  tekst od dostawcy
+ * @returns {string|null}
+ */
+function loopedTranscript(text) {
+  const words = String(text ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length < LOOP_MIN_WORDS) return null;
+
+  const counts = new Map();
+  for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+
+  const [top, hits] = [...counts].reduce((best, pair) => (pair[1] > best[1] ? pair : best), ["", 0]);
+  if (hits / words.length >= LOOP_TOP_SHARE) {
+    return `dostawca zaciął się na słowie „${top}" i powtórzył je ${hits} razy`;
+  }
+  if (counts.size / words.length < LOOP_VOCABULARY) {
+    return `dostawca kręcił się w kółko po ${counts.size} słowach przez ${words.length} słów`;
+  }
+  return null;
+}
+
+const RETRY_DELAY = 2000;
+
+/**
+ * Jedno powtórzenie dla usterek, które same przechodzą.
+ *
+ * Bez tego krótkie zacięcie sieci — Wi-Fi przełączające punkt dostępu w
+ * połowie wysyłki, chwilowy 503 u dostawcy — kończyło się utratą całego
+ * nagrania, choć to samo żądanie, wysłane dwie sekundy później, przechodziło
+ * bez problemu. Druga porażka z rzędu ma już inny powód niż pech, więc wtedy
+ * błąd leci dalej — do main.js, gdzie trafia do ratunku (main/rescue.js).
+ */
+async function withRetry(run) {
+  try {
+    return await run();
+  } catch (error) {
+    if (!isTransient(error)) throw error;
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+    return await run();
+  }
+}
+
 const VERBATIM_PROMPT = `Zapisz dokładnie to, co słychać w nagraniu.
 
 Zasady:
@@ -125,9 +222,27 @@ async function transcribe(audio, settings, about = null) {
   const apiKey = keyFor(provider, settings);
   if (!apiKey) throw new Error(`Brak klucza API dla dostawcy „${provider}".`);
 
-  if (provider === "gemini") return geminiTranscribe(audio, model, apiKey, language, about);
-  if (provider === "openai") return openaiTranscribe(audio, model, apiKey, language, about);
-  throw new Error(`Nieznany dostawca transkrypcji: ${provider}`);
+  const dispatch =
+    provider === "gemini"
+      ? () => geminiTranscribe(audio, model, apiKey, language, about)
+      : provider === "openai"
+        ? () => openaiTranscribe(audio, model, apiKey, language, about)
+        : null;
+  if (!dispatch) throw new Error(`Nieznany dostawca transkrypcji: ${provider}`);
+
+  return withRetry(async () => {
+    const out = await dispatch();
+    const looped = loopedTranscript(out.text);
+    if (looped) {
+      /* Rzucamy, zamiast oddać tekst: zapętlona odpowiedź nie jest gorszą
+         transkrypcją, tylko żadną — a zapisana w historii psuje potem całą
+         listę (patrz komentarz przy loopedTranscript). */
+      const error = new Error(`Transkrypcja się zapętliła — ${looped}.`);
+      error.kind = "zapętlenie";
+      throw error;
+    }
+    return out;
+  });
 }
 
 async function geminiTranscribe(audio, model, apiKey, language, about) {
@@ -214,4 +329,13 @@ async function describeError(response, who) {
   return `${who} zwrócił błąd ${response.status}: ${detail}`;
 }
 
-module.exports = { transcribe, describeError, hintFor, fetchWithin, DEADLINE };
+module.exports = {
+  transcribe,
+  describeError,
+  hintFor,
+  fetchWithin,
+  DEADLINE,
+  isTransient,
+  withRetry,
+  loopedTranscript,
+};

@@ -29,6 +29,7 @@ const { syncNotes } = require("./sync");
 const { HotkeyEngine } = require("./hotkeys");
 const { transcribe } = require("./stt");
 const { sift, MESH } = require("./sieve");
+const rescue = require("./rescue");
 const { detect: detectCommand, byId: commandById } = require("./commands");
 const { keyFor, STT, SIEVE, OCR } = require("./providers");
 const { deliver, frontmostApp } = require("./paste");
@@ -104,6 +105,8 @@ let quickWindow = null;
 let widget = null;
 let state = "idle";
 let pendingContext = null;
+let rescueTimer = null;
+let rescuing = false;
 
 /**
  * Gdy w środowisku siedzi ELECTRON_RUN_AS_NODE=1, Electron startuje jako
@@ -1404,11 +1407,25 @@ function resetWidget() {
 
 /** Kartka przy skali 1. Skalę liczy deckScale z rozmiaru ekranu. */
 const STICKY_CARD = { width: 268, height: 296 };
-/* Granice ręcznej zmiany rozmiaru. Skala z ekranu daje kartce rozmiar
-   startowy, ale ostatnie słowo ma człowiek: jedna notatka to numer telefonu,
-   druga to plan dnia i te dwie nie potrzebują tego samego prostokąta.
-   Klamry są po to, żeby kartka nie zeszła poniżej czytelności ani nie urosła
-   w drugie okno Notatnika. */
+/* Granice ręcznej zmiany rozmiaru, PRZY SKALI 1. Skala z ekranu daje kartce
+   rozmiar startowy, ale ostatnie słowo ma człowiek: jedna notatka to numer
+   telefonu, druga to plan dnia i te dwie nie potrzebują tego samego
+   prostokąta. Klamry są po to, żeby kartka nie zeszła poniżej czytelności
+   ani nie urosła w drugie okno Notatnika.
+
+   „PRZY SKALI 1" JEST TU CAŁĄ RÓŻNICĄ i to jest poprawka, nie kosmetyka.
+   Liczby stały wcześniej w punktach ekranu i były nakładane PO przemnożeniu
+   przez skalę — więc to nie one ograniczały rozciąganie ręką, tylko samą
+   adaptację do ekranu. Kartka rozciągnięta na monitorze 2560×1440 dobijała
+   do 960 punktów wysokości i od tego miejsca w górę nie reagowała już na nic:
+   na 3840×2160 i na 5120×2880 wychodziło z tego dokładnie to samo okno
+   760×960, jedno w drugie, u wszystkich kartek naraz. Ekran rósł, kartka
+   stała — i to jest dokładnie ta usterka, którą widać jako „stickies nie
+   skalują się do rozdzielczości".
+
+   Klamra mierzy WNĘTRZE kartki, bez aureoli: aureola jest stała w pikselach
+   (cień nie rośnie z ekranem), więc skalowanie jej razem z kartką zawyżałoby
+   granicę o te trzydzieści dwa piksele na każdym ekranie. */
 const STICKY_MIN = { width: 210, height: 150 };
 const STICKY_MAX = { width: 760, height: 960 };
 /** Aureola — miejsce w oknie na cień i na wyskok animacji poza kartkę. */
@@ -1427,6 +1444,43 @@ const STICKY_GAP = 18;
    zdążyła się rozłożyć zanim wzrok wróci do pulpitu, i na tyle duże, żeby
    było widać, że kartki wychodzą jedna po drugiej, a nie mrugają razem. */
 const STICKY_STEP = 55;
+/**
+ * Klamra rozmiaru OKNA kartki na ekranie o danej skali.
+ *
+ * Granice są zapisane przy skali 1 (STICKY_MIN, STICKY_MAX), więc na każdym
+ * innym ekranie trzeba je przeliczyć tak samo, jak przelicza się samą kartkę:
+ * rośnie wnętrze, aureola zostaje. Bez tego klamra przestaje być granicą
+ * ręcznego rozciągania, a staje się sufitem adaptacji — patrz STICKY_MAX.
+ *
+ * Obszar roboczy wchodzi do rachunku jako drugi sufit: kartka większa od
+ * pulpitu nie mieści się na nim CAŁA, a reflowDeck ma potem taką odsuwać
+ * do skutku. Lepiej jej na to nie pozwolić.
+ */
+function cardLimits(scale, workArea) {
+  const span = (edge) => Math.round((edge - STICKY_HALO * 2) * scale) + STICKY_HALO * 2;
+  const max = {
+    width: span(STICKY_MAX.width),
+    height: span(STICKY_MAX.height),
+  };
+  if (workArea) {
+    max.width = Math.min(max.width, workArea.width);
+    max.height = Math.min(max.height, workArea.height);
+  }
+  return {
+    min: {
+      width: Math.min(span(STICKY_MIN.width), max.width),
+      height: Math.min(span(STICKY_MIN.height), max.height),
+    },
+    max,
+  };
+}
+
+/** Obszar roboczy ekranu, na którym leży kartka o tych granicach. */
+const areaAt = (bounds) =>
+  screen.getDisplayNearestPoint({
+    x: Math.round(bounds.x + bounds.width / 2),
+    y: Math.round(bounds.y + bounds.height / 2),
+  }).workArea;
 
 /** id notatki → okno kartki. */
 const stickyWindows = new Map();
@@ -1471,10 +1525,23 @@ function deckNotes() {
  * nie musi być mniejsza: przy 268 pikselach mieści się wszędzie, a jedyne,
  * co naprawdę przeszkadza, to napis, którego nie da się przeczytać.
  * Podłoga jest więc równa jedności — w dół nie ma po co iść.
+ *
+ * SUFITU NIE MA I TO JEST DRUGA POŁOWA TEJ SAMEJ POPRAWKI. Stała 1,45
+ * była usterką oczywistą: każdy ekran szerszy niż jakieś 2090 punktów —
+ * czyli właściwie każdy zewnętrzny monitor — trafiał w nią i dawał
+ * dokładnie tę samą kartkę. Zastąpienie jej sufitem liczonym z STICKY_MAX
+ * przesunęło tylko próg: zamiast przy 1,45 kartka stawała przy 2,72,
+ * a więc na 4K i wyżej znowu nie reagowała na nic.
+ *
+ * Sufit był tam po to, żeby skala nie wybiegła ponad klamrę, która i tak
+ * przycięłaby okno z powrotem. Odkąd klamra skaluje się razem z ekranem
+ * (patrz cardLimits), nie ma czego pilnować: przy każdej skali kartka ma
+ * dokąd urosnąć, a rachunek „ten sam ułamek pulpitu" zostaje ten sam
+ * na 1440 punktach i na 5120.
  */
 function deckScale(workArea) {
   const k = Math.min(workArea.width / 1440, workArea.height / 900);
-  return Math.min(1.45, Math.max(1, Math.round(k * 20) / 20));
+  return Math.max(1, Math.round(k * 20) / 20);
 }
 
 /** Rozmiar OKNA kartki (z aureolą) przy danej skali. */
@@ -1500,11 +1567,18 @@ const rolledHeight = (scale) => Math.round(STICKY_HEAD * scale) + STICKY_HALO * 
  *
  * Zwinięcie jest stanem, a nie rozmiarem, więc na jego czas podłoga schodzi
  * do wysokości belki i wraca razem z rozwinięciem.
+ *
+ * SUFIT IDZIE TĄ SAMĄ DROGĄ, bo okno ma go po swojemu (maxWidth/maxHeight
+ * z createStickyWindow) i on też jest granicą przy skali 1. Zostawiony
+ * nieruszony trzymałby kartkę przy 760×960 na każdym ekranie — niezależnie
+ * od tego, co policzy retuneCard.
  */
 function clampCard(win, rolled, scale) {
   if (!win || win.isDestroyed()) return;
-  const floor = rolled ? rolledHeight(scale) : STICKY_MIN.height;
-  win.setMinimumSize(STICKY_MIN.width, floor);
+  const { min, max } = cardLimits(scale, areaAt(win.getBounds()));
+  const floor = rolled ? rolledHeight(scale) : min.height;
+  win.setMinimumSize(min.width, floor);
+  win.setMaximumSize(max.width, max.height);
 }
 
 /**
@@ -1626,26 +1700,30 @@ function deckPlace(id, fallback, workArea) {
   if (!spot) return fallback;
 
   /* Rozmiar przeliczamy z ekranu na ekran tak samo jak retuneCard: aureola
-     jest stała w pikselach, więc rośnie samo wnętrze kartki. */
-  const was = Number.isFinite(saved.scale) ? saved.scale : deckScale(workArea);
-  const k = deckScale(workArea) / (was || 1);
+     jest stała w pikselach, więc rośnie samo wnętrze kartki. Klamra też jest
+     z tego ekranu, nie z jedynki — inaczej przycinałaby nie rozciąganie ręką,
+     tylko samo przeliczenie (patrz STICKY_MAX). */
+  const scale = deckScale(workArea);
+  const was = Number.isFinite(saved.scale) ? saved.scale : scale;
+  const k = scale / (was || 1);
+  const { min, max } = cardLimits(scale, workArea);
   const size = {
     width: clamp(
       Math.round((Math.round(saved.width ?? fallback.width) - STICKY_HALO * 2) * k) + STICKY_HALO * 2,
-      STICKY_MIN.width,
-      STICKY_MAX.width,
+      min.width,
+      max.width,
     ),
     height: clamp(
       Math.round((Math.round(saved.height ?? fallback.height) - STICKY_HALO * 2) * k) + STICKY_HALO * 2,
-      STICKY_MIN.height,
-      STICKY_MAX.height,
+      min.height,
+      max.height,
     ),
   };
 
   /* Zwinięta kartka układa się zwinięta: wysokość bierze się wtedy ze
      stanu, a nie z zapamiętanego rozmiaru. */
   if (saved.rolled) {
-    size.height = rolledHeight(deckScale(workArea));
+    size.height = rolledHeight(scale);
   }
 
   return placeOn(workArea, spot, size);
@@ -1761,31 +1839,29 @@ function retuneCard(win) {
      rozdęta do dolnej klamry (150 pikseli) zamiast do wysokości belki. */
   const rolled = !!store.getSettings().widget?.cards?.[win.noteId]?.rolled;
   clampCard(win, rolled, scale);
+  const { min, max } = cardLimits(scale, areaAt(bounds));
   const size = {
-    width: clamp(
-      Math.round((bounds.width - STICKY_HALO * 2) * k) + STICKY_HALO * 2,
-      STICKY_MIN.width,
-      STICKY_MAX.width,
-    ),
+    width: clamp(Math.round((bounds.width - STICKY_HALO * 2) * k) + STICKY_HALO * 2, min.width, max.width),
     height: rolled
       ? rolledHeight(scale)
-      : clamp(
-          Math.round((bounds.height - STICKY_HALO * 2) * k) + STICKY_HALO * 2,
-          STICKY_MIN.height,
-          STICKY_MAX.height,
-        ),
+      : clamp(Math.round((bounds.height - STICKY_HALO * 2) * k) + STICKY_HALO * 2, min.height, max.height),
   };
   win.setBounds({ x: bounds.x, y: bounds.y, ...size });
   win.webContents.send("sticky:scale", scale);
 }
 
 function createStickyWindow(note, bounds) {
+  /* Granice ręcznego rozciągania są zapisane przy skali 1, a okno powstaje
+     już na konkretnym ekranie — więc przeliczamy je od razu. Ustawione na
+     sztywno trzymałyby kartkę przy 760×960 na monitorze, na którym sama
+     kartka startuje z rozmiarem większym niż to. */
+  const limits = cardLimits(deckScaleAt(bounds), areaAt(bounds));
   const win = new BrowserWindow({
     ...bounds,
-    minWidth: STICKY_MIN.width,
-    minHeight: STICKY_MIN.height,
-    maxWidth: STICKY_MAX.width,
-    maxHeight: STICKY_MAX.height,
+    minWidth: limits.min.width,
+    minHeight: limits.min.height,
+    maxWidth: limits.max.width,
+    maxHeight: limits.max.height,
     show: false,
     frame: false,
     // Okno jest przezroczyste, ale KARTKA W NIM NIE JEST — przezroczysta
@@ -2012,6 +2088,26 @@ function escapeElsewhere() {
 }
 
 /**
+ * Kartka wsunięta z powrotem na pulpit — bez ruszania jej rozmiaru i bez
+ * przekładania w inne miejsce, jeśli i tak już się mieści.
+ *
+ * To samo przycięcie, które robi placeOn przy układaniu od nowa, tylko
+ * zastosowane do kartki, która ma zostać tam, gdzie ją położono.
+ */
+function nudgeInside(win, workArea) {
+  if (!win || win.isDestroyed()) return;
+  const bounds = win.getBounds();
+  const x = Math.round(
+    clamp(bounds.x, workArea.x, Math.max(workArea.x, workArea.x + workArea.width - bounds.width)),
+  );
+  const y = Math.round(
+    clamp(bounds.y, workArea.y, Math.max(workArea.y, workArea.y + workArea.height - bounds.height)),
+  );
+  if (x === bounds.x && y === bounds.y) return;
+  win.setBounds({ ...bounds, x, y });
+}
+
+/**
  * Talia po zmianie układu ekranów.
  *
  * Monitor można odłączyć w każdej chwili, także wtedy, gdy leżą na nim
@@ -2035,12 +2131,20 @@ function reflowDeck() {
       x: Math.round(bounds.x + bounds.width / 2),
       y: Math.round(bounds.y + bounds.height / 2),
     });
+    /* WYSTAJE, a nie „ma środek poza pulpitem".
+       Miara środka wyłapywała tylko kartki, które wyjechały poza ekran
+       ponad połową swojej szerokości — a nieestetyczne robi się o wiele
+       wcześniej. Po zejściu z 1470 na 1280 punktów kartka stojąca przy
+       prawej krawędzi wisiała blisko dwustu pikseli za nią: środek dalej
+       był na pulpicie, więc nic jej nie ruszało, a przy niezmienionej
+       skali (patrz podłoga w deckScale) nie ruszał jej też retuneCard.
+       Kartka ma mieścić się na pulpicie CAŁA — i to jest ten warunek. */
     const stray =
       on.id !== home.id ||
-      bounds.x + bounds.width / 2 < home.workArea.x ||
-      bounds.x + bounds.width / 2 > home.workArea.x + home.workArea.width ||
-      bounds.y + bounds.height / 2 < home.workArea.y ||
-      bounds.y + bounds.height / 2 > home.workArea.y + home.workArea.height;
+      bounds.x < home.workArea.x ||
+      bounds.y < home.workArea.y ||
+      bounds.x + bounds.width > home.workArea.x + home.workArea.width ||
+      bounds.y + bounds.height > home.workArea.y + home.workArea.height;
 
     if (stray) {
       // Rozmiar policzył już deckPlace pod ekran znaczka — zostaje przyjąć
@@ -2048,7 +2152,11 @@ function reflowDeck() {
       win.setBounds(deckPlace(id, spots[index], home.workArea));
       settleScale(win);
     } else {
+      /* Kartka mieści się teraz, ale retuneCard może ją powiększyć —
+         a rośnie od lewego górnego rogu, więc wyjść poza krawędź potrafi
+         dopiero po tym przeliczeniu. */
       retuneCard(win);
+      nudgeInside(win, home.workArea);
     }
     // Ustawienie z kodu nie wywołuje „moved", więc zapisujemy sami —
     // inaczej po restarcie kartka wróciłaby na nieistniejący monitor.
@@ -3731,6 +3839,47 @@ function cancelCapture() {
   setState("idle", { cancelled: true });
 }
 
+/**
+ * Dogania nagrania z ratunku (main/rescue.js) — powstałe wtedy, gdy
+ * transkrypcja nie miała jak dojść do dostawcy. Wywoływana przy każdej
+ * okazji, która sugeruje, że sieć mogła wrócić: udana dyktowanie, start
+ * aplikacji, wybudzenie komputera. Cicha z założenia — to nie jest coś,
+ * co użytkownik zamówił w tej chwili, więc porażka (dalej brak sieci) nie
+ * ma prawa wyskoczyć czerwonym paskiem.
+ */
+async function flushRescues() {
+  if (rescuing || !store) return;
+  const settings = store.getSettings();
+  if (settings.stt.provider === "mock" || !keyFor(settings.stt.provider, settings)) return;
+
+  rescuing = true;
+  try {
+    const words = (s) => s.trim().split(/\s+/).filter(Boolean).length;
+    const { done } = await rescue.flush(settings, (rescued) => {
+      const entry = store.addEntry({
+        text: rescued.text,
+        raw: settings.keepRaw ? rescued.raw : null,
+        rawWords: words(rescued.raw),
+        siftedWords: words(rescued.text),
+        mesh: settings.mesh,
+        app: rescued.app ?? null,
+        durationMs: rescued.durationMs ?? null,
+        provider: rescued.provider,
+        sttModel: rescued.sttModel,
+        note: null, // odzyskane po czasie — nie ma już okna, do którego miał trafić kursor
+        model: rescued.model,
+        rescued: true,
+      });
+      broadcast("entry:new", entry);
+    });
+    if (done > 0) broadcast("rescue:flushed", { done });
+  } catch {
+    // sieć dalej nie działa — plik(i) zostają w ratunku na kolejną okazję
+  } finally {
+    rescuing = false;
+  }
+}
+
 async function runPipeline(audioBuffer, durationMs) {
   const settings = store.getSettings();
   const context = pendingContext ?? { app: null, startedAt: Date.now() };
@@ -3807,6 +3956,7 @@ async function runPipeline(audioBuffer, durationMs) {
       note: delivery.noteId ?? context.note ?? null,
       model: result.model,
       refused: result.refused,
+      degraded: result.degraded ?? false,
       pasted: delivery.pasted,
       /* Co zadziałało i skąd. Bez tego polecenie byłoby jedyną rzeczą,
          którą aplikacja robi sama z siebie i której nie widać w zapisie —
@@ -3817,8 +3967,46 @@ async function runPipeline(audioBuffer, durationMs) {
     broadcast("entry:new", entry);
     setState("done", { entry });
     setTimeout(() => state === "done" && setState("idle"), 1600);
+    // To dyktowanie doszło, więc sieć działa — dobra okazja, żeby przy okazji
+    // dogonić to, co wcześniej utknęło w ratunku. Nieblokujące: użytkownik
+    // już dostał swój tekst i nie ma po co czekać na cudze zaległości.
+    void flushRescues();
   } catch (error) {
     const message = String(error.message || error);
+
+    /* Transkrypcja zawiodła nawet po powtórce z main/stt.js — to jedyny
+       etap, po którym NIE MA jeszcze żadnego tekstu, więc jedyne, co da się
+       ocalić, to samo nagranie. Nieważne, czy powodem jest brak sieci, zły
+       klucz czy awaria dostawcy: flushRescues() i tak spróbuje ponownie
+       dopiero, gdy klucz się znajdzie i dostawca odpowie, więc plik czeka
+       bezpiecznie niezależnie od przyczyny. Sito ma osobny fallback (patrz
+       sieve.js: `degraded`) i tekst z niego zawsze już jakiś jest — tam nie
+       ma czego chować w ratunku. */
+    /* Zapętlona odpowiedź dostawcy (patrz loopedTranscript w main/stt.js)
+       do ratunku NIE IDZIE. Ratunek jest na to, co naprawi się samo, gdy
+       wróci sieć — a tu sieć działa i klucz jest dobry; zawiódł sam model.
+       Powtórkę ma już za sobą (withRetry), więc odkładanie nagrania na
+       zegar znaczyłoby mielenie tych samych 143 sekund co kwadrans, bez
+       nadziei na inny wynik. Mówimy wprost, co się stało, i zostawiamy
+       decyzję o powtórzeniu człowiekowi. */
+    if (error.kind === "zapętlenie") {
+      tellError(stage, `${message} Powiedz to jeszcze raz — przy powtórce zwykle przechodzi.`);
+      setState("idle", { error: `${stage}: ${message}` });
+      return;
+    }
+
+    if (stage === "transkrypcja" && audioBuffer?.length && settings.stt.provider !== "mock") {
+      rescue.stash(audioBuffer, {
+        app: context.app,
+        durationMs,
+        language: settings.language,
+        reason: message,
+      });
+      tellError(stage, `${message} Nagranie zapisałem lokalnie — spróbuję ponownie, gdy sieć wróci.`);
+      setState("idle", { error: `${stage}: ${message}`, rescued: true });
+      return;
+    }
+
     tellError(stage, message);
     setState("idle", { error: `${stage}: ${message}` });
   }
@@ -4751,7 +4939,8 @@ function registerIpc() {
 
     const full = cards[id]?.fullHeight ?? deckCardSize(scale).height;
     clampCard(win, false, scale);
-    win.setBounds({ ...bounds, height: clamp(full, STICKY_MIN.height, STICKY_MAX.height) });
+    const back = cardLimits(scale, areaAt(bounds));
+    win.setBounds({ ...bounds, height: clamp(full, back.min.height, back.max.height) });
     store.saveSettings({ widget: { cards: { [id]: { rolled: false } } } });
     return true;
   });
@@ -4759,12 +4948,17 @@ function registerIpc() {
   ipcMain.on("deck:resize", (event, { id, width, height, commit } = {}) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;
-    const { x, y } = win.getBounds();
+    const bounds = win.getBounds();
+    const { x, y } = bounds;
+    /* Granice tego ekranu, nie te przy skali 1: na dużym monitorze kartka
+       ma się dać rozciągnąć proporcjonalnie dalej, a na małym proporcjonalnie
+       mniej — inaczej uchwyt zatrzymywałby się w tym samym miejscu wszędzie. */
+    const { min, max } = cardLimits(win.deckScale ?? deckScaleAt(bounds), areaAt(bounds));
     win.setBounds({
       x,
       y,
-      width: clamp(Math.round(width), STICKY_MIN.width, STICKY_MAX.width),
-      height: clamp(Math.round(height), STICKY_MIN.height, STICKY_MAX.height),
+      width: clamp(Math.round(width), min.width, max.width),
+      height: clamp(Math.round(height), min.height, max.height),
     });
     // Zapis dopiero na puszczenie uchwytu: w trakcie ruchu byłoby ich
     // sześćdziesiąt na sekundę, a liczy się dopiero to, co zostało.
@@ -5626,6 +5820,17 @@ function guardWindows() {
        wisiałby w spisie na zawsze. */
     meetings.recover();
 
+    /* Dyktowania, które utknęły w ratunku (main/rescue.js) podczas
+       poprzedniego uruchomienia — sieć mogła wrócić, zanim ktokolwiek
+       zdążył dziś nacisnąć mikrofon. Sprzątanie starszych niż tydzień
+       jedzie od razu; próba dogonienia — z sekundowym zapasem, żeby nie
+       walczyć o uwagę procesu z resztą rzeczy, które startują w tej samej
+       chwili. Potem zegar co kwadrans, na wypadek gdyby aplikacja stała
+       otwarta cały dzień bez ani jednego dyktowania. */
+    rescue.purgeExpired();
+    setTimeout(() => void flushRescues(), 3000);
+    rescueTimer = setInterval(() => void flushRescues(), 15 * 60 * 1000);
+
     applySpellcheck(store.getSettings());
     // Menu pod prawym przyciskiem dostaje każde okno, także to otwarte
     // później — dopinanie go w każdej funkcji tworzącej okno z osobna
@@ -5703,6 +5908,11 @@ function guardWindows() {
       watcher?.stop();
     });
     powerMonitor.on("resume", () => applyDetect());
+    // Wybudzenie to najlepsza okazja, żeby sprawdzić ratunek: usypianie
+    // laptopa w połowie słabego Wi-Fi to dokładnie ten przypadek, dla
+    // którego rescue.js istnieje. Zwłoka, bo interfejs sieciowy wraca
+    // chwilę po samym procesie, nie razem z nim.
+    powerMonitor.on("resume", () => setTimeout(() => void flushRescues(), 5000));
     /* Zablokowany ekran to nie to samo co uśpiony komputer — rozmowa potrafi
        trwać dalej, gdy blokada zapadła sama. Dlatego przy blokadzie nagrania
        NIE KOŃCZYMY; zwalniamy tylko pilnowanie, a nagranie chroni cisza
