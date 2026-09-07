@@ -8,8 +8,9 @@
  * kształt notatki powstaje bez udziału człowieka. Jeśli coś ma się rozjechać,
  * rozjedzie się właśnie tutaj.
  *
- * Tytuł notatki nie jest osobnym polem — jest jej pierwszą linią. Zmiana
- * tytułu przepisuje więc tekst notatki i musi zostawić jego formę w spokoju.
+ * Nazwa notatki JEST osobnym polem (`note.title`). Nazwanie notatki nie ma
+ * prawa dopisać ani przepisać jednej litery jej treści — a notatka bez nazwy
+ * ma się dalej podpisywać pierwszą linią.
  */
 const assert = require("assert");
 const Module = require("module");
@@ -81,35 +82,27 @@ vm.runInContext(
   fs.readFileSync(path.join(__dirname, "../src/renderer/js/notes-core.js"), "utf8"),
   sandbox,
 );
-const { retitle, groupNotes } = sandbox.window.NotesCore;
+const { titleOf, rawTitle, ownTitle, saveTitle, previewOf, groupNotes } =
+  sandbox.window.NotesCore;
+
+const NAMED = { id: "n1", title: "Plan dnia", text: "Zadzwonić do Ani\n\nWysłać raport." };
+const PLAIN = { id: "n2", text: "## Spotkanie\n\nRaport na czwartek." };
 
 cases.push(
+  ["Nazwa własna wygrywa z pierwszą linią", titleOf(NAMED), "Plan dnia"],
+  ["Notatka bez nazwy podpisuje się pierwszą linią", titleOf(PLAIN), "Spotkanie"],
+  ["Notatka pusta i nienazwana nie ma się jak nazwać", titleOf({ text: "" }), "Bez tytułu"],
+  ["Do przepisania idzie ta nazwa, którą widać", rawTitle(PLAIN), "Spotkanie"],
+  ["Białe znaki w nazwie nie robią z niej nazwy", ownTitle({ title: "   " }), ""],
   [
-    "Nowy tytuł wchodzi w pierwszą linię",
-    retitle("Spotkanie z Anią\n\nRaport na czwartek.", "Spotkanie z Anią i Piotrem"),
-    "Spotkanie z Anią i Piotrem\n\nRaport na czwartek.",
+    "Zajawka nazwanej notatki zaczyna się od jej pierwszego zdania",
+    previewOf(NAMED),
+    "Zadzwonić do Ani Wysłać raport.",
   ],
   [
-    "Nagłówek zostaje nagłówkiem",
-    retitle("## Spotkanie\n\nRaport.", "Spotkanie z klientem"),
-    "## Spotkanie z klientem\n\nRaport.",
-  ],
-  [
-    "Punkt listy zostaje punktem listy",
-    retitle("- zadzwonić do Ani\n- wysłać raport", "zadzwonić do Ani przed 12"),
-    "- zadzwonić do Ani przed 12\n- wysłać raport",
-  ],
-  [
-    "Puste linie na początku zostają na miejscu",
-    retitle("\n\nRaport.", "Czwartek"),
-    "\n\nCzwartek",
-  ],
-  ["Pusta notatka bierze tytuł jako treść", retitle("", "Czwartek"), "Czwartek"],
-  ["Pusty tytuł nie rusza notatki", retitle("Raport.", "   "), "Raport."],
-  [
-    "Tytuł jest jedną linią, także wklejony",
-    retitle("Raport.", " Spotkanie\nz Anią "),
-    "Spotkanie z Anią",
+    "Zajawka nienazwanej pomija pierwszą linię, bo to ona jest tytułem",
+    previewOf(PLAIN),
+    "Raport na czwartek.",
   ],
 );
 
@@ -176,6 +169,13 @@ check(
 
 const sticky = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "js", "sticky.js"), "utf8");
 check("Nowa kartka dostaje kursor od pierwszej chwili", /onWrite\?\.\(\(\) => editor\.focusEnd\(\)\)/.test(sticky));
+/* Nagłówek kartki nazywa notatkę i na tym kończy swoją władzę: żadnej
+   drogi z belki do treści już stąd nie ma. */
+check(
+  "Przepisany nagłówek kartki idzie w nazwę, nie w tekst notatki",
+  /onCommit: async \(title\) => \{\s*await saveTitle\(api, target, title\);/.test(sticky) &&
+    !/setMarkdown\([^)]*\)/.test(sticky.slice(sticky.indexOf("function startRename"), sticky.indexOf("function showTitle"))),
+);
 
 const main = fs.readFileSync(path.join(__dirname, "..", "src", "main", "main.js"), "utf8");
 check("…ale zwykłe wyłożenie talii uwagi nie zabiera", /if \(wanted\) win\.show\(\);\s*\n\s*else win\.showInactive\(\);/.test(main));
@@ -214,4 +214,34 @@ check(
   /if \(action === "notebook"\) \{\s*\n\s*createNotesWindow\(\);/.test(main),
 );
 
-console.log("\nNotatki: dopisywanie, tytuł i przegródki działają poprawnie.");
+/* ── Nazwanie notatki nie rusza jej treści ─────────────────────────
+   To jest cała różnica między nagłówkiem kartki na pulpicie dawniej
+   i dziś: dawniej wpisane w nagłówek słowo lądowało w pierwszej linii
+   notatki, więc kartka nazwana „Recall" miała „Recall" także w środku. */
+
+(async function titleField() {
+  const sent = [];
+  const api = { notes: { update: async (id, patch) => (sent.push({ id, patch }), patch) } };
+
+  const note = { id: "n3", text: "Zadzwonić do Ani\n\nWysłać raport.", title: null };
+  const before = note.text;
+
+  await saveTitle(api, note, " Plan   dnia ");
+  check("Nazwa idzie w pole title, jedną linią i bez zdwojonych spacji", note.title === "Plan dnia");
+  check("…a treść notatki zostaje co do litery", note.text === before);
+  check(
+    "…i tylko nazwa jedzie do zapisu",
+    JSON.stringify(sent.at(-1)) === JSON.stringify({ id: "n3", patch: { title: "Plan dnia" } }),
+  );
+  check("Nazwana notatka podpisuje się swoją nazwą", titleOf(note) === "Plan dnia");
+
+  await saveTitle(api, note, "   ");
+  check("Pusta nazwa zdejmuje własny tytuł", note.title === null);
+  check("…i notatka wraca do pierwszej linii", titleOf(note) === "Zadzwonić do Ani");
+  check("…dalej nie tknąwszy treści", note.text === before);
+})()
+  .then(() => console.log("\nNotatki: dopisywanie, tytuł i przegródki działają poprawnie."))
+  .catch((problem) => {
+    console.error(problem);
+    process.exit(1);
+  });

@@ -1754,8 +1754,8 @@ function rememberCard(id, win) {
 }
 
 /**
- * Tytuł notatki tak, jak widzi go lista: pierwsza niepusta linia, bez
- * znaczników Markdownu.
+ * Tytuł notatki tak, jak widzi go lista: nazwa własna, a gdy notatka jej
+ * nie ma — pierwsza niepusta linia, bez znaczników Markdownu.
  *
  * Powtórzenie tego, co robi titleOf w renderer/js/notes-core.js — i to
  * jest świadome. Tamten plik należy do przeglądarki (woła t(), uiLocale()
@@ -1764,6 +1764,11 @@ function rememberCard(id, win) {
  * więcej, niż jest wart.
  */
 function noteTitle(note) {
+  // Nazwa wpisana ręką wygrywa z treścią — plik i strona w Notion mają
+  // nazywać się tak, jak notatka nazywa się na ekranie.
+  const own = String(note?.title ?? "").replace(/\s+/g, " ").trim();
+  if (own) return own.slice(0, 60);
+
   const plain = (line) =>
     String(line ?? "")
       .replace(/^\s*(#{1,6}\s+|[-*]\s+\[[ xX]\]\s+|[-*]\s+|>\s?|\d+\.\s+)/, "")

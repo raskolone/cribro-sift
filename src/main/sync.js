@@ -33,10 +33,18 @@ const BASE_COLUMNS = "local_id,text,pinned,color,created_at,updated_at,deleted_a
    synchronizacja. Pytamy o nie raz i, gdy ich nie ma, chodzimy bez nich do
    końca uruchomienia (patrz missingColumn niżej). */
 const EXTRA_COLUMNS = "folder,tags,align";
+/* Nazwa notatki dojechała jeszcze później niż tamte, więc ma WŁASNĄ flagę,
+   a nie miejsce w tamtej grupie. Wrzucona do jednego worka zabierałaby
+   szufladę i etykiety każdemu, kto ma u siebie starszą bazę: jedna odmowa
+   zdejmuje całą grupę naraz. Zdejmowane są więc po kolei — najpierw to,
+   co dołożone najpóźniej. */
+const TITLE_COLUMN = "title";
 const PAGE = 500; // ile wierszy na jedno pobranie
 const BATCH = 100; // ile wierszy na jedną wysyłkę
 const TOMBSTONE_DAYS = 30;
 
+/** Czy serwer zna nazwę notatki. Sprawdzane raz, przy pierwszej próbie. */
+let titled = true;
 /** Czy serwer zna szufladę i etykiety. Sprawdzane raz, przy pierwszej próbie. */
 let extended = true;
 
@@ -50,6 +58,33 @@ let extended = true;
  */
 const missingColumn = (error) =>
   /column .*does not exist|schema cache|PGRST204|42703/i.test(String(error?.message ?? error));
+
+/**
+ * Zdjęcie najmłodszej z kolumn, których baza może nie mieć. Zwraca false,
+ * gdy nie ma już czego zdejmować — wtedy odmowa jest odmową i leci dalej.
+ */
+function dropOptional() {
+  if (titled) {
+    titled = false;
+    return true;
+  }
+  if (extended) {
+    extended = false;
+    return true;
+  }
+  return false;
+}
+
+/** Żądanie powtarzane bez kolumn, których serwer nie zna. */
+async function withOptional(run) {
+  for (;;) {
+    try {
+      return await run();
+    } catch (error) {
+      if (!missingColumn(error) || !dropOptional()) throw error;
+    }
+  }
+}
 
 const time = (value) => (value ? Date.parse(value) || 0 : 0);
 
@@ -67,6 +102,8 @@ function toRow(note, userId) {
     updated_at: note.updatedAt ?? note.at ?? new Date().toISOString(),
     deleted_at: note.deletedAt ?? null,
   };
+  // Nagrobek nie niesie nazwy tak samo, jak nie niesie treści.
+  if (titled) row.title = note.deletedAt ? null : (note.title ?? null);
   if (extended) {
     row.folder = note.deletedAt ? null : (note.folder ?? null);
     row.tags = note.deletedAt ? [] : (Array.isArray(note.tags) ? note.tags : []);
@@ -82,6 +119,7 @@ function toNote(row) {
     at: row.created_at,
     updatedAt: row.updated_at,
     text: row.deleted_at ? "" : (row.text ?? ""),
+    title: row.deleted_at ? null : (row.title ?? null),
     pinned: !row.deleted_at && !!row.pinned,
     color: row.color ?? "default",
     folder: row.deleted_at ? null : (row.folder ?? null),
@@ -164,13 +202,9 @@ async function syncNotes({ client, store, onProgress }) {
         body: slice.map((note) => toRow(note, userId)),
         headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
       });
-    try {
-      await push();
-    } catch (error) {
-      if (!extended || !missingColumn(error)) throw error;
-      extended = false;
-      await push(); // toRow czyta `extended` przy każdym wywołaniu
-    }
+    // toRow czyta flagi przy każdym wywołaniu, więc powtórka idzie już
+    // bez kolumny, której serwer nie zna.
+    await withOptional(push);
     for (const note of slice) note.syncedAt = note.updatedAt;
   }
 
@@ -196,19 +230,14 @@ async function pull({ client, cursor }) {
 
   for (let offset = 0; ; offset += PAGE) {
     const ask = () => {
-      const columns = extended ? `${BASE_COLUMNS},${EXTRA_COLUMNS}` : BASE_COLUMNS;
+      const columns = [BASE_COLUMNS, titled && TITLE_COLUMN, extended && EXTRA_COLUMNS]
+        .filter(Boolean)
+        .join(",");
       return client.rest(
         `/notes?select=${columns}${filter}&order=synced_at.asc&limit=${PAGE}&offset=${offset}`,
       );
     };
-    let data;
-    try {
-      ({ data } = await ask());
-    } catch (error) {
-      if (!extended || !missingColumn(error)) throw error;
-      extended = false;
-      ({ data } = await ask());
-    }
+    const { data } = await withOptional(ask);
     const page = Array.isArray(data) ? data : [];
     rows.push(...page);
     if (page.length < PAGE) break;

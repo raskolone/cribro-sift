@@ -122,11 +122,13 @@ const sheet = (name) => fs.readFileSync(path.join(RENDERER, "css", name), "utf8"
 /**
  * Treść notatki bez linii, która jest jej tytułem.
  *
- * Tytuł notatki nie jest osobnym polem — jest jej pierwszą linią. Na kartce
- * stoi już u góry, w metryczce, więc zostawiony też w treści wyglądałby jak
- * pomyłka: ten sam napis dwa razy, jeden pod drugim.
+ * Notatka bez własnej nazwy podpisuje się pierwszą linią (patrz titleOf
+ * w renderer/js/notes-core.js). Ta linia stoi na kartce u góry, w metryczce,
+ * więc zostawiona też w treści wyglądałaby jak pomyłka: ten sam napis dwa
+ * razy, jeden pod drugim. Notatce NAZWANEJ nie zdejmujemy nic — jej pierwsze
+ * zdanie nie jest tytułem, a porównanie niżej samo to rozpoznaje.
  *
- * Zdejmujemy go WYŁĄCZNIE wtedy, gdy jest nagłówkiem albo zwykłym zdaniem.
+ * Zdejmujemy tę linię WYŁĄCZNIE wtedy, gdy jest nagłówkiem albo zwykłym zdaniem.
  * Notatka zaczynająca się od punktu listy („- [ ] zadzwonić") ma tytuł
  * wzięty z tego punktu — a punkt jest treścią i musi zostać, inaczej
  * z kartki zniknęłoby zadanie.
@@ -154,7 +156,7 @@ function bodyOf(text, title) {
  * Kartka jako kompletny dokument HTML.
  *
  * @param {object} note   notatka ze store
- * @param {string} title  tytuł (pierwsza linia — patrz notes-core.js)
+ * @param {string} title  nazwa notatki (patrz noteTitle w main.js)
  * @param {string} locale język, w którym wypisujemy datę
  */
 function sheetOf(note, { title, locale = "pl-PL" } = {}) {

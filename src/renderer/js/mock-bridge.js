@@ -373,6 +373,8 @@ if (!window.cribro) {
             at: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             text: "",
+            // Nazwa notatki — osobne pole, tak samo jak w store.createNote.
+            title: null,
             pinned: false,
             color: "default",
             folder: null,

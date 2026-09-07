@@ -37,8 +37,27 @@
           .replace(/[*_`]/g, "")
           .trim();
 
-  /** Tytuł to pierwsza niepusta linia — nikt w trakcie rozmowy nie wymyśla nazwy. */
-  const rawTitle = (note) => (note?.text ?? "").split("\n").map(plain).find(Boolean) ?? "";
+  /* ── Tytuł ──────────────────────────────────────────────────────
+     Tytuł jest OSOBNYM POLEM notatki (`note.title`), a nie jej pierwszą
+     linią. To rozróżnienie ma jeden konkretny powód: nagłówek kartki na
+     pulpicie służy do nazwania notatki, a nazwanie jej nie może dopisywać
+     ani przepisywać treści. Wpisane w nagłówek słowo zostawało wcześniej
+     pierwszym zdaniem notatki — kartka nazwana „Recall" miała „Recall"
+     także w środku, i nie dało się tego rozdzielić.
+
+     Notatki bez własnej nazwy — a takich jest większość, bo nikt w trakcie
+     rozmowy nie wymyśla tytułu — dalej pokazują pierwszą niepustą linię.
+     Nazwa wpisana ręką przestaje za tą linią chodzić: notatka nazwana raz
+     nazywa się tak samo, choćby całą jej treść wymieniono. */
+
+  /** Nazwa wpisana ręką — albo pusty napis, gdy notatka jej nie ma. */
+  const ownTitle = (note) => String(note?.title ?? "").replace(/\s+/g, " ").trim();
+
+  /** Nazwa wzięta z treści: pierwsza niepusta linia, bez znaczników. */
+  const leadLine = (note) => (note?.text ?? "").split("\n").map(plain).find(Boolean) ?? "";
+
+  /** Nazwa notatki do przepisania: własna, a gdy jej nie ma — z treści. */
+  const rawTitle = (note) => ownTitle(note) || leadLine(note);
 
   const titleOf = (note) => {
     const first = rawTitle(note);
@@ -46,31 +65,32 @@
   };
 
   /**
-   * Zmiana tytułu, czyli przepisanie pierwszej niepustej linii — bo tam
-   * tytuł naprawdę mieszka. Forma linii zostaje: jeśli nagłówek zaczynał
-   * się od „# ", nowy tytuł też się od niego zaczyna, a notatka na dysku
-   * dalej wygląda jak Markdown, którym jest.
+   * Zapisanie nazwy notatki.
+   *
+   * Idzie w pole `title` i NIGDZIE indziej — treść notatki zostaje taka,
+   * jaka była. Pusta nazwa zdejmuje własny tytuł: notatka wraca wtedy do
+   * pierwszej linii, bo „bez nazwy" ma znaczyć to samo, co przed pierwszym
+   * przepisaniem, a nie „nazwana pustką".
+   *
+   * @param {object}   api    most do procesu głównego (window.cribro)
+   * @param {object}   note   notatka — zmieniana w miejscu, żeby widok
+   *                          pokazał nową nazwę bez powtórnego wczytania
+   * @param {string}   title  nowa nazwa
    */
-  function retitle(text, title) {
+  async function saveTitle(api, note, title) {
     const clean = String(title ?? "").replace(/\s+/g, " ").trim();
-    if (!clean) return String(text ?? "");
-
-    const lines = String(text ?? "").split("\n");
-    const index = lines.findIndex((line) => plain(line));
-    // Pusta notatka nie ma czego przepisywać — tytuł staje się jej treścią.
-    if (index === -1) return clean;
-
-    const prefix = /^\s*(?:#{1,6}\s+|[-*]\s+\[[ xX]\]\s+|[-*]\s+|>\s?|\d+\.\s+)?(?:[\u25B8\u25BE]\s*)?/.exec(
-      lines[index],
-    )[0];
-    lines[index] = prefix + clean;
-    return lines.join("\n");
+    note.title = clean || null;
+    note.updatedAt = new Date().toISOString();
+    await api.notes.update(note.id, { title: note.title });
+    return note.title;
   }
 
-  /** Dwie linijki tego, co jest w środku — bez tytułu, bo ten już widać. */
+  /* Dwie linijki tego, co jest w środku. Pierwsza linia odchodzi tylko
+     wtedy, gdy to ona jest tytułem — notatka z własną nazwą pokazuje pod
+     nią całą treść, bo inaczej gubiłaby swoje pierwsze zdanie. */
   const previewOf = (note, limit = 120) => {
     const lines = (note?.text ?? "").split("\n").map(plain).filter(Boolean);
-    return lines.slice(1).join(" ").slice(0, limit);
+    return lines.slice(ownTitle(note) ? 0 : 1).join(" ").slice(0, limit);
   };
 
   /* Liczymy słowa, nie znaki zapisu: „- [ ] zadzwonić" to jedno słowo,
@@ -200,10 +220,10 @@
   /**
    * Przepisanie tytułu w miejscu.
    *
-   * Tytuł notatki nie jest osobnym polem — jest pierwszą niepustą linią
-   * treści (patrz titleOf i retitle wyżej). Przepisywanie go jest więc
-   * przepisywaniem notatki i musi wracać tą samą drogą co każda inna
-   * zmiana tekstu, a nie własną.
+   * Nazwa notatki jest osobnym polem (patrz titleOf i saveTitle wyżej),
+   * więc przepisanie jej nie rusza treści. Ta funkcja odpowiada tylko za
+   * sam gest — pole w miejscu napisu — a co zrobić z wpisanym napisem,
+   * mówi `onCommit`; tym samym gestem nazywa się też szufladę.
    *
    * Enter kończy, Escape cofa, klik obok kończy. Notatka jest
    * wielolinijkowa, tytuł nie — dlatego `plaintext-only` i przechwycony
@@ -364,7 +384,9 @@
     const rest = words.filter((word) => !word.startsWith("#")).join(" ").toLowerCase();
     if (!rest) return true;
 
-    const hay = [String(note.text ?? ""), folderOf(note) ?? "", ...tagsOf(note)]
+    /* Nazwa własna szuka się razem z treścią — notatka nazwana „Plan dnia"
+       ma się znaleźć pod „plan", choćby tych słów w środku nie było. */
+    const hay = [ownTitle(note), String(note.text ?? ""), folderOf(note) ?? "", ...tagsOf(note)]
       .join(" ")
       .toLowerCase();
     return hay.includes(rest);
@@ -717,7 +739,8 @@
     escape,
     titleOf,
     rawTitle,
-    retitle,
+    ownTitle,
+    saveTitle,
     previewOf,
     countWords,
     when,

@@ -260,6 +260,17 @@ alter table public.notes
 alter table public.notes
   add column if not exists align text not null default 'left';
 
+-- Nazwa notatki. OSOBNA KOLUMNA, a nie pierwsza linia treści: nagłówek
+-- kartki na pulpicie służy do nazwania notatki, a nazwanie jej nie może
+-- dopisywać się do środka. `null` znaczy „nienazwana" — taka notatka
+-- podpisuje się pierwszą linią (patrz titleOf w renderer/js/notes-core.js).
+--
+-- Dołożona najpóźniej ze wszystkich, więc aplikacja pyta o nią osobno:
+-- baza bez tej kolumny traci nazwy, ale szuflada i etykiety jeżdżą dalej
+-- (patrz dropOptional w src/main/sync.js).
+alter table public.notes
+  add column if not exists title text;
+
 create index if not exists notes_user_synced_idx
   on public.notes (user_id, synced_at);
 

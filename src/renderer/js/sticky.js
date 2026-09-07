@@ -30,7 +30,7 @@
   const {
     titleOf,
     rawTitle,
-    retitle,
+    saveTitle,
     countWords,
     colorOf,
     NOTE_COLORS,
@@ -104,8 +104,7 @@
   }
 
   function render() {
-    $("#title").textContent = titleOf(note);
-    document.title = `${titleOf(note)} — Cribro Sift`;
+    showTitle();
     editor.setMarkdown(note.text);
     paint();
     setWords();
@@ -150,8 +149,15 @@
   }
 
   /* ── Tytuł ──────────────────────────────────────────────────────
-     Tytuł jest pierwszą niepustą linią notatki, więc przepisanie go jest
-     przepisaniem treści — i wraca tą samą drogą co pisanie w kartce. */
+     Nagłówek kartki NIE JEST pierwszą linią notatki: nazwa siedzi we
+     własnym polu (`note.title`, patrz saveTitle w js/notes-core.js).
+     Kartka nazwana „Plan dnia" ma się tak nazywać i mieć w środku plan,
+     a nie słowa „Plan dnia" jako pierwsze zdanie — a to właśnie robiło
+     wcześniejsze przepisywanie tytułu w treść.
+
+     Skutek uboczny jest zamierzony: od chwili nazwania nagłówek stoi
+     w miejscu. Notatka nienazwana dalej podpisuje się pierwszą linią
+     i zmienia podpis razem z nią. */
 
   function startRename() {
     if (!note) return;
@@ -159,17 +165,17 @@
     renameInPlace($("#title"), {
       text: rawTitle(target),
       onCommit: async (title) => {
-        target.text = retitle(target.text, title);
-        editor.setMarkdown(target.text);
-        await api.notes.update(target.id, { text: target.text });
+        await saveTitle(api, target, title);
         setState(t("Zapisane"));
       },
-      onEnd: () => {
-        $("#title").textContent = titleOf(target);
-        document.title = `${titleOf(target)} — Cribro Sift`;
-        setWords();
-      },
+      onEnd: () => showTitle(target),
     });
+  }
+
+  /** Nazwa kartki w belce i w tytule okna — zawsze te same dwa miejsca. */
+  function showTitle(target = note) {
+    $("#title").textContent = titleOf(target);
+    document.title = `${titleOf(target)} — Cribro Sift`;
   }
 
   function setWords() {
@@ -189,8 +195,9 @@
     note.text = editor.getMarkdown();
     setState(t("Zapisuję…"), "saving");
     setWords();
-    // Tytuł kartki to pierwsza linia notatki, więc jedzie razem z pisaniem.
-    $("#title").textContent = titleOf(note);
+    /* Nienazwana kartka podpisuje się pierwszą linią, więc podpis jedzie
+       razem z pisaniem. Nazwana stoi w miejscu — titleOf pilnuje różnicy. */
+    showTitle();
 
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => void flushSave(), SAVE_DELAY);

@@ -37,7 +37,7 @@
   const {
     titleOf,
     rawTitle,
-    retitle,
+    saveTitle,
     previewOf,
     countWords,
     when,
@@ -591,9 +591,10 @@
   }
 
   /* ── Tytuł ──────────────────────────────────────────────────────
-     Tytuł notatki nie jest osobnym polem, tylko jej pierwszą niepustą
-     linią — przepisanie go jest więc przepisaniem treści i wraca tą samą
-     drogą co każda inna zmiana (patrz renameInPlace w notes-core.js). */
+     Nazwa notatki jest osobnym polem (patrz saveTitle w notes-core.js):
+     przepisanie jej nie rusza ani jednej litery treści. Tak samo, tym
+     samym gestem i z tym samym skutkiem, nazywa się kartkę na pulpicie —
+     bo to ta sama notatka. */
 
   function startRename() {
     if (!current) return;
@@ -601,15 +602,11 @@
     renameInPlace($("#stickyTitle"), {
       text: rawTitle(note),
       onCommit: async (title) => {
-        note.text = retitle(note.text, title);
-        saved = note.text;
-        editor.setMarkdown(note.text);
-        await api.notes.update(note.id, { text: note.text });
+        await saveTitle(api, note, title);
         await refresh();
       },
       onEnd: () => {
         $("#stickyTitle").textContent = titleOf(note);
-        setWords();
       },
     });
   }

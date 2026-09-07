@@ -441,6 +441,13 @@ class Store {
       at: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       text: "",
+      /* Nazwa notatki — osobne pole, nie pierwsza linia treści. `null`
+         znaczy „nienazwana": taka notatka podpisuje się pierwszą linią
+         i zmienia podpis razem z nią (patrz titleOf w notes-core.js).
+         Nazwana raz przestaje za treścią chodzić — i o to chodzi, bo
+         nagłówek kartki na pulpicie ma nazywać notatkę, a nie dopisywać
+         się do niej. */
+      title: null,
       pinned: false,
       // Kolor karteczki na pulpicie. „default" znaczy granat — ten sam,
       // co reszta aplikacji (patrz [data-color] w renderer/css/tokens.css).
@@ -487,6 +494,7 @@ class Store {
     const note = this.notes.find((item) => item.id === id);
     if (!note) return true;
     note.text = "";
+    note.title = null;
     note.previousText = null;
     note.pinned = false;
     note.deletedAt = new Date().toISOString();

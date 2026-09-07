@@ -11,7 +11,7 @@ const api = window.cribro;
 const {
   titleOf,
   rawTitle,
-  retitle,
+  saveTitle,
   previewOf,
   countWords,
   when,
@@ -178,9 +178,10 @@ async function togglePin(id) {
 }
 
 /**
- * Przepisanie tytułu na kaflu. Tytuł nie jest osobnym polem — jest
- * pierwszą linią notatki — więc jego zmiana wchodzi prosto w tekst
- * i widać ją także w edytorze obok.
+ * Przepisanie tytułu na kaflu. Nazwa notatki jest osobnym polem (patrz
+ * saveTitle w notes-core.js), więc zmiana idzie w nie, a treść w edytorze
+ * obok zostaje nietknięta — kafel nazwany „Plan dnia" ma mieć w środku
+ * plan, a nie te dwa słowa.
  */
 function startRename(element) {
   const note = state.notes.find((item) => item.id === element.closest(".note")?.dataset.id);
@@ -202,12 +203,7 @@ function startRename(element) {
     element.classList.remove("is-editing");
 
     const after = element.textContent.trim();
-    if (commit && after && after !== before) {
-      note.text = retitle(note.text, after);
-      note.updatedAt = new Date().toISOString();
-      await api.notes.update(note.id, { text: note.text });
-      if (note.id === state.selected) editor.setMarkdown(note.text);
-    }
+    if (commit && after && after !== before) await saveTitle(api, note, after);
     renderList();
     translateTree();
   };
