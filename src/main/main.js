@@ -1539,9 +1539,17 @@ function deckNotes() {
  * dokąd urosnąć, a rachunek „ten sam ułamek pulpitu" zostaje ten sam
  * na 1440 punktach i na 5120.
  */
-function deckScale(workArea) {
-  const k = Math.min(workArea.width / 1440, workArea.height / 900);
-  return Math.max(1, Math.round(k * 20) / 20);
+/**
+ * Skala kartki na tym ekranie.
+ *
+ * Punkty logiczne na macOS (DIPs) są już skalowane przez scaleFactor
+ * ekranu (Retina vs non-Retina). Kartka na pulpicie to zgrabna notatka
+ * post-it (268×296 punktów), która ma mieć naturalny, ostry rozmiar
+ * na każdym monitorze (laptop, 1440p, 4K) bez sztucznego powiększania.
+ * Większy monitor mieści po prostu więcej kartek w siatce (deckSpots).
+ */
+function deckScale(_workArea) {
+  return 1;
 }
 
 /** Rozmiar OKNA kartki (z aureolą) przy danej skali. */
@@ -4943,10 +4951,14 @@ function registerIpc() {
     }
 
     const full = cards[id]?.fullHeight ?? deckCardSize(scale).height;
+    const fullScale = cards[id]?.scale || 1;
+    const normalizedFull = fullScale > 1
+      ? Math.round((full - STICKY_HALO * 2) / fullScale) + STICKY_HALO * 2
+      : full;
     clampCard(win, false, scale);
     const back = cardLimits(scale, areaAt(bounds));
-    win.setBounds({ ...bounds, height: clamp(full, back.min.height, back.max.height) });
-    store.saveSettings({ widget: { cards: { [id]: { rolled: false } } } });
+    win.setBounds({ ...bounds, height: clamp(normalizedFull, back.min.height, back.max.height) });
+    store.saveSettings({ widget: { cards: { [id]: { rolled: false, scale: 1 } } } });
     return true;
   });
 

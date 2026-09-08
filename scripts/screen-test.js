@@ -173,21 +173,20 @@ app.whenReady().then(async () => {
   }
 
   /* ══ EKRAN WIĘKSZY ══
-     Tu kartka ma UROSNĄĆ — i to samo powiększenie ma dojść do arkusza,
-     bo okno bez pasującego `--k` rysuje kartkę w złych proporcjach. */
+     Kartka zachowuje swój naturalny, zgrabny rozmiar w punktach (nie puchnie
+     sztucznie wraz z powiększaniem ekranu), a arkusz trzyma stałą skalę (--k=1). */
   await change(1710, 1112);
   const sample = cards()[0];
   const was = settled.get(sample.noteId);
-  const grown = sample.getBounds();
-  if (grown.width > was.width) ok(`Po powiększeniu ekranu kartka urosła (${was.width} → ${grown.width})`);
-  else bad(`kartka nie urosła po powiększeniu ekranu (${was.width} → ${grown.width})`);
+  const current = sample.getBounds();
+  if (current.width === was.width) ok(`Po powiększeniu ekranu kartka zachowała naturalny rozmiar (${current.width} px)`);
+  else bad(`kartka zmieniła rozmiar po powiększeniu ekranu (${was.width} → ${current.width})`);
 
   const drawn = await scaleOf(sample);
-  const expected = (grown.width - 32) / 268; // aureola z obu stron, patrz STICKY_HALO
-  if (drawn && Math.abs(Number(drawn) - expected) < 0.02) {
-    ok(`Arkusz kartki rysuje tę samą skalę, którą dostało okno (--k=${drawn})`);
+  if (drawn && Math.abs(Number(drawn) - 1) < 0.02) {
+    ok(`Arkusz kartki zachowuje naturalną skalę (--k=${drawn})`);
   } else {
-    bad(`kartka rysuje --k=${drawn}, a jej okno ma rozmiar na ${expected.toFixed(2)}`);
+    bad(`arkusz rysuje nieoczekiwaną skalę --k=${drawn}`);
   }
 
   if (sticking(fake.workArea).length === 0) ok("Po powiększeniu ekranu kartki nadal mieszczą się całe");

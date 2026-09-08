@@ -67,21 +67,12 @@
         perspective: 1100px;
       }
 
-      /* Skalowanie do ekranu. Kartka jest rysowana w swoich własnych
-         pikselach i dopiero cała powiększana — dzięki temu odstępy,
-         zaokrąglenia i tekst rosną razem, w tych samych proporcjach.
-         Osobne przeliczanie każdego wymiaru rozjeżdżałoby się co ekran. */
+      /* Kontener kartki — w naturalnej wielkości sceny, bez sztucznego
+         rozciągania bitmapy przez GPU (transform: scale), co zapewnia
+         idealną ostrość tekstu i obrysów na każdym monitorze. */
       #zoom {
         position: absolute;
-        top: 0;
-        left: 0;
-        /* Odwrotność skali stoi osobno (--k1), zamiast dzielenia w calc:
-           mnożenie przez zmienną jest w CSS starsze i pewniejsze od
-           dzielenia przez nią, a obie liczby i tak podstawia js/sticky.js. */
-        width: calc(100% * var(--k1));
-        height: calc(100% * var(--k1));
-        transform: scale(var(--k));
-        transform-origin: 0 0;
+        inset: 0;
       }
 
       /* ── Kartka ── */
