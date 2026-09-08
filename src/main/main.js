@@ -1354,11 +1354,29 @@ function showWidget(show) {
  * da się kliknąć ikony w Docku, trzymając kursor na znaczku.
  */
 function reopenIsOurs() {
-  // Kursor na znaczku albo na jego szybie — renderer mówi to samym faktem,
-  // że kazał oknu przestać przepuszczać kliknięcia.
-  if (widget && !widget.isDestroyed() && widget.isVisible() && !widgetPassing) return true;
+  // Jeśli aplikacja nie ma ikony w Docku (showInDock === false), macOS nie
+  // ma skąd dostać kliknięcia „otwórz aplikację" z Docka. Każde zdarzenie
+  // activate jest wtedy skutkiem ubocznym kliknięcia w pływające okna
+  // (znaczek, kartki) lub uaktywnienia procesu. Główne okno wywołuje się
+  // z paska menu u góry albo przez dedykowane gniazdo w tacy widgetu.
+  if (store.getSettings().showInDock === false) return true;
 
   const point = screen.getCursorScreenPoint();
+
+  // Kursor w granicach okna widgetu (znaczek, taca, lista, kartka).
+  if (widget && !widget.isDestroyed() && widget.isVisible()) {
+    const b = widget.getBounds();
+    if (
+      point.x >= b.x &&
+      point.x <= b.x + b.width &&
+      point.y >= b.y &&
+      point.y <= b.y + b.height
+    ) {
+      return true;
+    }
+  }
+
+  // Kursor na kartce leżącej na pulpicie.
   for (const win of stickyWindows.values()) {
     if (win.isDestroyed() || !win.isVisible()) continue;
     const b = win.getBounds();
@@ -1371,6 +1389,22 @@ function reopenIsOurs() {
       return true;
     }
   }
+
+  // Kursor na jakimkolwiek oknie pomocniczym.
+  for (const win of [hud, quickWindow, shotWindow, briefingWindow]) {
+    if (win && !win.isDestroyed() && win.isVisible()) {
+      const b = win.getBounds();
+      if (
+        point.x >= b.x &&
+        point.x <= b.x + b.width &&
+        point.y >= b.y &&
+        point.y <= b.y + b.height
+      ) {
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 

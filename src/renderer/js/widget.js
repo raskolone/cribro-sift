@@ -61,11 +61,11 @@
      inaczej w aplikacji, a inaczej na wierzchu. */
   const editor = window.CribroEditor.create($("#stickyText"), { onInput: () => scheduleSave() });
 
-  const HOVER_PAD = 6;
+  const HOVER_PAD = 8;
   const SAVE_DELAY = 600;
   /* Chwila zwłoki przed zwinięciem tacy. Bez niej taca uciekałaby spod
-     kursora przy przejściu między kółkami. */
-  const COLLAPSE_DELAY = 420;
+     kursora przy przejściu między kółkami i przy czytaniu dymków. */
+  const COLLAPSE_DELAY = 900;
 
   let view = "badge"; // badge | tray | list | sticky
   /* "compact" — lista i kartka w szybie przy znaczku.
@@ -730,7 +730,13 @@
 
   function overUs(x, y) {
     const boxes = [badge.getBoundingClientRect()];
-    if (view === "tray") for (const slot of slots) boxes.push(slot.getBoundingClientRect());
+    if (view === "tray") {
+      for (const slot of slots) {
+        boxes.push(slot.getBoundingClientRect());
+        const tip = slot.querySelector(".tip");
+        if (tip) boxes.push(tip.getBoundingClientRect());
+      }
+    }
     if (view === "list" || view === "sticky") boxes.push(panel.getBoundingClientRect());
     return boxes.some((r) => inBox(r, x, y));
   }
