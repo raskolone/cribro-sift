@@ -2333,6 +2333,7 @@ async function toggleMeeting(about = null) {
       startedFromSpot = false;
       disarmRoomGone();
       const { discarded, meeting, seconds, coverage } = await meetings.stop();
+      applyDetect(store.getSettings());
       if (discarded) {
         broadcast("pipeline:error", {
           stage: "spotkanie",
@@ -2370,6 +2371,7 @@ async function toggleMeeting(about = null) {
        (znaczek, tryb „sam z siebie", kalendarz), ustawiają to u siebie —
        każda wie o swojej rozmowie więcej niż my tutaj. */
     if (room) startedFromSpot = true;
+    applyDetect(store.getSettings());
     /* Od tej chwili pilnowanie ekranu odpowiada na inne pytanie niż przed
        chwilą: nie „czy zaczęła się rozmowa", tylko „czy ta jeszcze trwa".
        Na to drugie nie wolno odpowiadać co pół minuty. */
@@ -2830,7 +2832,7 @@ async function endWithRoom(why) {
   startedFromSpot = false;
   broadcast("pipeline:error", {
     stage: "spotkanie",
-    message: `Spotkanie zakończone samo — ${why}.`,
+    message: `Spotkanie zakończone automatycznie — ${why}.`,
   });
   await toggleMeeting();
 }
@@ -2979,7 +2981,7 @@ function watchAgenda(settings = store.getSettings()) {
  */
 function applyDetect(settings = store.getSettings()) {
   const how = settings.meetings?.detect ?? "ask";
-  if (how === "off" || !canSeeScreen()) {
+  if ((how === "off" && !meetings?.recording) || !canSeeScreen()) {
     watcher?.stop();
     return;
   }
@@ -5858,9 +5860,8 @@ function guardWindows() {
          samego powodu, dla którego robi to zniknięcie okna: dyktafon
          położony na stole ma prawo przeleżeć kwadrans w ciszy. */
       onIdle: () => {
-        if (!startedFromSpot) return;
         if (store.getSettings().meetings?.stopWithMeeting === false) return;
-        void endWithRoom("od dziesięciu minut nikt nic nie mówi");
+        void endWithRoom("brak aktywności głosowej w obu torach od ponad dwóch minut");
       },
       onError: (message) => tellError("spotkanie", message),
     });

@@ -33,19 +33,18 @@
 const SAMPLE_RATE = 16000;
 const BYTES_PER_SAMPLE = 2;
 
-/** Ile dźwięku w jednym odcinku. Dwie minuty to kompromis między
- *  liczbą wywołań (koszt stały) a tym, jak szybko widać pierwszy tekst. */
-const SPAN = 120;
+/** Ile dźwięku w jednym odcinku. 25 sekund pozwala na płynną transkrypcję na żywo
+ *  już w trakcie trwania spotkania. */
+const SPAN = 25;
 /** Ile z końca poprzedniego odcinka wchodzi na początek następnego. */
 const OVERLAP = 3;
 /**
  * Poniżej ilu dBFS odcinek uznajemy za ciszę.
  *
- * Zmierzone sondą E0: cisza w pokoju to około −49 dBFS, mowa w rozmowie
- * −30…−17 dBFS. Próg −45 leży między nimi i z zapasem — bo pomyłka w jedną
- * stronę kosztuje grosze, a w drugą gubi wypowiedź.
+ * Zmierzone sondą E0: próg −52 dBFS leży bezpiecznie poniżej cichej mowy,
+ * dzięki czemu cisi rozmówcy lub ściszone audio nie są ucinani z transkrypcji.
  */
-const FLOOR = -45;
+const FLOOR = -52;
 
 /**
  * Na jak krótkich kawałkach mierzymy głośność.

@@ -1078,6 +1078,10 @@
       </header>
       <div class="meet__body">${body(meeting)}</div>
     `;
+    if (live && state.tab === "transcript") {
+      const bodyEl = $("#meetDetail .meet__body");
+      if (bodyEl) bodyEl.scrollTop = bodyEl.scrollHeight;
+    }
   }
 
   /**

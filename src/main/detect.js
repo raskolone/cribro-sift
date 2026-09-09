@@ -44,19 +44,19 @@ const ROOMS = [
     /* W rozmowie karta nazywa się „Meet – jrx-kfoz-hys" albo „Meet –
        Przegląd tygodnia". Strona startowa to „Google Meet”, bez myślnika
        i bez niczego po nim — i o nią właśnie NIE chodzi. */
-    when: /^Meet\s*[–—-]\s*(.+?)(?:\s+[-–—]\s+(?:Google Chrome|Safari|Brave|Arc|Firefox|Vivaldi))?$/,
+    when: /^Meet\s*[–—-]\s*(.+?)(?:\s+[-–—]\s+(?:Google Chrome|Safari|Brave|Arc|Firefox|Vivaldi|Microsoft Edge|Edge|Opera))?$/,
   },
   {
     kind: "zoom",
     where: "Zoom",
-    // „Zoom Meeting" to rozmowa. Samo „Zoom" i „Zoom Workplace" to program.
-    when: /^Zoom (?:Meeting|Webinar)(?:\s*[–—-]\s*(.+))?$/,
+    // „Zoom Meeting" lub po polsku „Spotkanie Zoom". Samo „Zoom" i „Zoom Workplace" to program.
+    when: /^(?:Zoom (?:Meeting|Webinar)|(?:Spotkanie|Webinar) Zoom)(?:\s*[–—-]\s*(.+))?$/,
   },
   {
     kind: "teams",
     where: "Microsoft Teams",
-    // Okno rozmowy: „Meeting in Ustalenia | Microsoft Teams".
-    when: /^(?:Meeting|Spotkanie)(?:\s+(?:in|w)\s+([^|]*?))?\s*\|\s*Microsoft Teams/,
+    // Okno rozmowy: „Meeting in Ustalenia | Microsoft Teams" lub „Spotkanie w: Ustalenia | Microsoft Teams".
+    when: /^(?:Meeting|Spotkanie)(?:\s+(?:in|w:?)\s+([^|]*?))?\s*\|\s*Microsoft Teams/,
   },
   {
     kind: "webex",

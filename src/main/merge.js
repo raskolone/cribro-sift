@@ -111,9 +111,11 @@ function repeatLength(before, after, cap) {
  * Ucinamy po SŁOWACH w tekście oryginalnym, a porównujemy na
  * znormalizowanym — inaczej zapis traciłby interpunkcję na styku odcinków.
  */
-function trimRepeat(before, after, cap = 40) {
+function trimRepeat(before, after, cap = 40, minWords = 2) {
   const repeated = repeatLength(before, after, cap);
-  if (!repeated) return String(after ?? "");
+  // Jedno słowo to za mało na zakładkę dźwiękową (3s mowy to kilka słów)
+  // i odcięcie go kasowało zwykłe spójniki na początku zdań („to", „nie", „i").
+  if (repeated < minWords) return String(after ?? "");
   const raw = String(after ?? "").trimStart();
   let seen = 0;
   let at = 0;

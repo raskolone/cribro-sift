@@ -204,34 +204,24 @@ class Meetings {
    * więcej znaczyłoby, że o zepsutym nagraniu dowiadujesz się po kwadransie.
    */
   static get QUIET_LIMIT() {
-    return 3;
+    return 6;
   }
 
   /**
    * Po ilu cichych odcinkach W OBU TORACH rozmowa jest skończona.
    *
-   * Pięć odcinków to blisko dziesięć minut, w których nie padło ani jedno
-   * słowo po żadnej stronie. Nie ma takiej rozmowy — jest za to spotkanie,
-   * z którego wszyscy wyszli, i okno, które komuś zostało otwarte.
-   *
-   * Więcej niż QUIET_LIMIT i nie jest to przeoczenie: jedna strona milcząca
-   * pięć minut to usterka nagrania, o której trzeba powiedzieć w trakcie;
-   * obie strony milczące dziesięć minut to koniec, po którym trzeba
-   * przestać nagrywać. Inne progi, bo inne pytania.
+   * Sześć odcinków po 25 sekund to około 2.5 minuty, w których nie padło ani jedno
+   * słowo po żadnej stronie. Oznacza to spotkanie, z którego wszyscy wyszli.
    */
   static get IDLE_LIMIT() {
-    return 5;
+    return 6;
   }
 
   /**
    * Ile pomyłek z rzędu, zanim przestaniemy próbować.
-   *
-   * Nie jedna, bo sieć potrafi mrugnąć. I nie w nieskończoność, bo przy
-   * braku klucza API każdy odcinek wracałby tym samym błędem co dwie
-   * minuty przez całą godzinę rozmowy.
    */
   static get GIVE_UP() {
-    return 3;
+    return 8;
   }
 
   /**
@@ -499,12 +489,7 @@ class Meetings {
     }
     session.quiet[piece.lane] = 0;
     session.toldIdle = false; // ktoś się odezwał — pokój znowu nie jest pusty
-    if (session.misses >= Meetings.GIVE_UP) {
-      /* Bezpiecznik przestał kasować rozmowę. Odcinek zostaje w rejestrze
-         jako stracony, nagranie z tego powodu NIE ZGINIE (patrz stop), a po
-         zakończeniu rusza przebieg naprawczy z pliku — więc „poddajemy się"
-         znaczy dziś „nie dobijamy dostawcy w trakcie", a nie „ta część
-         rozmowy przepada". */
+    if (session.fatal || session.misses >= Meetings.GIVE_UP) {
       this.#note(session, piece, "skipped");
       return;
     }
@@ -551,13 +536,14 @@ class Meetings {
         this.#stitch(session);
       } catch (problem) {
         session.misses += 1;
-        this.#settle(session, row, "failed", problem.message);
-        // Mówimy o pierwszej pomyłce i o tej, po której się poddajemy.
-        // O każdej z osobna znaczyłoby komunikat co dwie minuty przez
-        // godzinę — przy braku klucza API zawsze ten sam.
+        const msg = String(problem?.message || problem || "");
+        if (/brak klucza|invalid.*key|unauthorized|401|nieznany dostawca/i.test(msg)) {
+          session.fatal = true;
+        }
+        this.#settle(session, row, "failed", msg);
         if (session.misses === 1) {
-          this.#tell(this.onError, `Nie udało się przepisać fragmentu: ${problem.message}`);
-        } else if (session.misses === Meetings.GIVE_UP) {
+          this.#tell(this.onError, `Nie udało się przepisać fragmentu: ${msg}`);
+        } else if (session.fatal || session.misses === Meetings.GIVE_UP) {
           this.#tell(
             this.onError,
             "Przepisywanie w biegu wyłączone do końca tego spotkania — nagranie leci dalej " +
