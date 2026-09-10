@@ -149,6 +149,7 @@ class Watcher {
     this.misses = 0;
     this.empty = 0;
     this.busy = false;
+    this.throttled = false;
   }
 
   get running() {
@@ -157,7 +158,14 @@ class Watcher {
 
   /** Ile czekać do następnego spojrzenia — całe rozstrzygnięcie o rytmie. */
   get pace() {
+    if (this.throttled) return Math.max(45_000, this.idle);
     return this.empty >= this.patience ? this.idle : this.every;
+  }
+
+  /** Spowolnienie odpytywania podczas aktywnego nagrywania spotkania (oszczędność CPU). */
+  setThrottle(throttled = false) {
+    this.throttled = throttled;
+    if (this.timer) this.#tick();
   }
 
   start() {

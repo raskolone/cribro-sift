@@ -5,6 +5,7 @@ const path = require("path");
 const { app } = require("electron");
 const { normalize: normalizeLanguage } = require("./languages");
 const { BUILTINS, DEFAULTS: COMMAND_DEFAULTS } = require("./commands");
+const logger = require("./logger");
 
 /**
  * Wszystko leży lokalnie w ~/Library/Application Support/Cribro Sift/.
@@ -12,6 +13,11 @@ const { BUILTINS, DEFAULTS: COMMAND_DEFAULTS } = require("./commands");
  * przesiany tekst. Surowy transkrypt trzymamy wyłącznie, gdy użytkownik
  * sam to włączy (keepRaw).
  */
+/**
+ * Historia przesianych cleanupów trzymana jest tylko przez 7 dni.
+ * Wszystko starsze jest automatycznie kasowane, aby nie obciążać aplikacji i bazy danych.
+ */
+const HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 const DEFAULTS = {
   // Skrót — dwa klawisze trzymane razem uruchamiają nasłuch (push-to-talk).
@@ -314,6 +320,7 @@ class Store {
     // i przykrywałyby to, co użytkownik zdążył wybrać sam.
     if (wasSchema !== SCHEMA) this.#write(this.settingsPath, this.settings);
     this.history = this.#read(this.historyPath, []);
+    this.pruneHistory();
     this.notes = this.#read(this.notesPath, []);
     this.cloud = this.#read(this.cloudPath, CLOUD_STATE);
     this.meetings = this.#read(this.meetingsPath, []);
@@ -340,6 +347,7 @@ class Store {
   saveSettings(patch) {
     this.settings = deepMerge(this.settings, patch);
     this.#write(this.settingsPath, this.settings);
+    logger.logChange("USTAWIENIA", "Zapisano zmiany w ustawieniach", { keys: Object.keys(patch) });
     return this.settings;
   }
 
@@ -347,7 +355,21 @@ class Store {
     return this.history;
   }
 
+  pruneHistory(maxAgeMs = HISTORY_RETENTION_MS) {
+    const cutoff = Date.now() - maxAgeMs;
+    const before = this.history.length;
+    this.history = this.history.filter((e) => {
+      const at = new Date(e.at).getTime();
+      return !Number.isNaN(at) && at >= cutoff;
+    });
+    if (this.history.length !== before) {
+      this.#write(this.historyPath, this.history);
+    }
+    return before - this.history.length;
+  }
+
   addEntry(entry) {
+    this.pruneHistory();
     const record = {
       id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
       at: new Date().toISOString(),
@@ -357,6 +379,7 @@ class Store {
     this.history.unshift(record);
     if (this.history.length > 1000) this.history.length = 1000;
     this.#write(this.historyPath, this.history);
+    logger.logChange("HISTORIA", `Dodano wpis do historii (id: ${record.id}, słów: ${record.siftedWords ?? 0})`, { id: record.id });
     return record;
   }
 
@@ -365,17 +388,20 @@ class Store {
     if (!entry) return null;
     Object.assign(entry, patch);
     this.#write(this.historyPath, this.history);
+    logger.logChange("HISTORIA", `Zaktualizowano wpis w historii (id: ${id})`);
     return entry;
   }
 
   deleteEntry(id) {
     this.history = this.history.filter((e) => e.id !== id);
     this.#write(this.historyPath, this.history);
+    logger.logChange("HISTORIA", `Usunięto wpis z historii (id: ${id})`);
   }
 
   clearHistory() {
     this.history = this.history.filter((e) => e.pinned);
     this.#write(this.historyPath, this.history);
+    logger.logChange("HISTORIA", "Wyczyszczono historię (z zachowaniem przypiętych)");
   }
 
   /* ── Notatki ─────────────────────────────────────────────────
@@ -470,6 +496,7 @@ class Store {
     };
     this.notes.unshift(note);
     this.#write(this.notesPath, this.notes);
+    logger.logChange("NOTATKA", `Utworzono notatkę (id: ${note.id}, tytuł: "${note.title || 'bez tytułu'}")`);
     return note;
   }
 
@@ -478,6 +505,7 @@ class Store {
     if (!note) return null;
     Object.assign(note, patch, { updatedAt: new Date().toISOString() });
     this.#write(this.notesPath, this.notes);
+    logger.logChange("NOTATKA", `Zaktualizowano notatkę (id: ${id})`);
     return note;
   }
 
@@ -500,6 +528,7 @@ class Store {
     note.deletedAt = new Date().toISOString();
     note.updatedAt = note.deletedAt;
     this.#write(this.notesPath, this.notes);
+    logger.logChange("NOTATKA", `Usunięto notatkę (id: ${id})`);
     return true;
   }
 
@@ -510,6 +539,7 @@ class Store {
     note.text = joinNote(note.text, text);
     note.updatedAt = new Date().toISOString();
     this.#write(this.notesPath, this.notes);
+    logger.logChange("NOTATKA", `Dopisano tekst do notatki (id: ${id}, znaków: ${text.length})`);
     return note;
   }
 
@@ -573,15 +603,23 @@ class Store {
     };
     this.meetings.unshift(meeting);
     this.#write(this.meetingsPath, this.meetings);
+    logger.logChange("SPOTKANIE", `Rozpoczęto/utworzono spotkanie (id: ${meeting.id}, tytuł: "${meeting.title || 'bez tytułu'}")`);
     return meeting;
   }
 
-  updateMeeting(id, patch) {
+  updateMeeting(id, patch, options = {}) {
     const meeting = this.meetings.find((item) => item.id === id);
     if (!meeting) return null;
     Object.assign(meeting, patch);
-    this.#write(this.meetingsPath, this.meetings);
+    if (options.persist !== false) {
+      this.#write(this.meetingsPath, this.meetings);
+      logger.logChange("SPOTKANIE", `Zaktualizowano spotkanie (id: ${id}, stan: ${meeting.state})`);
+    }
     return meeting;
+  }
+
+  flushMeetings() {
+    this.#write(this.meetingsPath, this.meetings);
   }
 
   /**
@@ -594,6 +632,7 @@ class Store {
     this.meetings = this.meetings.filter((item) => item.id !== id);
     this.#write(this.meetingsPath, this.meetings);
     fs.rmSync(path.join(this.meetingsDir, id), { recursive: true, force: true });
+    logger.logChange("SPOTKANIE", `Usunięto spotkanie (id: ${id})`);
     return true;
   }
 
@@ -722,4 +761,4 @@ function deepMerge(base, patch) {
   return base;
 }
 
-module.exports = { Store, DEFAULTS, CLOUD_STATE, joinNote };
+module.exports = { Store, DEFAULTS, CLOUD_STATE, joinNote, HISTORY_RETENTION_MS };

@@ -19,7 +19,7 @@ const { sift } = require("./sieve");
  * tylko oddaje flush() temu, kto wie, że sieć akurat wróciła (main.js).
  */
 
-const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // tydzień — po nim nikt już nie pamięta kontekstu wypowiedzi
+const MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8 godzin — po tym czasie plik tymczasowy jest automatycznie kasowany
 
 function dir() {
   const d = path.join(app.getPath("userData"), "ratunek");
@@ -29,18 +29,22 @@ function dir() {
 
 /** Zapisuje nagranie razem z tym, co się stało — do pokazania i do ponowienia. */
 function stash(audio, info = {}) {
+  purgeExpired();
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const meta = { id, savedAt: new Date().toISOString(), ...info };
   fs.writeFileSync(path.join(dir(), `${id}.wav`), audio);
   fs.writeFileSync(path.join(dir(), `${id}.json`), JSON.stringify(meta, null, 2));
+  // Kopia wskaźnika na ostatnie nagranie
+  fs.writeFileSync(path.join(dir(), "latest.json"), JSON.stringify({ id, savedAt: meta.savedAt }));
   return id;
 }
 
 /** Co czeka na powrót sieci — najnowsze pierwsze. */
 function list() {
+  purgeExpired();
   return fs
     .readdirSync(dir())
-    .filter((name) => name.endsWith(".json"))
+    .filter((name) => name.endsWith(".json") && name !== "latest.json")
     .map((name) => {
       try {
         return JSON.parse(fs.readFileSync(path.join(dir(), name), "utf8"));
@@ -55,22 +59,79 @@ function list() {
 function remove(id) {
   fs.rmSync(path.join(dir(), `${id}.wav`), { force: true });
   fs.rmSync(path.join(dir(), `${id}.json`), { force: true });
+  const latestFile = path.join(dir(), "latest.json");
+  try {
+    if (fs.existsSync(latestFile)) {
+      const latest = JSON.parse(fs.readFileSync(latestFile, "utf8"));
+      if (latest.id === id) fs.rmSync(latestFile, { force: true });
+    }
+  } catch {}
 }
 
 /**
- * Nagrania starsze niż tydzień. Trzymanie ich dłużej nie ratuje niczego —
- * kontekst rozmowy, do której miały trafić, jest już dawno zamknięty.
+ * Nagrania starsze niż 8 godzin.
+ * Plik tymczasowy ma być przechowywany przez 8h, a potem automatycznie kasowany.
  */
 function purgeExpired() {
   const cutoff = Date.now() - MAX_AGE_MS;
-  for (const meta of list()) {
-    if (new Date(meta.savedAt).getTime() < cutoff) remove(meta.id);
-  }
+  try {
+    const files = fs.readdirSync(dir()).filter((name) => name.endsWith(".json") && name !== "latest.json");
+    for (const name of files) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(path.join(dir(), name), "utf8"));
+        if (new Date(meta.savedAt).getTime() < cutoff) {
+          remove(meta.id);
+        }
+      } catch {
+        // Uszkodzony plik metadanych — usuwamy
+        const baseId = name.replace(/\.json$/, "");
+        remove(baseId);
+      }
+    }
+  } catch {}
 }
 
 function audioFor(id) {
   const file = path.join(dir(), `${id}.wav`);
   return fs.existsSync(file) ? fs.readFileSync(file) : null;
+}
+
+/**
+ * Zwraca metadane i bufor audio ostatniego zapisanego nagrania, jeśli istnieje.
+ */
+function last() {
+  const pending = list();
+  if (!pending.length) return null;
+  const meta = pending[0];
+  const audio = audioFor(meta.id);
+  return { ...meta, audio };
+}
+
+/**
+ * Próba odzyskania konkretnie ostatniego nagrania.
+ */
+async function retryLast(settings, onRescued) {
+  const item = last();
+  if (!item || !item.audio) {
+    throw new Error("Brak zapisanego nagrania do odzyskania.");
+  }
+  const { text: raw, provider, model: sttModel } = await transcribe(item.audio, settings);
+  if (!raw.trim()) {
+    remove(item.id);
+    throw new Error("Nagranie okazało się puste po transkrypcji.");
+  }
+  const result = await sift({ raw, settings });
+  const rescuedEntry = {
+    ...item,
+    raw,
+    text: result.text || raw,
+    provider,
+    sttModel,
+    model: result.model,
+  };
+  if (onRescued) await onRescued(rescuedEntry);
+  remove(item.id);
+  return rescuedEntry;
 }
 
 /**
@@ -117,4 +178,4 @@ async function flush(settings, onRescued) {
   return { done, remaining: pending.length - done };
 }
 
-module.exports = { stash, list, remove, purgeExpired, flush, MAX_AGE_MS };
+module.exports = { stash, list, remove, purgeExpired, flush, last, retryLast, MAX_AGE_MS };

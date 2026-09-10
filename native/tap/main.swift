@@ -89,6 +89,7 @@
 // ════════════════════════════════════════════════════════════════════
 
 import AppKit
+import ApplicationServices
 import AudioToolbox
 import AVFoundation
 import CoreAudio
@@ -942,10 +943,42 @@ func quoted(_ text: String) -> String {
     return out + "\""
 }
 
+/// Spis tytułów okien stojących na ekranie — przez Accessibility API.
+///
+/// Zwraca same tytuły bez dotykania ScreenCaptureKit / WindowServera i bez robienia
+/// jakichkolwiek zrzutów ekranu. Dzięki temu Google Meet i akceleracja wideo
+/// WebRTC w przeglądarkach nie doznają żadnych mikro-zacięć ani klatkowania.
+func listWindows() {
+    let apps = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+    var titles: [String] = []
+    for app in apps {
+        let pid = app.processIdentifier
+        let appElement = AXUIElementCreateApplication(pid)
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &value)
+        if result == .success, let windows = value as? [AXUIElement] {
+            for window in windows {
+                var titleValue: AnyObject?
+                if AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
+                   let title = titleValue as? String {
+                    let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        titles.append(trimmed)
+                    }
+                }
+            }
+        }
+    }
+    let escaped = titles.map { quoted($0) }
+    print("[\(escaped.joined(separator: ","))]")
+}
+
 var args = Array(CommandLine.arguments.dropFirst())
 while let flag = args.first {
     args.removeFirst()
     switch flag {
+    case "--windows":
+        mode = "windows"
     case "--probe":
         mode = "probe"
     case "--stream":
@@ -982,7 +1015,9 @@ while let flag = args.first {
 let finished = DispatchSemaphore(value: 0)
 Task {
     do {
-        if mode == "agenda" {
+        if mode == "windows" {
+            listWindows()
+        } else if mode == "agenda" {
             await agenda(hours: hours, back: back)
         } else if mode == "stream" {
             try await stream(excluding: excluded)

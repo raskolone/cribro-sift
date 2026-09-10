@@ -199,6 +199,66 @@
         border-color: var(--line-strong);
         box-shadow: var(--glass-sheen), var(--glass-drop);
       }
+      /* ── Błąd przetwarzania tekstu ─────────────────────────────
+         Gdy transkrypcja lub sito zawiedzie (brak sieci, brak odpowiedzi AI),
+         pokazujemy czytelne zdanie w dolnej listwie i przycisk odzyskania nagrania. */
+      #shell[data-state="error"] #face {
+        display: grid;
+      }
+      #shell[data-state="error"] canvas,
+      #shell[data-state="error"] #timer,
+      #shell[data-state="error"] #wave {
+        display: none;
+      }
+      #shell[data-state="error"] {
+        border-color: var(--warn, #f59e0b);
+        box-shadow: var(--glass-sheen), var(--glass-drop), 0 0 16px rgba(245, 158, 11, 0.22);
+      }
+      #shell[data-state="error"] #status {
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        line-height: 1.35;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--text);
+        white-space: normal;
+        text-wrap: balance;
+        font-weight: 500;
+      }
+      #shell[data-state="error"] #body {
+        min-width: 220px;
+        max-width: 260px;
+      }
+      .hud-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 28px;
+        padding: 0 12px;
+        border-radius: var(--r-pill);
+        border: 1px solid var(--accent, #f59e0b);
+        background: rgba(245, 158, 11, 0.18);
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        font-weight: 600;
+        cursor: pointer;
+        pointer-events: auto;
+        transition: background var(--t), transform var(--t);
+        white-space: nowrap;
+        flex: none;
+      }
+      .hud-btn:hover {
+        background: rgba(245, 158, 11, 0.32);
+        transform: scale(1.04);
+      }
+      .hud-btn:active {
+        transform: scale(0.96);
+      }
+      .hud-btn[hidden] {
+        display: none;
+      }
+
       @keyframes face-in {
         from {
           opacity: 0;
@@ -293,6 +353,7 @@
         <div id="wave"></div>
         <div id="hint" hidden></div>
       </div>
+      <button id="retryBtn" class="hud-btn" hidden type="button">Odzyskaj</button>
       <div id="timer">0:00</div>
     </div>
 

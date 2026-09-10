@@ -107,4 +107,14 @@ check(
 );
 check("Reszta czeka w buforze", Math.abs(cut.pending - 2) < 0.01);
 
+/* ── Adaptacyjne cięcie na pauzie w mowie (VAD) ─────────────── */
+
+cut = cutter({ lane: "mic", span: 25, minSpan: 10, pauseSpan: 1.2, overlap: 2, floor: -50, vad: true });
+// 10s mowy + 1.5s ciszy
+const speechAndSilence = Buffer.concat([tone(10, 0.3), tone(1.5, 0)]);
+out = cut.push(speechAndSilence);
+check("Mowa zakończona pauzą wyzwala wcześniejsze cięcie bez czekania 25 sekund", out.length === 1);
+check("Wcześniejszy odcinek ma właściwą długość", Math.abs(out[0].to - out[0].from - 11.5) < 0.1);
+check("Odcinek niesie informację o sekundach mowy", out[0].voiced >= 9.5);
+
 console.log(`\n${passed} sprawdzeń przeszło.`);

@@ -38,6 +38,8 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 
 class Meetings {
+  #flushTimer = null;
+
   /**
    * @param {object} store  main/store.js
    * @param {{onChange?: Function, onLevel?: Function, onError?: Function}} hooks
@@ -63,6 +65,7 @@ class Meetings {
       backoff,
       patience,
       drain,
+      probeInterval,
     } = {},
   ) {
     this.store = store;
@@ -100,6 +103,7 @@ class Meetings {
        powody obu liczb stoją przy PATIENCE i DRAIN niżej. */
     this.patience = patience ?? Meetings.PATIENCE;
     this.drain = drain ?? Meetings.DRAIN;
+    this.probeInterval = probeInterval ?? Meetings.PROBE_INTERVAL;
 
     /* ══ NAGRANIE JEST PUDEŁKIEM, A NIE POLAMI OBIEKTU ══
 
@@ -145,6 +149,12 @@ class Meetings {
       pieces: [],
       jobs: [],
       misses: 0,
+      offline: false,
+      offlineQueue: [],
+      recentFails: [],
+      prober: null,
+      probing: false,
+      drainingQueue: false,
       /* Ogon ostatniego odcinka każdego toru i słowniczek nazw własnych —
          jedno i drugie idzie do modelu razem z następnym odcinkiem. */
       tails: { mic: "", system: "" },
@@ -218,10 +228,17 @@ class Meetings {
   }
 
   /**
-   * Ile pomyłek z rzędu, zanim przestaniemy próbować.
+   * Ile pomyłek z rzędu, zanim przestaniemy próbować w trybie natychmiastowym.
    */
   static get GIVE_UP() {
     return 8;
+  }
+
+  /**
+   * Co ile milisekund badamy sieć w trybie offline (odzyskiwanie po awarii).
+   */
+  static get PROBE_INTERVAL() {
+    return 5000;
   }
 
   /**
@@ -489,8 +506,16 @@ class Meetings {
     }
     session.quiet[piece.lane] = 0;
     session.toldIdle = false; // ktoś się odezwał — pokój znowu nie jest pusty
-    if (session.fatal || session.misses >= Meetings.GIVE_UP) {
+    if (session.fatal) {
       this.#note(session, piece, "skipped");
+      return;
+    }
+    if (session.offline || session.offlineQueue.length > 0) {
+      const row = this.#note(session, piece, "queued");
+      session.offlineQueue.push({ piece, row });
+      if (!session.offline && !session.drainingQueue) {
+        this.#drainOfflineQueue(session);
+      }
       return;
     }
 
@@ -518,6 +543,7 @@ class Meetings {
         }, piece.voiced);
 
         session.misses = 0;
+        session.recentFails = [];
         if (!said) {
           // Nic nie padło — i tyle. Odcinek jest opisany, a nie zgubiony.
           this.#settle(session, row, "empty");
@@ -541,18 +567,44 @@ class Meetings {
           session.fatal = true;
         }
         this.#settle(session, row, "failed", msg);
-        if (session.misses === 1) {
-          this.#tell(this.onError, `Nie udało się przepisać fragmentu: ${msg}`);
-        } else if (session.fatal || session.misses === Meetings.GIVE_UP) {
+        if (session.fatal) {
           this.#tell(
             this.onError,
-            "Przepisywanie w biegu wyłączone do końca tego spotkania — nagranie leci dalej " +
+            "Przepisywanie w biegu wyłączone do końca tego spotkania (brak lub błąd klucza API) — nagranie leci dalej " +
               "i zostanie przepisane z pliku po zakończeniu.",
           );
+        } else if (session.offline) {
+          row.state = "queued";
+          this.#jot(session, row);
+          session.offlineQueue.push({ piece, row });
+        } else if (session.misses >= 3) {
+          session.offline = true;
+          this.#tell(
+            this.onError,
+            "Utrata połączenia z siecią. Kolejne fragmenty są kolejkowane lokalnie — transkrypcja na żywo wznowi się automatycznie po powrocie internetu.",
+          );
+          const toQueue = [...(session.recentFails ?? []), { piece, row }];
+          session.recentFails = [];
+          for (const item of toQueue) {
+            item.row.state = "queued";
+            this.#jot(session, item.row);
+            session.offlineQueue.push(item);
+          }
+          this.#startProber(session);
+        } else {
+          session.recentFails = session.recentFails ?? [];
+          session.recentFails.push({ piece, row });
+          if (session.misses === 1) {
+            this.#tell(this.onError, `Nie udało się przepisać fragmentu: ${msg}`);
+          }
         }
       }
     })();
     session.jobs.push(job);
+    job.finally(() => {
+      const at = session.jobs.indexOf(job);
+      if (at >= 0) session.jobs.splice(at, 1);
+    });
   }
 
   /**
@@ -720,7 +772,10 @@ class Meetings {
        odcinkiem, o którym można milczeć. Ten jeden stan istnieje właśnie
        po to, żeby zapis urwany na czekaniu przestał wyglądać jak pełny. */
     const lost = (item) =>
-      item.state === "failed" || item.state === "skipped" || item.state === "sent";
+      item.state === "failed" ||
+      item.state === "skipped" ||
+      item.state === "sent" ||
+      item.state === "queued";
     /* Pusta odpowiedź na odcinek z mową liczy się do strat tak samo jak
        błąd — bo z punktu widzenia notatki jest tym samym: minutami, które
        padły, a których nie ma. */
@@ -793,7 +848,8 @@ class Meetings {
       /* Odcinki, na które przestano czekać. Osobno od `failed`, bo to inna
          historia i inna rada dla człowieka: tamte oddały błąd, te nie
          oddały nic. */
-      pending: count("sent"),
+      pending: count("sent") + count("queued"),
+      queued: count("queued"),
       spokenSeconds: Math.round(spoken),
       writtenSeconds: Math.round(written),
       /* Warunki, wszystkie o jedno i to samo: czy wolno skasować nagranie.
@@ -839,10 +895,162 @@ class Meetings {
    */
   #stitch(session) {
     if (!session?.id) return;
-    this.store.updateMeeting(session.id, {
-      transcript: splice(session.pieces, { speakers: session.speakers }),
-    });
+    session.pieces.sort((a, b) => (a.from ?? 0) - (b.from ?? 0));
+    this.store.updateMeeting(
+      session.id,
+      {
+        transcript: splice(session.pieces, { speakers: session.speakers }),
+      },
+      { persist: false },
+    );
+    this.#scheduleStoreFlush();
     this.#tell(this.onTranscript);
+  }
+
+  /**
+   * Sprawdzanie dostępności sieci w tle podczas awarii (offline).
+   * Gdy sieć wraca, wznawia transkrypcję zakolejkowanych odcinków.
+   */
+  #startProber(session) {
+    if (session.prober || session.closed) return;
+    session.prober = setInterval(async () => {
+      if (session.closed || !session.offline) {
+        if (session.prober) {
+          clearInterval(session.prober);
+          session.prober = null;
+        }
+        return;
+      }
+      if (!session.offlineQueue.length) return;
+      if (session.probing) return;
+      session.probing = true;
+      try {
+        const item = session.offlineQueue[0];
+        const wav = Buffer.concat([wavHeader(item.piece.pcm.length), item.piece.pcm]);
+        const said = await this.#say(
+          wav,
+          {
+            lane: item.piece.lane,
+            from: item.piece.from,
+            to: item.piece.to,
+            context: session.tails?.[item.piece.lane] ?? "",
+            glossary: session.glossary ?? [],
+          },
+          item.piece.voiced,
+        );
+
+        // Połączenie powróciło!
+        session.offline = false;
+        session.misses = 0;
+        if (session.prober) {
+          clearInterval(session.prober);
+          session.prober = null;
+        }
+
+        session.offlineQueue.shift();
+        if (!said) {
+          this.#settle(session, item.row, "empty");
+        } else {
+          this.#settle(session, item.row, "done");
+          if (!session.closed) {
+            session.pieces.push({
+              lane: item.piece.lane,
+              from: item.piece.from,
+              to: item.piece.to,
+              text: said,
+            });
+            session.tails[item.piece.lane] = said.slice(-320);
+            this.#stitch(session);
+          }
+        }
+        this.#tell(
+          this.onError,
+          "Połączenie z siecią przywrócone — nadrabiam zaległe fragmenty rozmowy.",
+        );
+        this.#drainOfflineQueue(session);
+      } catch {
+        // Nadal brak sieci — czekamy na kolejny cykl probera
+      } finally {
+        session.probing = false;
+      }
+    }, this.probeInterval);
+    if (session.prober?.unref) session.prober.unref();
+  }
+
+  /**
+   * Opróżnianie kolejki odcinków zebranych w trybie offline.
+   */
+  async #drainOfflineQueue(session) {
+    if (session.drainingQueue || session.closed) return;
+    session.drainingQueue = true;
+    try {
+      while (session.offlineQueue.length > 0 && !session.closed && !session.offline) {
+        const item = session.offlineQueue.shift();
+        let said = "";
+        try {
+          const wav = Buffer.concat([wavHeader(item.piece.pcm.length), item.piece.pcm]);
+          said = await this.#say(
+            wav,
+            {
+              lane: item.piece.lane,
+              from: item.piece.from,
+              to: item.piece.to,
+              context: session.tails?.[item.piece.lane] ?? "",
+              glossary: session.glossary ?? [],
+            },
+            item.piece.voiced,
+          );
+        } catch (problem) {
+          session.offline = true;
+          session.offlineQueue.unshift(item);
+          this.#startProber(session);
+          break;
+        }
+
+        if (!said) {
+          this.#settle(session, item.row, "empty");
+          continue;
+        }
+        this.#settle(session, item.row, "done");
+        if (session.closed) continue;
+        session.pieces.push({
+          lane: item.piece.lane,
+          from: item.piece.from,
+          to: item.piece.to,
+          text: said,
+        });
+        session.tails[item.piece.lane] = said.slice(-320);
+        this.#stitch(session);
+      }
+    } finally {
+      session.drainingQueue = false;
+    }
+  }
+
+  /**
+   * Odroczenie fizycznego zapisu bazy spotkań na dysk, by nie obciążać I/O przy każdym odcinku.
+   */
+  #scheduleStoreFlush(delay = 1000) {
+    if (this.#flushTimer) return;
+    this.#flushTimer = setTimeout(() => {
+      this.#flushStoreNow();
+    }, delay);
+    if (this.#flushTimer?.unref) this.#flushTimer.unref();
+  }
+
+  /**
+   * Natychmiastowy zapis odłożonych zmian na dysk.
+   */
+  #flushStoreNow() {
+    if (this.#flushTimer) {
+      clearTimeout(this.#flushTimer);
+      this.#flushTimer = null;
+    }
+    try {
+      this.store.flushMeetings?.();
+    } catch {
+      /* Awaria I/O nie może przewrócić nagrywania */
+    }
   }
 
   /**
@@ -893,6 +1101,7 @@ class Meetings {
     // wpis niezamknięty w ogóle jest jeszcze gorszy (patrz DRAIN).
     await this.#drain(session);
     session.closed = true;
+    this.#flushStoreNow();
 
     const transcript = splice(session.pieces, { speakers: session.speakers });
     /* Rejestr sprawdzamy WZGLĘDEM długości nagrania — patrz `truncated`
@@ -958,6 +1167,7 @@ class Meetings {
           ? `Do zapisu doszło ${Math.round(coverage.reachedSeconds / 60)} z ${Math.round(coverage.recordedSeconds / 60)} minut nagrania — reszta nie przeszła przez przepisywanie w biegu. Nagranie zostało zachowane; „Przepisz jeszcze raz" odtworzy je z pliku.`
           : `Zapis obejmuje ${Math.round(coverage.writtenSeconds / 60)} z ${Math.round(coverage.spokenSeconds / 60)} minut rozmowy. Nagranie zostało zachowane, żeby dało się przepisać resztę.`,
     });
+    this.#flushStoreNow();
     this.#tell(this.onChange);
     return { discarded: false, meeting, coverage };
   }
@@ -979,7 +1189,23 @@ class Meetings {
    * więc na drogę, która i tak istnieje i jest lepsza od czekania.
    */
   async #drain(session) {
-    const waiting = session.jobs;
+    if (session.prober) {
+      clearInterval(session.prober);
+      session.prober = null;
+    }
+
+    // Jeśli jesteśmy z powrotem online i coś zostało w kolejce, spróbujmy dokończyć
+    if (!session.offline && session.offlineQueue.length > 0) {
+      await this.#drainOfflineQueue(session);
+    }
+
+    // Odcinki, które pozostały w kolejce offline na koniec spotkania
+    for (const item of session.offlineQueue) {
+      this.#settle(session, item.row, "failed", "utrata połączenia w trakcie spotkania");
+    }
+    session.offlineQueue = [];
+
+    const waiting = [...session.jobs];
     session.jobs = [];
     if (!waiting.length) return;
 
@@ -1023,6 +1249,11 @@ class Meetings {
     if (this.live !== session) return;
     this.live = null;
     session.closed = true;
+    if (session.prober) {
+      clearInterval(session.prober);
+      session.prober = null;
+    }
+    this.#flushStoreNow();
     this.store.updateMeeting(session.id, { state: "failed", error: message });
     this.#tell(this.onError, message);
 
@@ -1050,7 +1281,10 @@ class Meetings {
         /* Nawet domknięcie plików się nie udało — wpis zostaje ze swoim
            błędem, a to i tak więcej, niż było wcześniej. */
       })
-      .finally(() => this.#tell(this.onChange));
+      .finally(() => {
+        this.#flushStoreNow();
+        this.#tell(this.onChange);
+      });
   }
 
   /**
@@ -1060,6 +1294,7 @@ class Meetings {
    * WAV zostają bez nagłówka — czyli jako bajty, których nic nie otworzy.
    */
   async shutdown() {
+    this.#flushStoreNow();
     if (!this.recording) return;
     await this.stop().catch(() => {});
   }
@@ -1154,9 +1389,14 @@ class Meetings {
             /* Zapisujemy po każdym odcinku. Przepisanie godziny trwa
                kilka minut i przez ten czas ma być WIDAĆ, że coś rośnie —
                a przerwane w połowie ma zostawić tę połowę. */
-            this.store.updateMeeting(id, {
-              transcript: splice(pieces, { speakers: meeting.speakers }),
-            });
+            this.store.updateMeeting(
+              id,
+              {
+                transcript: splice(pieces, { speakers: meeting.speakers }),
+              },
+              { persist: false },
+            );
+            this.#scheduleStoreFlush();
             this.#tell(this.onTranscript);
           }
         };
@@ -1205,6 +1445,7 @@ class Meetings {
           tracks = null;
         }
       }
+      this.#flushStoreNow();
       this.store.updateMeeting(id, {
         transcript,
         tracks,
@@ -1217,6 +1458,7 @@ class Meetings {
       this.#tell(this.onChange);
       return transcript;
     } catch (problem) {
+      this.#flushStoreNow();
       this.store.updateMeeting(id, { transcribing: false, transcriptError: problem.message });
       this.#tell(this.onChange);
       throw problem;

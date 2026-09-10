@@ -7,6 +7,8 @@ const statusEl = document.getElementById("status");
 const hintEl = document.getElementById("hint");
 const timerEl = document.getElementById("timer");
 const waveEl = document.getElementById("wave");
+const faceEl = document.getElementById("face");
+const retryBtn = document.getElementById("retryBtn");
 const canvas = document.getElementById("ring");
 const ctx = canvas.getContext("2d");
 
@@ -278,6 +280,7 @@ const COPY = {
   // Puste nagranie. Zdanie zamiast etykiety — patrz nothingHeard w main.js
   // i styl #shell[data-state="empty"] #status w hud.html.
   empty: { status: "Nie mogę pomóc, bo nic nie usłyszałem", hint: null },
+  error: { status: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.", hint: null },
 };
 
 /* Jak długo widać smutną minę. Tyle samo czeka proces główny, zanim schowa
@@ -289,7 +292,9 @@ function setState(next, detail = {}) {
   state = next;
   shell.dataset.state = next;
   shell.classList.toggle("in", next !== "idle");
-  if (next !== "empty") clearTimeout(emptyTimer);
+  if (next !== "empty" && next !== "error") clearTimeout(emptyTimer);
+  if (next !== "error" && retryBtn) retryBtn.hidden = true;
+  if (next !== "error" && faceEl) faceEl.textContent = "😔";
 
   // Każda zmiana stanu rozwija pigułkę z powrotem: „Przesiewam" i „W schowku"
   // to informacje, które trzeba przeczytać, a nie tylko zauważyć kątem oka.
@@ -311,8 +316,8 @@ function setState(next, detail = {}) {
   hintEl.textContent = hint ? t(hint) : "";
   timerEl.style.opacity = next === "listening" ? "1" : "0.35";
 
-  // Smutna mina jest rysunkiem, nie animacją — pierścień ma wtedy wolne.
-  if (next === "idle" || next === "empty") {
+  // Smutna mina i błąd są rysunkiem, nie animacją — pierścień ma wtedy wolne.
+  if (next === "idle" || next === "empty" || next === "error") {
     cancelAnimationFrame(raf);
     raf = null;
     level = 0;
@@ -457,6 +462,52 @@ function sendLevel(now) {
   window.cribro.hud.sendLevel?.(Number(level.toFixed(3)));
 }
 
+function showErrorState() {
+  clearTimeout(emptyTimer);
+  clearTimeout(miniTimer);
+  state = "error";
+  shell.dataset.state = "error";
+  shell.dataset.size = "full";
+  shell.classList.add("in");
+  cancelAnimationFrame(raf);
+  raf = null;
+  level = 0;
+  if (faceEl) faceEl.textContent = "⚠️";
+  statusEl.textContent = t("Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
+  waveEl.hidden = true;
+  hintEl.hidden = true;
+  timerEl.style.opacity = "0";
+  if (retryBtn) {
+    retryBtn.hidden = false;
+    retryBtn.disabled = false;
+    retryBtn.textContent = t("Odzyskaj");
+  }
+}
+
+retryBtn?.addEventListener("click", async (e) => {
+  e.stopPropagation();
+  retryBtn.disabled = true;
+  retryBtn.textContent = t("Odzyskuję…");
+  statusEl.textContent = t("Odzyskuję ostatnie nagranie…");
+  try {
+    const result = await (window.cribro?.hud?.retryLast?.() ?? window.cribro?.rescue?.retryLast?.());
+    if (result && result.ok) {
+      statusEl.textContent = t("Odzyskano nagranie!");
+      retryBtn.hidden = true;
+      chime(SOUND.done);
+      setTimeout(() => setState("idle"), 1800);
+    } else {
+      statusEl.textContent = t("Nadal brak połączenia z siecią. Spróbuj za chwilę.");
+      retryBtn.disabled = false;
+      retryBtn.textContent = t("Spróbuj ponownie");
+    }
+  } catch {
+    statusEl.textContent = t("Nie udało się odzyskać nagrania.");
+    retryBtn.disabled = false;
+    retryBtn.textContent = t("Spróbuj ponownie");
+  }
+});
+
 /* ── Most do procesu głównego ────────────────────────────────── */
 
 window.cribro.hud.onStart((meta) => startRecording(meta));
@@ -472,6 +523,8 @@ window.cribro.onState(({ state: next, entry, error, empty, command }) => {
   if (next === "listening") return; // ten stan ustawia sam recorder
   if (empty) {
     showNothingHeard();
+  } else if (error) {
+    showErrorState();
   } else if (next === "sifting" && command) {
     /* Polecenie trafiło. Nazwa musi być widoczna TERAZ — zanim tekst wpadnie
        pod kursor — bo to jedyny moment, w którym można jeszcze przerwać.
@@ -483,9 +536,6 @@ window.cribro.onState(({ state: next, entry, error, empty, command }) => {
     setState("done", {
       hint: `${t("{n} słów", { n: entry.siftedWords })} · ${entry.app ?? t("schowek")}`,
     });
-  } else if (error) {
-    setState("sifting", { hint: error.slice(0, 60) });
-    setTimeout(() => setState("idle"), 2600);
   } else {
     setState(next);
   }

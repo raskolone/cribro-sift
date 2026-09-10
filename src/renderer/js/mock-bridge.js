@@ -1082,10 +1082,36 @@ if (!window.cribro) {
       close: () => {},
     },
 
+    rescue: {
+      list: async () => [],
+      last: async () => null,
+      retryLast: async () => ({ ok: true, text: "Odzyskany tekst testowy" }),
+      saveLast: async () => ({ ok: true, filePath: "/mock/nagranie.wav" }),
+    },
+
+    logs: {
+      path: async () => "/mock/activity.log",
+      open: async () => true,
+      tail: async () => [],
+    },
+
+    hud: {
+      onStart: on("rec:start"),
+      onStop: on("rec:stop"),
+      onCancel: on("rec:cancel"),
+      sendAudio: () => {},
+      sendLevel: () => {},
+      sendError: () => {},
+      sendEmpty: () => {},
+      retryLast: async () => ({ ok: true, text: "Odzyskany tekst testowy" }),
+      saveLast: async () => ({ ok: true }),
+    },
+
     onState: on("state"),
     onGoToView: on("view:go"),
     onError: on("pipeline:error"),
     onBackend: on("hotkey:backend"),
+    onRescue: on("rescue:flushed"),
   };
 
   function deepMerge(base, patch) {

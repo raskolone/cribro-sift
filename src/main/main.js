@@ -2,6 +2,7 @@
 
 const path = require("path");
 const fs = require("fs");
+const { execFile } = require("child_process");
 const {
   app,
   BrowserWindow,
@@ -30,6 +31,7 @@ const { HotkeyEngine } = require("./hotkeys");
 const { transcribe } = require("./stt");
 const { sift, MESH } = require("./sieve");
 const rescue = require("./rescue");
+const logger = require("./logger");
 const { detect: detectCommand, byId: commandById } = require("./commands");
 const { keyFor, STT, SIEVE, OCR } = require("./providers");
 const { deliver, frontmostApp } = require("./paste");
@@ -39,6 +41,7 @@ const { sendNote: sendToNotion, check: checkNotion } = require("./notion");
 const { detectConflicts } = require("./shortcuts");
 const { grabRegion, readText, compose, stampName, imageLink } = require("./shot");
 const { Meetings } = require("./meeting");
+const { helperPath } = require("./tap");
 const { Watcher: MeetingWatcher, spot: spotMeeting } = require("./detect");
 const { speakerFor } = require("./merge");
 const { digest, polish, asNote, flipToggle, send: sendToModel } = require("./digest");
@@ -2333,6 +2336,8 @@ async function toggleMeeting(about = null) {
       startedFromSpot = false;
       disarmRoomGone();
       const { discarded, meeting, seconds, coverage } = await meetings.stop();
+      watcher?.setThrottle(false);
+      logger.logTask("SPOTKANIE", `Zakończono nagrywanie spotkania (czas: ${Math.round(seconds)}s, odrzucono: ${discarded})`);
       applyDetect(store.getSettings());
       if (discarded) {
         broadcast("pipeline:error", {
@@ -2356,6 +2361,8 @@ async function toggleMeeting(about = null) {
        karta Google Meet niesie nazwę pokoju — a dopiero potem kalendarz. */
     const room = about ? null : await roomOnScreen();
     await meetings.start(about ?? aboutMeeting(room));
+    watcher?.setThrottle(true);
+    logger.logTask("SPOTKANIE", "Rozpoczęto nagrywanie spotkania", { title: about?.title ?? null });
     /* ══ NAGRANIE Z RĘKI TEŻ NALEŻY DO ROZMOWY, KTÓRA STOI NA EKRANIE ══
 
        Bez tej linijki nagranie włączone z menu albo skrótem NIGDY nie
@@ -2570,7 +2577,7 @@ function aboutMeeting(spot) {
  */
 async function roomOnScreen() {
   if (spotted) return spotted;
-  if (!canSeeScreen()) return null;
+  if (!canListWindows()) return null;
   try {
     return spotMeeting(await screenWindows());
   } catch {
@@ -2678,12 +2685,41 @@ function tellMeetings() {
  * którą ta zgoda mogłaby się pojawić.
  */
 async function screenWindows() {
-  const sources = await desktopCapturer.getSources({
-    types: ["window"],
-    thumbnailSize: { width: 0, height: 0 },
-    fetchWindowIcons: false,
-  });
-  return sources.map((source) => source.name);
+  const helper = helperPath();
+  if (helper && process.platform === "darwin") {
+    try {
+      const titles = await new Promise((resolve, reject) => {
+        execFile(
+          helper,
+          ["--windows"],
+          { timeout: 3000, encoding: "utf8" },
+          (problem, stdout) => {
+            if (problem && !stdout) return reject(problem);
+            try {
+              const list = JSON.parse(stdout.trim() || "[]");
+              resolve(Array.isArray(list) ? list : []);
+            } catch (err) {
+              reject(err);
+            }
+          },
+        );
+      });
+      if (titles && titles.length > 0) return titles;
+    } catch {
+      // pomocnik niedostępny lub błąd — schodzimy do fallbacku desktopCapturer
+    }
+  }
+
+  if (canSeeScreen()) {
+    const sources = await desktopCapturer.getSources({
+      types: ["window"],
+      thumbnailSize: { width: 0, height: 0 },
+      fetchWindowIcons: false,
+    });
+    return sources.map((source) => source.name);
+  }
+
+  return [];
 }
 
 /**
@@ -2810,7 +2846,7 @@ function disarmRoomGone() {
  * odmowę zgody byłoby stratą wywołaną brakiem wiedzy, a nie wiedzą.
  */
 async function roomStillOnScreen() {
-  if (!canSeeScreen()) return true;
+  if (!canListWindows()) return true;
   try {
     return !!spotMeeting(await screenWindows());
   } catch {
@@ -2981,7 +3017,7 @@ function watchAgenda(settings = store.getSettings()) {
  */
 function applyDetect(settings = store.getSettings()) {
   const how = settings.meetings?.detect ?? "ask";
-  if ((how === "off" && !meetings?.recording) || !canSeeScreen()) {
+  if ((how === "off" && !meetings?.recording) || !canListWindows()) {
     watcher?.stop();
     return;
   }
@@ -3815,11 +3851,22 @@ function setState(next, detail = {}) {
     // (patrz nothingHeard). Stan wraca do „idle" od razu, żeby powtórzenie
     // dyktowania nie musiało czekać na koniec komunikatu; chowamy więc samo
     // okno, z opóźnieniem, i tylko wtedy, gdy nikt w międzyczasie nie mówi.
-    // Zapas ponad czas komunikatu: pigułka najpierw gaśnie u siebie
-    // (EMPTY_MS w js/hud.js), a dopiero potem znika okno pod nią. Bez tego
-    // okno zabrałoby własne zanikanie w połowie.
-    if (detail.empty) setTimeout(() => state === "idle" && hud?.hide(), NOTHING_HEARD_MS + 400);
-    else hud?.hide();
+    if (detail.empty) {
+      setTimeout(() => state === "idle" && hud?.hide(), NOTHING_HEARD_MS + 400);
+    } else if (detail.error) {
+      // Błąd: pozwalamy pigułce HUD pokazać komunikat „Nie udało się przetworzyć tekstu. Spróbuj za chwilę.”
+      // oraz przycisk odzyskiwania, odblokowując na ten czas odbiór kliknięć.
+      hud?.setIgnoreMouseEvents(false);
+      setTimeout(() => {
+        if (state === "idle") {
+          hud?.setIgnoreMouseEvents(true, { forward: true });
+          hud?.hide();
+        }
+      }, 4500);
+    } else {
+      hud?.setIgnoreMouseEvents(true, { forward: true });
+      hud?.hide();
+    }
     // Dyktowanie skończone, ale spotkanie mogło się nie skończyć — znak
     // w pasku menu ma wtedy wrócić na fiolet, a nie zgasnąć.
     applyMeetingTray();
@@ -3852,6 +3899,7 @@ function nothingHeard(stage = "transkrypcja") {
 
 async function startCapture(meta) {
   if (state !== "idle") return;
+  hud?.setIgnoreMouseEvents(true, { forward: true });
   pendingContext = {
     app: await frontmostApp(),
     startedAt: Date.now(),
@@ -3934,6 +3982,8 @@ async function runPipeline(audioBuffer, durationMs) {
   const context = pendingContext ?? { app: null, startedAt: Date.now() };
   pendingContext = null;
 
+  logger.logTask("DYKTOWANIE", "Rozpoczęto przetwarzanie nagrania audio", { durationMs, app: context.app });
+
   // Etap trzymamy osobno, żeby komunikat mówił, co konkretnie zawiodło.
   // „Nie udało się" bez wskazania miejsca jest bezużyteczne przy pierwszym teście.
   let stage = "transkrypcja";
@@ -4013,6 +4063,11 @@ async function runPipeline(audioBuffer, durationMs) {
       command: fired ? { id: fired.id, name: fired.name, by: result.commandBy } : null,
     });
 
+    logger.logTask("DYKTOWANIE", `Ukończono dyktowanie (słów: ${entry.siftedWords}, ujście: ${outlet})`, {
+      entryId: entry.id,
+      timings: entry.timings,
+    });
+
     broadcast("entry:new", entry);
     setState("done", { entry });
     setTimeout(() => state === "done" && setState("idle"), 1600);
@@ -4023,41 +4078,58 @@ async function runPipeline(audioBuffer, durationMs) {
   } catch (error) {
     const message = String(error.message || error);
 
-    /* Transkrypcja zawiodła nawet po powtórce z main/stt.js — to jedyny
-       etap, po którym NIE MA jeszcze żadnego tekstu, więc jedyne, co da się
-       ocalić, to samo nagranie. Nieważne, czy powodem jest brak sieci, zły
-       klucz czy awaria dostawcy: flushRescues() i tak spróbuje ponownie
-       dopiero, gdy klucz się znajdzie i dostawca odpowie, więc plik czeka
-       bezpiecznie niezależnie od przyczyny. Sito ma osobny fallback (patrz
-       sieve.js: `degraded`) i tekst z niego zawsze już jakiś jest — tam nie
-       ma czego chować w ratunku. */
-    /* Zapętlona odpowiedź dostawcy (patrz loopedTranscript w main/stt.js)
-       do ratunku NIE IDZIE. Ratunek jest na to, co naprawi się samo, gdy
-       wróci sieć — a tu sieć działa i klucz jest dobry; zawiódł sam model.
-       Powtórkę ma już za sobą (withRetry), więc odkładanie nagrania na
-       zegar znaczyłoby mielenie tych samych 143 sekund co kwadrans, bez
-       nadziei na inny wynik. Mówimy wprost, co się stało, i zostawiamy
-       decyzję o powtórzeniu człowiekowi. */
+    /* Zapętlona odpowiedź dostawcy */
     if (error.kind === "zapętlenie") {
-      tellError(stage, `${message} Powiedz to jeszcze raz — przy powtórce zwykle przechodzi.`);
-      setState("idle", { error: `${stage}: ${message}` });
+      let rescueId = null;
+      if (audioBuffer?.length && settings.stt.provider !== "mock") {
+        rescueId = rescue.stash(audioBuffer, {
+          app: context.app,
+          durationMs,
+          language: settings.language,
+          stage,
+          reason: message,
+        });
+      }
+      logger.logError(
+        "DYKTOWANIE",
+        `Zapętlenie transkrypcji: ${message}${rescueId ? ` (zapisano w ratunku: ${rescueId})` : ""}`,
+        { stage, error: message, rescueId },
+      );
+      tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
+      setState("idle", {
+        error: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.",
+        stage,
+        rescued: !!rescueId,
+        rescueId,
+        originalError: message,
+      });
       return;
     }
 
-    if (stage === "transkrypcja" && audioBuffer?.length && settings.stt.provider !== "mock") {
-      rescue.stash(audioBuffer, {
+    /* Zapis nagrania lokalnie przy braku sieci lub odpowiedzi ze strony AI */
+    if (audioBuffer?.length && settings.stt.provider !== "mock") {
+      const rescueId = rescue.stash(audioBuffer, {
         app: context.app,
         durationMs,
         language: settings.language,
+        stage,
         reason: message,
       });
-      tellError(stage, `${message} Nagranie zapisałem lokalnie — spróbuję ponownie, gdy sieć wróci.`);
-      setState("idle", { error: `${stage}: ${message}`, rescued: true });
+      logger.logError("DYKTOWANIE", `Błąd na etapie ${stage}: ${message}. Zapisano nagranie do ratunku (id: ${rescueId})`, { stage, error: message });
+      tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
+      setState("idle", {
+        error: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.",
+        rescued: true,
+        rescueId,
+        stage,
+        originalError: message,
+      });
       return;
     }
 
-    tellError(stage, message);
-    setState("idle", { error: `${stage}: ${message}` });
+    logger.logError("DYKTOWANIE", `Błąd na etapie ${stage}: ${message}`, { stage, error: message });
+    tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
+    setState("idle", { error: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.", stage, originalError: message });
   }
 }
 
@@ -4263,22 +4335,24 @@ let lastAccessibility = null;
  * twierdzi, że zgody nie ma, i dalej ma głuchy skrót — bo przepięcie
  * silnika działo się tylko przy fokusie okna głównego.
  */
-/** Czy wolno nam czytać spis okien — czyli czy jest zgoda „Nagrywanie ekranu". */
+/** Czy wolno nam czytać spis okien — czyli czy jest zgoda „Nagrywanie ekranu" lub natywny pomocnik. */
 const canSeeScreen = () =>
   process.platform !== "darwin" || systemPreferences.getMediaAccessStatus("screen") === "granted";
+const canListWindows = () =>
+  !!helperPath() || canSeeScreen();
 
 let lastScreenAccess = null;
 
 function watchPermissions() {
   clearInterval(permissionWatch);
   lastAccessibility = permissionSnapshot().accessibility;
-  lastScreenAccess = canSeeScreen();
+  lastScreenAccess = canListWindows();
 
   permissionWatch = setInterval(() => {
     /* Zgoda „Nagrywanie ekranu" przychodzi zwykle przy pierwszym nagraniu
        spotkania — i dopiero od tej chwili wykrywanie ma czym patrzeć.
        Bez tego trzeba by po nią zrestartować aplikację. */
-    const screenAccess = canSeeScreen();
+    const screenAccess = canListWindows();
     if (screenAccess !== lastScreenAccess) {
       lastScreenAccess = screenAccess;
       applyDetect();
@@ -4289,7 +4363,7 @@ function watchPermissions() {
     lastAccessibility = accessibility;
     bindHotkeys(); // zgoda przyszła albo zniknęła — silnik skrótu na nowo
     broadcast("permissions:changed", permissionSnapshot());
-  }, 2000);
+  }, 5000);
 }
 
 /* ── IPC ──────────────────────────────────────────────────────── */
@@ -4328,7 +4402,7 @@ function registerIpc() {
          `desktopCapturer.getSources` stawia systemowe okienko, gdy stan jest
          jeszcze nierozstrzygnięty — a gdy zgody już odmówiono, jest po
          prostu tanim wywołaniem bez skutku, nie drugim pytaniem. */
-      if (settings.meetings?.detect !== "off" && !canSeeScreen()) void screenWindows();
+      if (settings.meetings?.detect !== "off" && !canListWindows()) void screenWindows();
     }
     // Kalendarz włącza się i gaśnie razem z przełącznikiem — a pierwsze
     // włączenie jest tym momentem, w którym system pyta o zgodę.
@@ -5266,6 +5340,71 @@ function registerIpc() {
   ipcMain.handle("history:clear", () => (store.clearHistory(), store.getHistory()));
   ipcMain.handle("stats:get", () => store.stats());
 
+  /* ══ RATUNEK I ODZYSKIWANIE OSTATNIEGO NAGRANIA ══ */
+  ipcMain.handle("rescue:list", () => rescue.list());
+  ipcMain.handle("rescue:last", () => {
+    const item = rescue.last();
+    if (!item) return null;
+    const { audio, ...meta } = item;
+    return { ...meta, hasAudio: !!audio };
+  });
+  ipcMain.handle("rescue:retryLast", async () => {
+    try {
+      const settings = store.getSettings();
+      const words = (s) => (s ? s.trim().split(/\s+/).filter(Boolean).length : 0);
+      let createdEntry = null;
+      await rescue.retryLast(settings, async (rescued) => {
+        createdEntry = store.addEntry({
+          text: rescued.text,
+          raw: settings.keepRaw ? rescued.raw : null,
+          rawWords: words(rescued.raw),
+          siftedWords: words(rescued.text),
+          app: rescued.app ?? null,
+          durationMs: rescued.durationMs ?? null,
+          provider: rescued.provider,
+          sttModel: rescued.sttModel,
+          model: rescued.model,
+          rescued: true,
+          mesh: settings.mesh,
+          pasted: false,
+        });
+        clipboard.writeText(rescued.text);
+        broadcast("entry:new", createdEntry);
+        logger.logTask("RATUNEK", "Pomyślnie odzyskano ostatnie nagranie", {
+          id: rescued.id,
+          siftedWords: createdEntry.siftedWords,
+        });
+      });
+      return { ok: true, entry: createdEntry, text: createdEntry?.text };
+    } catch (err) {
+      logger.logError("RATUNEK", `Nie udało się odzyskać ostatniego nagrania: ${err.message}`);
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle("rescue:saveLast", async () => {
+    const item = rescue.last();
+    if (!item || !item.audio) return { ok: false, error: "Brak nagrania" };
+    const { filePath } = await dialog.showSaveDialog({
+      title: "Zapisz ostatnie nagranie audio",
+      defaultPath: `nagranie-${item.id}.wav`,
+      filters: [{ name: "Audio WAV", extensions: ["wav"] }],
+    });
+    if (filePath) {
+      fs.writeFileSync(filePath, item.audio);
+      logger.logTask("RATUNEK", `Wyeksportowano ostatnie nagranie audio do pliku: ${filePath}`);
+      return { ok: true, filePath };
+    }
+    return { ok: false, canceled: true };
+  });
+
+  /* ══ LOGI I DZIENNIK ZDARZEŃ ══ */
+  ipcMain.handle("logs:path", () => logger.getPath());
+  ipcMain.handle("logs:open", async () => {
+    shell.showItemInFolder(logger.getPath());
+    return true;
+  });
+  ipcMain.handle("logs:tail", (_e, lines) => logger.tail(lines));
+
   ipcMain.handle("clipboard:copy", (_e, text) => (clipboard.writeText(text ?? ""), true));
 
   ipcMain.handle("hotkey:status", () => permissionSnapshot());
@@ -5881,7 +6020,10 @@ function guardWindows() {
        otwarta cały dzień bez ani jednego dyktowania. */
     rescue.purgeExpired();
     setTimeout(() => void flushRescues(), 3000);
-    rescueTimer = setInterval(() => void flushRescues(), 15 * 60 * 1000);
+    rescueTimer = setInterval(() => {
+      store.pruneHistory();
+      void flushRescues();
+    }, 15 * 60 * 1000);
 
     applySpellcheck(store.getSettings());
     // Menu pod prawym przyciskiem dostaje każde okno, także to otwarte
@@ -5964,7 +6106,10 @@ function guardWindows() {
     // laptopa w połowie słabego Wi-Fi to dokładnie ten przypadek, dla
     // którego rescue.js istnieje. Zwłoka, bo interfejs sieciowy wraca
     // chwilę po samym procesie, nie razem z nim.
-    powerMonitor.on("resume", () => setTimeout(() => void flushRescues(), 5000));
+    powerMonitor.on("resume", () => {
+      store.pruneHistory();
+      setTimeout(() => void flushRescues(), 5000);
+    });
     /* Zablokowany ekran to nie to samo co uśpiony komputer — rozmowa potrafi
        trwać dalej, gdy blokada zapadła sama. Dlatego przy blokadzie nagrania
        NIE KOŃCZYMY; zwalniamy tylko pilnowanie, a nagranie chroni cisza

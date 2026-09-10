@@ -43,8 +43,11 @@ const audio = Buffer.from("RIFFfake");
   assert.ok(call.url.includes("/models/gemini-3.7-flash:generateContent"), "zły URL modelu");
   assert.equal(call.init.headers["x-goog-api-key"], "AIza-test", "brak nagłówka z kluczem");
   assert.ok(call.body.contents[0].parts[1].inlineData.mimeType === "audio/wav", "zły mime audio");
+  assert.equal(call.body.generationConfig?.maxOutputTokens, 4096, "brak limitu maxOutputTokens");
+  assert.equal(call.body.generationConfig?.presencePenalty, 0.3, "brak kary presencePenalty");
+  assert.equal(call.body.generationConfig?.frequencyPenalty, 0.3, "brak kary frequencyPenalty");
   assert.equal(out.text, "odpowiedź gemini");
-  console.log("✓ Gemini transkrypcja: URL, nagłówek i audio/wav");
+  console.log("✓ Gemini transkrypcja: URL, nagłówek, audio/wav i kary za zapętlenie");
 
   /* 2. Wspólny klucz: sito nie ma własnego, ale ten sam dostawca co krok 1 */
   calls.length = 0;
@@ -174,7 +177,26 @@ const audio = Buffer.from("RIFFfake");
     console.log("✓ Zapętlona transkrypcja jest wyłapywana, a zwykłe dyktowanie przechodzi");
   }
 
-  /* 10. Zapętlenie dostaje JEDNĄ powtórkę — jest losowe, więc drugi strzał
+  /* 10. Automatyczne uzdrawianie zapętlenia (collapseLoops) —
+         jeśli dostawca się zatnie, powtórzenia są zwijane, a słowa użytkownika ratowane. */
+  {
+    const { collapseLoops, loopedTranscript } = require("../src/main/stt");
+
+    const zapetlone = ("No, yyy, wiesz, " + "no, ".repeat(32760)).trim();
+    const zwiniete = collapseLoops(zapetlone);
+    assert.equal(loopedTranscript(zwiniete), null, "zwinięta transkrypcja nie może być zapętlona");
+    assert.ok(zwiniete.startsWith("No, yyy, wiesz"), "początkowa wypowiedź musi zostać zachowana");
+    assert.ok(zwiniete.length < 50, "32760 powtórzeń musi zostać zredukowane do kilku słów");
+
+    const dwuslowne = "no, yyy, ".repeat(200);
+    const zwinieteDwa = collapseLoops(dwuslowne);
+    assert.equal(loopedTranscript(zwinieteDwa), null, "zwinięte 2-gramy nie mogą być zapętlone");
+    assert.ok(zwinieteDwa.length < 30);
+
+    console.log("✓ Samoleczenie zapętlenia (collapseLoops) ratuje wypowiedź użytkownika");
+  }
+
+  /* 11. Zapętlenie dostaje JEDNĄ powtórkę — jest losowe, więc drugi strzał
         zwykle wraca normalnym tekstem. */
   {
     const { isTransient } = require("../src/main/stt");

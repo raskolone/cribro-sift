@@ -1048,6 +1048,22 @@ function renderSettings() {
     ${renderWidgetCard()}
 
     <div class="card">
+      <h2>Dziennik zdarzeń</h2>
+      <p class="sub">
+        Każde wykonane zadanie i każda zmiana w aplikacji są rejestrowane w pliku logu.
+      </p>
+      <div class="field">
+        <div class="field__label">
+          <strong>Plik aktywności (activity.log)</strong>
+          <span>Rejestruje zadania dyktowania, transkrypcję, modyfikacje notatek, zmiany ustawień i błędy.</span>
+        </div>
+        <div class="field__control">
+          <button class="btn btn--sm" data-act="open-logs">Pokaż plik dziennika</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Zachowanie</h2>
       <p class="sub">Co dzieje się w chwili, gdy tekst jest gotowy.</p>
       <div class="field">
@@ -1976,10 +1992,13 @@ function renderErrorBar() {
     : `<div class="banner banner--error">
          <div class="banner__icon"><svg><use href="#i-alert" /></svg></div>
          <div class="banner__body">
-           <h3>Nie udało się — etap: ${escape(error.stage ?? "nieznany")}</h3>
+           <h3>Nie udało się przetworzyć tekstu. Spróbuj za chwilę.</h3>
            <p>${escape(error.message)}</p>
          </div>
-         <button class="btn btn--sm" data-act="dismiss-error">Zamknij</button>
+         <div style="display: flex; gap: var(--s-2); align-items: center;">
+           <button class="btn btn--primary btn--sm" data-act="recover-last">Odzyskaj ostatnie nagranie</button>
+           <button class="btn btn--sm" data-act="dismiss-error">Zamknij</button>
+         </div>
        </div>`;
 }
 
@@ -2510,6 +2529,37 @@ document.addEventListener("click", async (event) => {
   if (event.target.closest('[data-act="dismiss-error"]')) {
     state.error = null;
     render();
+    return;
+  }
+
+  if (event.target.closest('[data-act="recover-last"]')) {
+    const btn = event.target.closest('[data-act="recover-last"]');
+    btn.disabled = true;
+    btn.textContent = t("Odzyskuję…");
+    toast(t("Odzyskuję ostatnie nagranie…"));
+    try {
+      const result = await api.rescue.retryLast();
+      if (result && result.ok) {
+        state.error = null;
+        state.stats = await api.history.stats();
+        state.history = await api.history.get();
+        toast(t("Pomyślnie odzyskano ostatnie nagranie!"));
+        render();
+      } else {
+        toast(t(result?.error ? `Nie udało się: ${result.error}` : "Nadal brak połączenia z siecią. Spróbuj za chwilę."));
+        btn.disabled = false;
+        btn.textContent = t("Spróbuj ponownie");
+      }
+    } catch {
+      toast(t("Nie udało się odzyskać nagrania. Spróbuj za chwilę."));
+      btn.disabled = false;
+      btn.textContent = t("Spróbuj ponownie");
+    }
+    return;
+  }
+
+  if (event.target.closest('[data-act="open-logs"]')) {
+    await api.logs.open();
     return;
   }
 

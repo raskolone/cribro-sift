@@ -153,6 +153,10 @@ const EN = {
     "Calendar did not answer in time. If a permission dialog is on screen, answer it and try again.",
   "Nie udało się zapytać Kalendarza. Spróbuj jeszcze raz za chwilę.":
     "Calendar could not be asked. Try again in a moment.",
+  "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.":
+    "Failed to process text. Try again in a moment.",
+  "Odzyskaj": "Recover",
+  "Odzyskaj ostatnie nagranie": "Recover last recording",
   "Kalendarz nie jest uruchomiony. Cribro nie budzi go samo — kliknij, a zajrzy do niego raz.":
     "Calendar is not running. Cribro will not wake it on its own — click and it will look once.",
   "Zajrzyj do kalendarza": "Look at the calendar",

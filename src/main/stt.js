@@ -135,6 +135,38 @@ function loopedTranscript(text) {
   return null;
 }
 
+/**
+ * Automatyczne zwijanie zapętlonych sekwencji w transkrypcji (Self-Healing).
+ *
+ * Gdy model wejdzie w deterministyczną pętlę i zacznie powtarzać pojedyncze
+ * słowo lub całą frazę (np. "no," 32000 razy albo "no, yyy," 200 razy),
+ * zwijamy powtórzenia do naturalnej liczby (1-2 wystąpienia).
+ *
+ * Dzięki temu zachowujemy pierwotną wypowiedź użytkownika, która padła
+ * przed zacięciem modelu, zamiast wyrzucać błąd i niszczyć nagranie.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function collapseLoops(text) {
+  if (!text || typeof text !== "string") return "";
+  let s = text.trim();
+  if (!s) return "";
+
+  // Krok 1: Zwijanie wielosłownych n-gramów powtórzonych 3 lub więcej razy (od 8 słów do 1)
+  for (let n = 8; n >= 1; n--) {
+    const pattern = new RegExp(`((?:\\S+\\s+){${n - 1}}\\S+)(?:\\s+\\1){2,}`, "giu");
+    s = s.replace(pattern, "$1 $1");
+  }
+
+  // Krok 2: Zwijanie powtórzonych słów z drobnymi różnicami interpunkcyjnymi (np. "no, no, no, no.")
+  s = s.replace(/([\p{L}\p{N}]+)(?:[,\s]+(?:\1)){3,}[.,?!]?/giu, (match, word) => {
+    return `${word}, ${word}`;
+  });
+
+  return s.trim();
+}
+
 const RETRY_DELAY = 2000;
 
 /**
@@ -148,11 +180,11 @@ const RETRY_DELAY = 2000;
  */
 async function withRetry(run) {
   try {
-    return await run();
+    return await run(1);
   } catch (error) {
     if (!isTransient(error)) throw error;
     await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
-    return await run();
+    return await run(2);
   }
 }
 
@@ -164,6 +196,7 @@ Zasady:
 - Nie dodawaj nic od siebie: żadnych nagłówków, komentarzy, cudzysłowów ani znaczników czasu.
 - Zachowaj język, w którym mówiono. Wtrącenia z innego języka zostaw w oryginale.
 - Jeśli w nagraniu nie ma mowy, zwróć pusty tekst.
+- Kategorycznie nie zapętlaj ani nie powtarzaj w nieskończoność tych samych słów lub dźwięków. Gdy mowa ustała lub nagranie się urywa, zakończ odpowiedź.
 
 Zwróć wyłącznie treść wypowiedzi.`;
 
@@ -224,16 +257,34 @@ async function transcribe(audio, settings, about = null) {
 
   const dispatch =
     provider === "gemini"
-      ? () => geminiTranscribe(audio, model, apiKey, language, about)
+      ? (opts) => geminiTranscribe(audio, model, apiKey, language, about, opts)
       : provider === "openai"
-        ? () => openaiTranscribe(audio, model, apiKey, language, about)
+        ? (opts) => openaiTranscribe(audio, model, apiKey, language, about, opts)
         : null;
   if (!dispatch) throw new Error(`Nieznany dostawca transkrypcji: ${provider}`);
 
-  return withRetry(async () => {
-    const out = await dispatch();
+  let firstAttemptOut = null;
+
+  return withRetry(async (attempt = 1) => {
+    // Na 1. próbie ostrożna temperatura 0.1 z karami obecności/częstości.
+    // Jeśli model wpadł w zapętlenie, na 2. próbie podbijamy temperaturę do 0.4,
+    // co rozbija deterministyczne zacięcie próbkowania greedy.
+    const temperature = attempt > 1 ? 0.4 : 0.1;
+    const out = await dispatch({ temperature, attempt });
     const looped = loopedTranscript(out.text);
     if (looped) {
+      if (attempt === 1) {
+        firstAttemptOut = out;
+        /* Rzucamy błąd zapętlenia, aby uruchomić ponowną próbę (retry) z wyższą temperaturą */
+        const error = new Error(`Transkrypcja się zapętliła — ${looped}.`);
+        error.kind = "zapętlenie";
+        throw error;
+      }
+      /* Druga próba też się zapętliła — ratujemy wypowiedź użytkownika poprzez auto-healing */
+      const healed = collapseLoops(out.text) || (firstAttemptOut ? collapseLoops(firstAttemptOut.text) : "");
+      if (healed && !loopedTranscript(healed)) {
+        return { ...out, text: healed, loopHealed: true };
+      }
       /* Rzucamy, zamiast oddać tekst: zapętlona odpowiedź nie jest gorszą
          transkrypcją, tylko żadną — a zapisana w historii psuje potem całą
          listę (patrz komentarz przy loopedTranscript). */
@@ -245,8 +296,9 @@ async function transcribe(audio, settings, about = null) {
   });
 }
 
-async function geminiTranscribe(audio, model, apiKey, language, about) {
+async function geminiTranscribe(audio, model, apiKey, language, about, options = {}) {
   const hint = `\n\n${directive(language)}${hintFor(about)}`;
+  const temperature = Number.isFinite(options?.temperature) ? options.temperature : 0.1;
 
   const response = await fetchWithin(`${GEMINI_URL}/${model}:generateContent`, {
     method: "POST",
@@ -260,8 +312,16 @@ async function geminiTranscribe(audio, model, apiKey, language, about) {
           ],
         },
       ],
-      // Zero temperatury: transkrypcja to odczyt, nie twórczość.
-      generationConfig: { temperature: 0 },
+      /* Ochrona przed zapętleniem transkrypcji:
+         - temperature: 0.1 (lub 0.4 przy retry), aby uniknąć deterministycznego zacięcia greedy
+         - maxOutputTokens: 4096 (zamiast 32k tokenów, które blokowały sieć na 2.5 minuty)
+         - presencePenalty i frequencyPenalty: penalizują powtarzanie tych samych tokenów w próbkowaniu */
+      generationConfig: {
+        temperature,
+        maxOutputTokens: 4096,
+        presencePenalty: 0.3,
+        frequencyPenalty: 0.3,
+      },
     }),
   });
 
@@ -279,11 +339,14 @@ async function geminiTranscribe(audio, model, apiKey, language, about) {
   return { text, provider: "gemini", model };
 }
 
-async function openaiTranscribe(audio, model, apiKey, language, about) {
+async function openaiTranscribe(audio, model, apiKey, language, about, options = {}) {
   const form = new FormData();
   form.append("file", new Blob([audio], { type: "audio/wav" }), "dictation.wav");
   form.append("model", model);
   form.append("response_format", "json");
+  if (Number.isFinite(options?.temperature)) {
+    form.append("temperature", String(options.temperature));
+  }
 
   // Kod języka tylko wtedy, gdy język jest jeden. Narzucony przy dwóch
   // językach kazałby Whisperowi zmielić drugi na pierwszy — czyli dokładnie
@@ -338,4 +401,5 @@ module.exports = {
   isTransient,
   withRetry,
   loopedTranscript,
+  collapseLoops,
 };

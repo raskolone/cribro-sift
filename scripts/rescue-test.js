@@ -66,15 +66,26 @@ const settings = {
   assert.equal(rescue.list().length, 0, "odzyskany plik ma zniknąć z ratunku");
   console.log("✓ Powrót sieci odzyskuje nagranie i sprząta plik");
 
-  /* 4. Nagrania starsze niż tydzień znikają same, zanim ktokolwiek spróbuje je odzyskać */
+  /* 4. Nagrania starsze niż 8 godzin znikają same */
+  assert.equal(rescue.MAX_AGE_MS, 8 * 60 * 60 * 1000, "MAX_AGE_MS powinno wynosić 8 godzin");
   const staleId = rescue.stash(Buffer.from("RIFFfake"), { app: "Test", durationMs: 1000, reason: "stare" });
   const staleFile = path.join(userData, "ratunek", `${staleId}.json`);
   const meta = JSON.parse(fs.readFileSync(staleFile, "utf8"));
   meta.savedAt = new Date(Date.now() - rescue.MAX_AGE_MS - 1000).toISOString();
   fs.writeFileSync(staleFile, JSON.stringify(meta));
   rescue.purgeExpired();
-  assert.equal(rescue.list().length, 0, "nagranie starsze niż tydzień powinno zniknąć");
-  console.log("✓ Sprzątanie zabiera nagrania starsze niż tydzień");
+  assert.equal(rescue.list().length, 0, "nagranie starsze niż 8h powinno zniknąć");
+  console.log("✓ Sprzątanie zabiera nagrania starsze niż 8 godzin");
+
+  /* 5. last() oraz retryLast() odzyskują ostatnie nagranie */
+  rescue.stash(Buffer.from("RIFFfake"), { app: "Test", durationMs: 2000, reason: "ostatnie nagranie" });
+  const lastItem = rescue.last();
+  assert(lastItem !== null, "powinno zwrócić ostatnie nagranie");
+  assert.equal(lastItem.reason, "ostatnie nagranie");
+  const singleRescued = await rescue.retryLast(settings, (e) => {});
+  assert.equal(singleRescued.text, "odzyskany tekst");
+  assert.equal(rescue.list().length, 0, "nagranie powinno zniknąć po pomyślnym retryLast");
+  console.log("✓ retryLast poprawnie odzyskuje ostatnie nagranie");
 
   console.log("\nRatunek: wszystkie sprawdzenia przeszły.");
 })().catch((error) => {

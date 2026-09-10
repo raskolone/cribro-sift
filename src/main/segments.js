@@ -33,9 +33,12 @@
 const SAMPLE_RATE = 16000;
 const BYTES_PER_SAMPLE = 2;
 
-/** Ile dźwięku w jednym odcinku. 25 sekund pozwala na płynną transkrypcję na żywo
- *  już w trakcie trwania spotkania. */
+/** Ile dźwięku w jednym odcinku. 25 sekund to bezpieczny sufit przy ciągłym monologu. */
 const SPAN = 25;
+/** Minimalna długość odcinka przed szukaniem naturalnej pauzy w mowie (VAD). */
+const MIN_SPAN = 10;
+/** Długość ciszy (w sekundach) uznawana za naturalną granicę myśli. */
+const PAUSE_SPAN = 1.2;
 /** Ile z końca poprzedniego odcinka wchodzi na początek następnego. */
 const OVERLAP = 3;
 /**
@@ -120,10 +123,21 @@ const bytes = (secs) => Math.round(secs * SAMPLE_RATE) * BYTES_PER_SAMPLE;
  * @param {object} [options]
  * @param {string} [options.lane]     nazwa toru, przepisywana na odcinki
  * @param {number} [options.span]     długość odcinka w sekundach
+ * @param {number} [options.minSpan]  minimalna długość przed szukaniem pauzy
+ * @param {number} [options.pauseSpan] długość ciszy uznawana za pauzę
  * @param {number} [options.overlap]  zakładka w sekundach
  * @param {number} [options.floor]    próg ciszy w dBFS
+ * @param {boolean} [options.vad]     czy włączać adaptacyjne cięcie na pauzie
  */
-function cutter({ lane = "system", span = SPAN, overlap = OVERLAP, floor = FLOOR } = {}) {
+function cutter({
+  lane = "system",
+  span = SPAN,
+  minSpan = MIN_SPAN,
+  pauseSpan = PAUSE_SPAN,
+  overlap = OVERLAP,
+  floor = FLOOR,
+  vad = true,
+} = {}) {
   /* ══ DŹWIĘK LEŻY W KAWAŁKACH, A NIE W JEDNYM BUFORZE ══
 
      Wcześniej każda porcja z tapa doklejała się do wspólnego bufora przez
@@ -196,8 +210,27 @@ function cutter({ lane = "system", span = SPAN, overlap = OVERLAP, floor = FLOOR
       size += pcm.length;
 
       const full = bytes(span);
+      const minBytes = bytes(Math.min(minSpan, span));
+      const pauseBytes = bytes(pauseSpan);
       const out = [];
+
+      // 1. Zwykłe cięcie, gdy bufor osiągnął maksymalną długość (ciągły monolog)
       while (size >= full) out.push(cut(full));
+
+      // 2. Adaptacyjne cięcie na pauzie w mowie (VAD)
+      if (vad && size >= minBytes + pauseBytes && size < full) {
+        const whole = gather();
+        const tail = whole.subarray(size - pauseBytes, size);
+        const { peak: tailPeak } = survey(tail, { floor });
+        if (tailPeak < floor) {
+          const head = whole.subarray(0, size - pauseBytes);
+          const { voiced } = survey(head, { floor });
+          if (voiced >= 1.5) {
+            out.push(cut(size));
+          }
+        }
+      }
+
       return out;
     },
 
@@ -224,4 +257,15 @@ function cutter({ lane = "system", span = SPAN, overlap = OVERLAP, floor = FLOOR
   };
 }
 
-module.exports = { cutter, loudness, survey, SPAN, OVERLAP, FLOOR, WINDOW, SAMPLE_RATE };
+module.exports = {
+  cutter,
+  loudness,
+  survey,
+  SPAN,
+  MIN_SPAN,
+  PAUSE_SPAN,
+  OVERLAP,
+  FLOOR,
+  WINDOW,
+  SAMPLE_RATE,
+};

@@ -128,6 +128,7 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-hour-"));
   {
     const store = fakeStore(path.join(work, "zwykla"));
     const meetings = new Meetings(store, {
+      slice: { span: 120 },
       transcribe: async (_wav, _settings, about) => ({ text: `[${about.lane} ${Math.round(about.from)}]` }),
     });
     await meetings.start({ title: "godzina" });
@@ -193,6 +194,7 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-hour-"));
     const store = fakeStore(path.join(work, "dwie"));
     let slow = true;
     const meetings = new Meetings(store, {
+      slice: { span: 120 },
       transcribe: async (_wav, _settings, about) => {
         if (slow) await new Promise((resolve) => setTimeout(resolve, 400));
         return { text: `[${about.lane} ${Math.round(about.from)}]` };

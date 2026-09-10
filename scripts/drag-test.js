@@ -34,6 +34,23 @@ const root = path.join(__dirname, "..");
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-drag-"));
 const url = (...parts) => "file://" + path.join(root, ...parts);
 
+/* Ekran nie może zasnąć w trakcie tego testu — inaczej Chromium wstrzymuje rAF. */
+try {
+  require("child_process").execFileSync("caffeinate", ["-u", "-t", "1"], { stdio: "ignore" });
+} catch {
+  /* nie macOS — nie ma czego budzić */
+}
+try {
+  require("child_process")
+    .spawn("caffeinate", ["-d", "-i", "-w", String(process.pid)], {
+      stdio: "ignore",
+      detached: true,
+    })
+    .unref();
+} catch {
+  /* nie macOS albo brak caffeinate — test poleci jak dotąd */
+}
+
 /* ── Strona ─────────────────────────────────────────────────────
    Same prawdziwe źródła. Gdyby test miał własną kopię edytora, sprawdzałby
    tę kopię — i przechodziłby jeszcze długo po tym, jak edytor by się zepsuł. */
@@ -285,6 +302,11 @@ app.disableHardwareAcceleration();
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+process.on("unhandledRejection", (err) => {
+  console.error("UNHANDLED:", err);
+  app.exit(1);
+});
+
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
     show: true, x: -2400, y: 80, width: 900, height: 760, backgroundColor: "#09101c",
@@ -306,7 +328,10 @@ app.whenReady().then(async () => {
        zamiast na zegar: to jest ta chwila, w której układ jest gotowy,
        niezależnie od tego, jak zajęta jest maszyna. */
     await js(
-      "new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(1))))",
+      "new Promise((done) => {" +
+      "  const t = setTimeout(() => done(0), 400);" +
+      "  requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(t); done(1); }));" +
+      "})",
     );
     await wait(60);
     const note = { grip: null, marked: false };

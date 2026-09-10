@@ -297,6 +297,21 @@ contextBridge.exposeInMainWorld("cribro", {
   // Nagrania z ratunku (main/rescue.js) odzyskane po powrocie sieci.
   onRescue: on("rescue:flushed"),
 
+  // Ratunek i odzyskiwanie nagrań
+  rescue: {
+    list: () => ipcRenderer.invoke("rescue:list"),
+    last: () => ipcRenderer.invoke("rescue:last"),
+    retryLast: () => ipcRenderer.invoke("rescue:retryLast"),
+    saveLast: () => ipcRenderer.invoke("rescue:saveLast"),
+  },
+
+  // Dziennik aktywności i logi
+  logs: {
+    path: () => ipcRenderer.invoke("logs:path"),
+    open: () => ipcRenderer.invoke("logs:open"),
+    tail: (lines) => ipcRenderer.invoke("logs:tail", lines),
+  },
+
   // Kanały wyłącznie dla HUD-a
   hud: {
     onStart: on("rec:start"),
@@ -307,5 +322,7 @@ contextBridge.exposeInMainWorld("cribro", {
     sendError: (message) => ipcRenderer.send("hud:error", message),
     // Nagranie bez treści — osobno od błędu, bo to nie awaria, tylko cisza.
     sendEmpty: () => ipcRenderer.send("hud:empty"),
+    retryLast: () => ipcRenderer.invoke("rescue:retryLast"),
+    saveLast: () => ipcRenderer.invoke("rescue:saveLast"),
   },
 });
