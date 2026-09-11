@@ -516,6 +516,8 @@ function renderEntry(entry) {
         <span class="dot">·</span><span>${t("Sito {mesh}", { mesh: escape(mesh) })}</span>
         ${removed ? `<span class="dot">·</span><span>${t("−{n} słów", { n: removed })}</span>` : ""}
         ${seconds ? `<span class="dot">·</span><span>${seconds}</span>` : ""}
+        ${entry.fastPath ? `<span class="pill pill--mint" style="padding:2px 8px" title="Błyskawiczne wklejenie w trybie Turbo (Fast-Path)">⚡ Turbo</span>` : ""}
+        ${entry.streamed ? `<span class="pill pill--mint" style="padding:2px 8px" title="Strumieniowanie Deepgram na żywo">🌊 Stream</span>` : ""}
         ${
           entry.command
             ? `<span class="dot">·</span><span class="pill pill--amber" style="padding:2px 8px" data-i18n="skip">${escape(entry.command.name)}</span>`
@@ -2274,6 +2276,30 @@ function engineBlock(stage, title, hint) {
       ${
         stage === "stt"
           ? `
+            <div style="margin: var(--s-3) 0 var(--s-2); padding: var(--s-3); background: rgba(56, 189, 248, 0.05); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: var(--r-md);">
+              <div style="font-weight:700; font-size:12px; margin-bottom:var(--s-2); color:var(--text-hi); display:flex; justify-content:space-between; align-items:center;">
+                <span>⚡ Tryb Przyspieszonego Potoku (Sub-sekundowe wklejanie)</span>
+                <span class="pill pill--mint" style="font-size:9px; padding:2px 6px;">Aktywne</span>
+              </div>
+              <p class="sub" style="font-size:11px; margin-bottom:var(--s-3);">
+                Skraca łączny czas od puszczenia skrótu do wklejenia tekstu z ~2 s do poniżej 400 ms.
+              </p>
+
+              ${switchField(
+                "stt.turbo",
+                "Tryb Turbo (Fast-Path dla płynnej mowy)",
+                "Gdy mówisz płynnie (bez „yyy” i zacięć), wklejaj tekst natychmiast po transkrypcji (~300 ms), pomijając zbędne wywołanie LLM.",
+                cfg.turbo !== false,
+              )}
+
+              ${switchField(
+                "stt.streaming",
+                "Strumieniowanie na żywo (Deepgram WebSocket)",
+                "Wysyłaj audio w czasie rzeczywistym w trakcie mówienia, aby transkrypcja była gotowa w ~50 ms po puszczeniu klawisza.",
+                cfg.streaming !== false,
+              )}
+            </div>
+
             <div style="margin: var(--s-3) 0 var(--s-2); padding: var(--s-3); background: rgba(255,255,255,0.02); border: 1px dashed var(--line-strong); border-radius: var(--r-md);">
               <div style="font-weight:700; font-size:12px; margin-bottom:var(--s-2); color:var(--text-hi); display:flex; justify-content:space-between; align-items:center;">
                 <span>🛡️ Zapasowe modele i wybór Fallbacku (Transkrypcja)</span>

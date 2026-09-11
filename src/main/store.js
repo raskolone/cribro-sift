@@ -56,6 +56,8 @@ const DEFAULTS = {
     fallbackApiKey: "",
     groqModel: "whisper-large-v3-turbo",
     groqApiKey: "",
+    streaming: true,
+    turbo: true,
   },
   sieve: {
     provider: "gemini", // gemini | openai | anthropic

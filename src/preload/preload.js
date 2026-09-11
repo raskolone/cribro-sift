@@ -326,6 +326,7 @@ contextBridge.exposeInMainWorld("cribro", {
     onStop: on("rec:stop"),
     onCancel: on("rec:cancel"),
     sendAudio: (buffer, durationMs) => ipcRenderer.send("hud:audio", { buffer, durationMs }),
+    sendChunk: (chunk) => ipcRenderer.send("hud:chunk", chunk),
     sendLevel: (level) => ipcRenderer.send("hud:level", level),
     sendError: (message) => ipcRenderer.send("hud:error", message),
     // Nagranie bez treści — osobno od błędu, bo to nie awaria, tylko cisza.

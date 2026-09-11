@@ -760,6 +760,7 @@ if (!window.cribro) {
       onStop: on("rec:stop"),
       onCancel: on("rec:cancel"),
       sendAudio: () => {},
+      sendChunk: () => {},
       sendLevel: (level) => emit("widget:level", level),
       sendError: () => {},
       // To samo, co robi nothingHeard w main/main.js: zdanie do okna
@@ -1184,6 +1185,7 @@ if (!window.cribro) {
       onStop: on("rec:stop"),
       onCancel: on("rec:cancel"),
       sendAudio: () => {},
+      sendChunk: () => {},
       sendLevel: () => {},
       sendError: () => {},
       sendEmpty: () => {},

@@ -117,6 +117,9 @@ let analyser = null;
 let worklet = null;
 let pcm = [];
 let pcmLength = 0;
+let chunkBuffer = [];
+let chunkSamples = 0;
+const CHUNK_THRESHOLD = 1600; // ~100 ms przy 16 kHz
 let recording = false;
 let cancelled = false;
 
@@ -128,6 +131,8 @@ async function startRecording(meta) {
   cancelled = false;
   pcm = [];
   pcmLength = 0;
+  chunkBuffer = [];
+  chunkSamples = 0;
 
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -163,6 +168,20 @@ async function startRecording(meta) {
       if (!recording) return;
       pcm.push(event.data);
       pcmLength += event.data.length;
+
+      chunkBuffer.push(event.data);
+      chunkSamples += event.data.length;
+      if (chunkSamples >= CHUNK_THRESHOLD) {
+        const merged = new Float32Array(chunkSamples);
+        let offset = 0;
+        for (const b of chunkBuffer) {
+          merged.set(b, offset);
+          offset += b.length;
+        }
+        chunkBuffer = [];
+        chunkSamples = 0;
+        window.cribro.hud?.sendChunk?.(floatTo16BitPCM(merged));
+      }
     };
     source.connect(worklet);
 
@@ -189,6 +208,18 @@ function stopRecording() {
     return;
   }
   recording = false;
+
+  if (chunkSamples > 0) {
+    const merged = new Float32Array(chunkSamples);
+    let offset = 0;
+    for (const b of chunkBuffer) {
+      merged.set(b, offset);
+      offset += b.length;
+    }
+    chunkBuffer = [];
+    chunkSamples = 0;
+    window.cribro.hud?.sendChunk?.(floatTo16BitPCM(merged));
+  }
 
   const durationMs = Date.now() - startedAt;
   const samples = pcmLength;
@@ -224,6 +255,17 @@ function teardown() {
   worklet = null;
   analyser = null;
   audioCtx = null;
+}
+
+/** Float32 [-1,1] → 16-bit linear PCM (little-endian) dla WebSocket. */
+function floatTo16BitPCM(floats) {
+  const bytes = new Uint8Array(floats.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let i = 0; i < floats.length; i++) {
+    const s = Math.max(-1, Math.min(1, floats[i]));
+    view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return bytes;
 }
 
 /** Float32 [-1,1] → plik WAV z 16-bitowym PCM. */

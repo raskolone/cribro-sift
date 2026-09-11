@@ -54,6 +54,8 @@ const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./langu
 const { translator } = require("../shared/strings");
 const ownership = require("./owner");
 const aiRegistry = require("./ai-registry");
+const { sttStream } = require("./stt-stream");
+const fastPath = require("./fast-path");
 
 /* Pasek menu mówi stanem, nie słowami — ale musi być widoczny.
    „Gotowe" jest szablonem: macOS przemaluje je na biało w ciemnym pasku
@@ -4090,6 +4092,11 @@ async function startCapture(meta) {
     handoff: !!(widget && !widget.isDestroyed() && widget.isVisible()),
   });
   hotkeys?.armCancelKey();
+
+  const currentSettings = store.getSettings();
+  if (currentSettings.stt?.provider === "deepgram" && currentSettings.stt?.streaming !== false) {
+    sttStream.startSession(currentSettings, { glossary: currentSettings.grains });
+  }
 }
 
 function stopCapture() {
@@ -4102,6 +4109,7 @@ function stopCapture() {
 function cancelCapture() {
   if (state === "idle") return;
   hotkeys?.disarmCancelKey();
+  sttStream.abortSession();
   hud?.webContents.send("rec:cancel");
   widget?.webContents.send("widget:level", 0);
   pendingContext = null;
@@ -4173,7 +4181,26 @@ async function runPipeline(audioBuffer, durationMs) {
     }
 
     const t0 = Date.now();
-    const tr = await transcribe(audioBuffer, settings);
+    let tr = null;
+    let streamed = false;
+
+    if (sttStream.active) {
+      try {
+        const streamRes = await sttStream.finishSession(2500);
+        if (streamRes && streamRes.text && streamRes.text.trim()) {
+          tr = streamRes;
+          streamed = true;
+          logger.logTask("DYKTOWANIE", "Odebrano transkrypcję ze strumienia WebSocket Deepgram", { text: tr.text });
+        }
+      } catch (err) {
+        logger.logWarning("STREAM", "Przełączam na HTTP po usterce strumienia", { error: String(err?.message || err) });
+      }
+    }
+
+    if (!tr) {
+      tr = await transcribe(audioBuffer, settings);
+    }
+
     raw = tr.text;
     const provider = tr.provider;
     const sttModel = tr.model;
@@ -4202,15 +4229,27 @@ async function runPipeline(audioBuffer, durationMs) {
     if (cue.command) setState("sifting", { command: cue.command.name });
 
     stage = "sito";
-    const result = await sift({
-      raw: cue.body,
-      settings,
-      command: cue.command,
-      // Zamknięta lista jedzie do sita tylko wtedy, gdy lokalnie nic nie
-      // trafiło i nikt nie powiedział „cytuję".
-      detect: !cue.command && !cue.bypassed,
-    });
-    const text = result.text || cue.body;
+    let text = "";
+    let result = { model: "fast-path", refused: false, degraded: false };
+    let fastPathed = false;
+
+    const fpCheck = fastPath.check(raw, settings, cue);
+    if (fpCheck.eligible) {
+      text = cue.body;
+      fastPathed = true;
+      result = { model: "fast-path", refused: false, degraded: false };
+      logger.logTask("DYKTOWANIE", "Zastosowano Fast-Path (pominięto LLM dla płynnej mowy)", { reason: fpCheck.reason });
+    } else {
+      result = await sift({
+        raw: cue.body,
+        settings,
+        command: cue.command,
+        // Zamknięta lista jedzie do sita tylko wtedy, gdy lokalnie nic nie
+        // trafiło i nikt nie powiedział „cytuję".
+        detect: !cue.command && !cue.bypassed,
+      });
+      text = result.text || cue.body;
+    }
     const tSifted = Date.now();
 
     /* Które polecenie ostatecznie zadziałało i skąd o tym wiemy.
@@ -4235,10 +4274,14 @@ async function runPipeline(audioBuffer, durationMs) {
       mesh: cue.command?.mesh ?? settings.mesh,
       app: context.app,
       durationMs,
+      fastPath: fastPathed,
+      streamed,
       timings: {
         transcribe: tTranscribed - t0,
         sift: tSifted - tTranscribed,
         total: Date.now() - t0,
+        fastPath: fastPathed,
+        streamed,
       },
       provider,
       sttModel,
@@ -5811,6 +5854,10 @@ function registerIpc() {
     pendingContext = { app: "Demo", startedAt: Date.now(), trigger: "demo" };
     await runPipeline(Buffer.alloc(0), 3200);
     return true;
+  });
+
+  ipcMain.on("hud:chunk", (_e, chunk) => {
+    sttStream.sendChunk(chunk);
   });
 
   ipcMain.on("hud:audio", async (_e, { buffer, durationMs }) => {
