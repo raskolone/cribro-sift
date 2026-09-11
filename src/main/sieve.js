@@ -4,6 +4,7 @@ const { keyFor } = require("./providers");
 const { describeError, withRetry } = require("./stt");
 const { directive } = require("./languages");
 const { catalog, readMarker } = require("./commands");
+const aiRegistry = require("./ai-registry");
 
 /**
  * Krok 2 — SITO.
@@ -17,6 +18,7 @@ const { catalog, readMarker } = require("./commands");
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const MESH = {
   zgrubne: {
@@ -141,22 +143,80 @@ async function sift({ raw, settings, command = null, detect = false }) {
   }
 
   const commands = detect && !command ? settings.commands : null;
-  const { provider, model } = settings.sieve;
+  const primaryProvider = settings.sieve?.provider || "gemini";
+  const primaryModel = settings.sieve?.model || (primaryProvider === "gemini" ? "gemini-3.7-flash" : "gpt-4o-mini");
+  const primaryKey = keyFor(primaryProvider, settings);
+
   const system = buildSystemPrompt(
     settings.mesh,
     settings.grains,
-    settings.sieve.customInstruction,
+    settings.sieve?.customInstruction,
     settings.language,
     command,
     commands,
   );
-  const apiKey = keyFor(provider, settings);
 
-  // Bez klucza aplikacja nadal działa — oddaje surowy transkrypt i mówi o tym wprost.
-  if (!apiKey) {
+  // Budujemy łańcuch prób (Główny -> OpenAI -> Groq -> Anthropic -> Gemini)
+  const tiers = [
+    {
+      provider: primaryProvider,
+      model: primaryModel,
+      apiKey: primaryKey,
+      isFallback: false,
+    },
+  ];
+
+  if (primaryProvider !== "openai") {
+    const fbModel = settings.sieve?.fallbackModel || "gpt-4o-mini";
+    const fbKey = keyFor("openai", settings);
+    tiers.push({
+      provider: "openai",
+      model: fbModel,
+      apiKey: fbKey,
+      isFallback: true,
+    });
+  }
+
+  if (primaryProvider !== "groq") {
+    const groqModel = settings.sieve?.groqModel || "llama-3.3-70b-versatile";
+    const groqKey = keyFor("groq", settings);
+    tiers.push({
+      provider: "groq",
+      model: groqModel,
+      apiKey: groqKey,
+      isFallback: true,
+    });
+  }
+
+  if (primaryProvider !== "anthropic") {
+    const antKey = keyFor("anthropic", settings);
+    if (antKey) {
+      tiers.push({
+        provider: "anthropic",
+        model: "claude-3-5-haiku-20241022",
+        apiKey: antKey,
+        isFallback: true,
+      });
+    }
+  }
+
+  if (primaryProvider !== "gemini") {
+    const geminiKey = keyFor("gemini", settings);
+    if (geminiKey) {
+      tiers.push({
+        provider: "gemini",
+        model: "gemini-3.7-flash",
+        apiKey: geminiKey,
+        isFallback: true,
+      });
+    }
+  }
+
+  // Bez jakiegokolwiek klucza oddajemy surowy transkrypt
+  if (!tiers.some((t) => t.apiKey)) {
     return {
       text: clean,
-      provider,
+      provider: primaryProvider,
       model: "brak-klucza",
       refused: false,
       command: command?.id ?? null,
@@ -164,33 +224,66 @@ async function sift({ raw, settings, command = null, detect = false }) {
     };
   }
 
-  const dispatch = { gemini: geminiSift, openai: openaiSift, anthropic: anthropicSift }[provider];
-  if (!dispatch) throw new Error(`Nieznany dostawca sita: ${provider}`);
+  const dispatchMap = {
+    gemini: geminiSift,
+    openai: openaiSift,
+    groq: groqSift,
+    anthropic: anthropicSift,
+  };
 
-  /*
-   * Sito padło mimo powtórki (main/stt.js:withRetry) — sieć nadal nie
-   * odpowiada albo dostawca ma awarię. Transkrypcja przeżyła, więc nie ma
-   * powodu wyrzucać całego nagrania: oddajemy surową wypowiedź tak, jak
-   * przy braku klucza wyżej, tylko z inną nazwą modelu w historii, żeby dało
-   * się to odróżnić od świadomego pominięcia sita.
-   */
-  let result;
-  try {
-    result = await withRetry(() => dispatch(clean, system, model, apiKey));
-  } catch (error) {
+  let result = null;
+  let firstError = null;
+  const errors = [];
+
+  for (let i = 0; i < tiers.length; i++) {
+    const tier = tiers[i];
+    if (!tier.apiKey) continue;
+
+    const dispatch = dispatchMap[tier.provider];
+    if (!dispatch) continue;
+
+    const req = aiRegistry.start({
+      stage: "sieve",
+      stageLabel: "Sito (Clean up)",
+      provider: tier.provider,
+      model: tier.model,
+      isFallback: tier.isFallback,
+      inputInfo: `${clean.length} znaków`,
+    });
+
+    try {
+      const out = await withRetry(() => dispatch(clean, system, tier.model, tier.apiKey));
+      req.success({
+        statusCode: 200,
+        outputInfo: `${out.text?.length ?? 0} znaków`,
+        textPreview: out.text,
+      });
+
+      result = {
+        ...out,
+        fallback: tier.isFallback,
+        primaryProvider: tier.isFallback ? primaryProvider : undefined,
+        primaryError: tier.isFallback && firstError ? (firstError.message || String(firstError)) : undefined,
+      };
+      break;
+    } catch (err) {
+      req.failure({ error: err, outputInfo: err.message });
+      errors.push(err);
+      if (!firstError) firstError = err;
+    }
+  }
+
+  if (!result) {
     result = {
       text: clean,
-      provider,
+      provider: primaryProvider,
       model: "sito niedostępne",
       refused: false,
       degraded: true,
-      error: String(error.message || error),
+      error: errors.map((e) => e.message || String(e)).join(" | "),
     };
   }
 
-  /* Trafienie lokalne jest już rozstrzygnięte — znacznika wtedy nie ma po co
-     szukać. Przy warstwie B pierwszą linią odpowiedzi bywa ⟦polecenie: id⟧
-     i musi zniknąć z tekstu niezależnie od tego, czy id coś znaczy. */
   if (command) return { ...result, command: command.id, commandBy: "exact" };
 
   const marker = readMarker(result.text, commands);
@@ -250,6 +343,29 @@ async function openaiSift(raw, system, model, apiKey) {
   return { text, provider: "openai", model, refused: choice?.finish_reason === "content_filter" };
 }
 
+async function groqSift(raw, system, model, apiKey) {
+  const response = await fetch(GROQ_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: model || "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: raw },
+      ],
+      temperature: 0.1,
+      max_tokens: 4000,
+    }),
+  });
+
+  if (!response.ok) throw new Error(await describeError(response, "Groq"));
+
+  const data = await response.json();
+  const choice = data.choices?.[0];
+  const text = (choice?.message?.content ?? "").trim();
+  return { text, provider: "groq", model: model || "llama-3.3-70b-versatile", refused: false };
+}
+
 async function anthropicSift(raw, system, model, apiKey) {
   const Anthropic = require("@anthropic-ai/sdk");
   const client = new Anthropic({ apiKey });
@@ -275,4 +391,4 @@ async function anthropicSift(raw, system, model, apiKey) {
   return { text, provider: "anthropic", model: response.model, refused: false };
 }
 
-module.exports = { sift, MESH, buildSystemPrompt };
+module.exports = { sift, MESH, buildSystemPrompt, groqSift, geminiSift, openaiSift, anthropicSift };

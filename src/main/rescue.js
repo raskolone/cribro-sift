@@ -115,7 +115,15 @@ async function retryLast(settings, onRescued) {
   if (!item || !item.audio) {
     throw new Error("Brak zapisanego nagrania do odzyskania.");
   }
-  const { text: raw, provider, model: sttModel } = await transcribe(item.audio, settings);
+  let raw = item.raw;
+  let provider = item.provider ?? settings.stt.provider;
+  let sttModel = item.sttModel ?? settings.stt.model;
+  if (!raw) {
+    const tr = await transcribe(item.audio, settings);
+    raw = tr.text;
+    provider = tr.provider;
+    sttModel = tr.model;
+  }
   if (!raw.trim()) {
     remove(item.id);
     throw new Error("Nagranie okazało się puste po transkrypcji.");
@@ -155,7 +163,15 @@ async function flush(settings, onRescued) {
       continue;
     }
     try {
-      const { text: raw, provider, model: sttModel } = await transcribe(audio, settings);
+      let raw = meta.raw;
+      let provider = meta.provider ?? settings.stt.provider;
+      let sttModel = meta.sttModel ?? settings.stt.model;
+      if (!raw) {
+        const tr = await transcribe(audio, settings);
+        raw = tr.text;
+        provider = tr.provider;
+        sttModel = tr.model;
+      }
       if (!raw.trim()) {
         remove(meta.id);
         continue;

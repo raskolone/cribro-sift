@@ -48,12 +48,14 @@ const DEFAULTS = {
   // oba używają tego samego, wystarczy wpisać klucz raz — drugi krok
   // sam go znajdzie (patrz keyFor w providers.js).
   stt: {
-    provider: "gemini", // gemini | openai | mock
-    // Flash-Lite zamiast Flash: na darmowym poziomie Gemini 3.7 Flash bywa
-    // zatłoczony i odbija zapytania limitem, a transkrypcja i tak jest
-    // zadaniem odtwórczym, nie wymaga najmocniejszego modelu.
-    model: "gemini-3.1-flash-lite",
+    provider: "deepgram", // deepgram | gemini | openai | groq | mock
+    model: "nova-3",
     apiKey: "",
+    fallbackProvider: "openai",
+    fallbackModel: "whisper-1",
+    fallbackApiKey: "",
+    groqModel: "whisper-large-v3-turbo",
+    groqApiKey: "",
   },
   sieve: {
     provider: "gemini", // gemini | openai | anthropic

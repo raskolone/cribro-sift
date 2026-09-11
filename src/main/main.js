@@ -53,6 +53,7 @@ const { headlines } = require("./rss");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
 const { translator } = require("../shared/strings");
 const ownership = require("./owner");
+const aiRegistry = require("./ai-registry");
 
 /* Pasek menu mówi stanem, nie słowami — ale musi być widoczny.
    „Gotowe" jest szablonem: macOS przemaluje je na biało w ciemnym pasku
@@ -110,6 +111,7 @@ let state = "idle";
 let pendingContext = null;
 let rescueTimer = null;
 let rescuing = false;
+let activePipeline = null;
 
 /**
  * Gdy w środowisku siedzi ELECTRON_RUN_AS_NODE=1, Electron startuje jako
@@ -3040,16 +3042,43 @@ function buildAppMenu() {
   const go = (view) => () => createMainWindow().webContents.send("view:go", view);
   const name = "Cribro Sift";
 
+  const sttCfg = settings.stt ?? {};
+  const sieveCfg = settings.sieve ?? {};
+
+  const saveSttPrimary = (provider, model) => {
+    const next = store.saveSettings({ stt: { ...store.getSettings().stt, provider, model } });
+    tellSettings(next);
+    refreshMenus();
+  };
+
+  const saveSttFallback = (field, model) => {
+    const next = store.saveSettings({ stt: { ...store.getSettings().stt, [field]: model } });
+    tellSettings(next);
+    refreshMenus();
+  };
+
+  const saveSievePrimary = (provider, model) => {
+    const next = store.saveSettings({ sieve: { ...store.getSettings().sieve, provider, model } });
+    tellSettings(next);
+    refreshMenus();
+  };
+
+  const saveSieveFallback = (field, model) => {
+    const next = store.saveSettings({ sieve: { ...store.getSettings().sieve, [field]: model } });
+    tellSettings(next);
+    refreshMenus();
+  };
+
   const template = [
     {
       label: name,
       submenu: [
         { role: "about", label: `${t("O programie")} ${name}` },
         { type: "separator" },
+        { label: `${t("Ustawienia modeli i fallbacków")}…`, accelerator: "Command+Shift+A", click: go("ai") },
         { label: `${t("Ustawienia")}…`, accelerator: "Command+,", click: go("settings") },
         { type: "separator" },
         { role: "services", label: t("Usługi") },
-        { type: "separator" },
         { role: "hide", label: `${t("Ukryj")} ${name}` },
         { role: "hideOthers", label: t("Ukryj pozostałe") },
         { role: "unhide", label: t("Pokaż wszystko") },
@@ -3109,13 +3138,153 @@ function buildAppMenu() {
       ],
     },
     {
+      label: t("Modele AI"),
+      submenu: [
+        {
+          label: `${t("Ustawienia modeli i fallbacków")}…`,
+          accelerator: "Command+Shift+A",
+          click: go("ai"),
+        },
+        { type: "separator" },
+        {
+          label: t("Główny model mowy (STT)"),
+          submenu: [
+            {
+              label: "Deepgram Nova-3 (Rekomendowany — najszybszy)",
+              type: "radio",
+              checked: sttCfg.provider === "deepgram" && (sttCfg.model === "nova-3" || !sttCfg.model),
+              click: () => saveSttPrimary("deepgram", "nova-3"),
+            },
+            {
+              label: "Deepgram Nova-2 (Stabilny produkcyjny)",
+              type: "radio",
+              checked: sttCfg.provider === "deepgram" && sttCfg.model === "nova-2",
+              click: () => saveSttPrimary("deepgram", "nova-2"),
+            },
+            {
+              label: "OpenAI Whisper (whisper-1)",
+              type: "radio",
+              checked: sttCfg.provider === "openai",
+              click: () => saveSttPrimary("openai", "whisper-1"),
+            },
+            {
+              label: "Groq LPU (whisper-large-v3-turbo)",
+              type: "radio",
+              checked: sttCfg.provider === "groq",
+              click: () => saveSttPrimary("groq", "whisper-large-v3-turbo"),
+            },
+            {
+              label: "Google Gemini (gemini-3.1-flash-lite)",
+              type: "radio",
+              checked: sttCfg.provider === "gemini",
+              click: () => saveSttPrimary("gemini", "gemini-3.1-flash-lite"),
+            },
+          ],
+        },
+        {
+          label: t("Fallback mowy (Zapasowy STT)"),
+          submenu: [
+            {
+              label: "Fallback 1: OpenAI Whisper (whisper-1)",
+              type: "checkbox",
+              checked: (sttCfg.fallbackModel ?? "whisper-1") === "whisper-1",
+              click: () => saveSttFallback("fallbackModel", "whisper-1"),
+            },
+            {
+              label: "Fallback 2: Groq LPU (whisper-large-v3-turbo)",
+              type: "checkbox",
+              checked: (sttCfg.groqModel ?? "whisper-large-v3-turbo") === "whisper-large-v3-turbo",
+              click: () => saveSttFallback("groqModel", "whisper-large-v3-turbo"),
+            },
+            {
+              label: "Fallback 3: Deepgram Nova-2",
+              type: "checkbox",
+              checked: (sttCfg.deepgramModel ?? "nova-2") === "nova-2",
+              click: () => saveSttFallback("deepgramModel", "nova-2"),
+            },
+            {
+              label: "Fallback 4: Google Gemini 3.1 Flash-Lite",
+              type: "checkbox",
+              checked: (sttCfg.geminiModel ?? "gemini-3.1-flash-lite") === "gemini-3.1-flash-lite",
+              click: () => saveSttFallback("geminiModel", "gemini-3.1-flash-lite"),
+            },
+          ],
+        },
+        { type: "separator" },
+        {
+          label: t("Główny model Sita (Clean up)"),
+          submenu: [
+            {
+              label: "Google Gemini 2.5 Flash (Domyślny)",
+              type: "radio",
+              checked: (sieveCfg.provider ?? "gemini") === "gemini" && (sieveCfg.model === "gemini-2.5-flash" || !sieveCfg.model),
+              click: () => saveSievePrimary("gemini", "gemini-2.5-flash"),
+            },
+            {
+              label: "Google Gemini 3.1 Pro (Najdokładniejszy)",
+              type: "radio",
+              checked: sieveCfg.provider === "gemini" && sieveCfg.model === "gemini-3.1-pro",
+              click: () => saveSievePrimary("gemini", "gemini-3.1-pro"),
+            },
+            {
+              label: "OpenAI GPT-4o mini (Szybki i oszczędny)",
+              type: "radio",
+              checked: sieveCfg.provider === "openai" && (sieveCfg.model === "gpt-4o-mini" || !sieveCfg.model),
+              click: () => saveSievePrimary("openai", "gpt-4o-mini"),
+            },
+            {
+              label: "Groq LPU (Llama 3.3 70B Versatile)",
+              type: "radio",
+              checked: sieveCfg.provider === "groq",
+              click: () => saveSievePrimary("groq", "llama-3.3-70b-versatile"),
+            },
+            {
+              label: "Anthropic Claude 3.5 Haiku",
+              type: "radio",
+              checked: sieveCfg.provider === "anthropic",
+              click: () => saveSievePrimary("anthropic", "claude-3-5-haiku-20241022"),
+            },
+          ],
+        },
+        {
+          label: t("Fallback Sita (Zapasowe czyszczenie)"),
+          submenu: [
+            {
+              label: "Fallback 1: OpenAI GPT-4o mini",
+              type: "checkbox",
+              checked: (sieveCfg.fallbackModel ?? "gpt-4o-mini") === "gpt-4o-mini",
+              click: () => saveSieveFallback("fallbackModel", "gpt-4o-mini"),
+            },
+            {
+              label: "Fallback 2: Groq Llama 3.3 70B",
+              type: "checkbox",
+              checked: (sieveCfg.groqModel ?? "llama-3.3-70b-versatile") === "llama-3.3-70b-versatile",
+              click: () => saveSieveFallback("groqModel", "llama-3.3-70b-versatile"),
+            },
+            {
+              label: "Fallback 3: Claude 3.5 Haiku",
+              type: "checkbox",
+              checked: (sieveCfg.anthropicModel ?? "claude-3-5-haiku-20241022") === "claude-3-5-haiku-20241022",
+              click: () => saveSieveFallback("anthropicModel", "claude-3-5-haiku-20241022"),
+            },
+          ],
+        },
+        { type: "separator" },
+        {
+          label: t("Rejestr zapytań AI na żywo…"),
+          click: go("ai"),
+        },
+      ],
+    },
+    {
       label: t("Widok"),
       submenu: [
         { label: t("Start"), accelerator: "Command+1", click: go("start") },
         { label: t("Notatki"), accelerator: "Command+2", click: go("notes") },
         { label: t("Funkcja sita"), accelerator: "Command+3", click: go("sieve") },
         { label: t("Ziarna"), accelerator: "Command+4", click: go("grains") },
-        { label: t("Ustawienia"), accelerator: "Command+5", click: go("settings") },
+        { label: t("Modele AI i Fallback"), accelerator: "Command+5", click: go("ai") },
+        { label: t("Ustawienia"), accelerator: "Command+6", click: go("settings") },
         { type: "separator" },
         { role: "togglefullscreen", label: t("Pełny ekran") },
       ],
@@ -3169,6 +3338,7 @@ function refreshTrayMenu() {
          jest włączony i podłączony: menu nie ma prawa wystawiać czegoś,
          co po kliknięciu powie „nie mam konta". */
       ...(briefingMine() ? [{ label: t("Poranek"), click: () => void showBriefing({ force: true }) }] : []),
+      { label: t("Modele AI i Fallback"), click: () => createMainWindow().webContents.send("view:go", "ai") },
       { label: t("Ustawienia"), click: () => createMainWindow().webContents.send("view:go", "settings") },
       { type: "separator" },
       {
@@ -3720,6 +3890,8 @@ function broadcast(channel, payload) {
   }
 }
 
+aiRegistry.setBroadcaster(broadcast);
+
 /* ── Czyja to instalacja ────────────────────────────────────────
    Krok „Silniki" — dostawca, model, klucz — należy do właściciela i tylko
    on go widzi. Dlaczego akurat tak i czym to NIE jest, mówi nagłówek
@@ -3947,7 +4119,10 @@ function cancelCapture() {
 async function flushRescues() {
   if (rescuing || !store) return;
   const settings = store.getSettings();
-  if (settings.stt.provider === "mock" || !keyFor(settings.stt.provider, settings)) return;
+  const hasKey =
+    keyFor(settings.stt.provider, settings) ||
+    (settings.stt.provider === "gemini" && keyFor("openai", settings));
+  if (settings.stt.provider === "mock" || !hasKey) return;
 
   rescuing = true;
   try {
@@ -3981,12 +4156,14 @@ async function runPipeline(audioBuffer, durationMs) {
   const settings = store.getSettings();
   const context = pendingContext ?? { app: null, startedAt: Date.now() };
   pendingContext = null;
+  activePipeline = { audioBuffer, durationMs, context };
 
   logger.logTask("DYKTOWANIE", "Rozpoczęto przetwarzanie nagrania audio", { durationMs, app: context.app });
 
   // Etap trzymamy osobno, żeby komunikat mówił, co konkretnie zawiodło.
   // „Nie udało się" bez wskazania miejsca jest bezużyteczne przy pierwszym teście.
   let stage = "transkrypcja";
+  let raw = null;
 
   try {
     setState("sifting");
@@ -3996,10 +4173,23 @@ async function runPipeline(audioBuffer, durationMs) {
     }
 
     const t0 = Date.now();
-    const { text: raw, provider, model: sttModel } = await transcribe(audioBuffer, settings);
+    const tr = await transcribe(audioBuffer, settings);
+    raw = tr.text;
+    const provider = tr.provider;
+    const sttModel = tr.model;
     const tTranscribed = Date.now();
 
     if (!raw.trim()) {
+      if (audioBuffer?.length && durationMs >= 1500 && settings.stt.provider !== "mock") {
+        const rescueId = rescue.stash(audioBuffer, {
+          app: context.app,
+          durationMs,
+          language: settings.language,
+          stage: "transkrypcja",
+          reason: "Dostawca zwrócił pustą transkrypcję mimo trwającego nagrania",
+        });
+        logger.logTask("DYKTOWANIE", `Zapisano nagranie do ratunku (brak mowy wg modelu, id: ${rescueId})`);
+      }
       nothingHeard();
       return;
     }
@@ -4088,6 +4278,7 @@ async function runPipeline(audioBuffer, durationMs) {
           language: settings.language,
           stage,
           reason: message,
+          raw: raw ?? null,
         });
       }
       logger.logError(
@@ -4114,6 +4305,7 @@ async function runPipeline(audioBuffer, durationMs) {
         language: settings.language,
         stage,
         reason: message,
+        raw: raw ?? null,
       });
       logger.logError("DYKTOWANIE", `Błąd na etapie ${stage}: ${message}. Zapisano nagranie do ratunku (id: ${rescueId})`, { stage, error: message });
       tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
@@ -4130,6 +4322,8 @@ async function runPipeline(audioBuffer, durationMs) {
     logger.logError("DYKTOWANIE", `Błąd na etapie ${stage}: ${message}`, { stage, error: message });
     tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
     setState("idle", { error: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.", stage, originalError: message });
+  } finally {
+    activePipeline = null;
   }
 }
 
@@ -4441,6 +4635,10 @@ function registerIpc() {
   ipcMain.handle("providers:get", () =>
     ownerHere() ? { stt: STT, sieve: SIEVE, shot: OCR } : {},
   );
+
+  /* Rejestr zapytań do modeli AI — podgląd na żywo wszystkich wywołań */
+  ipcMain.handle("ai:registry:list", () => aiRegistry.list());
+  ipcMain.handle("ai:registry:clear", () => aiRegistry.clear());
 
   /* ── Notatnik ── */
   ipcMain.handle("notes:get", () => store.getNotes());
@@ -5586,13 +5784,26 @@ function registerIpc() {
     const settings = store.getSettings();
     const { provider, model } = settings.stt;
     if (provider === "mock") return { ok: true, note: "Atrapa — klucz niepotrzebny." };
-    if (!keyFor(provider, settings)) {
+    const hasKey =
+      keyFor(provider, settings) ||
+      keyFor("deepgram", settings) ||
+      keyFor("openai", settings) ||
+      keyFor("groq", settings) ||
+      keyFor("gemini", settings);
+    if (!hasKey) {
       throw new Error("Brak klucza dla wybranego dostawcy transkrypcji.");
     }
 
     const t0 = Date.now();
-    await transcribe(silentWav(0.2), settings);
-    return { ok: true, note: `${provider} / ${model} odpowiedział w ${Date.now() - t0} ms.` };
+    const res = await transcribe(silentWav(0.2), settings);
+    const ms = Date.now() - t0;
+    if (res?.fallback) {
+      return {
+        ok: true,
+        note: `${provider} (${model}) niedostępny, ale fallback ${res.provider} (${res.model}) odpowiedział w ${ms} ms.`,
+      };
+    }
+    return { ok: true, note: `${provider} / ${model} odpowiedział w ${ms} ms.` };
   });
 
   /** Przejście całej ścieżki bez mikrofonu — do pokazu i do testów. */
@@ -6140,6 +6351,16 @@ function guardWindows() {
   app.on("window-all-closed", () => {});
   app.on("will-quit", (event) => {
     hotkeys?.stop();
+    if (activePipeline?.audioBuffer?.length && store?.getSettings()?.stt?.provider !== "mock") {
+      try {
+        rescue.stash(activePipeline.audioBuffer, {
+          app: activePipeline.context?.app,
+          durationMs: activePipeline.durationMs,
+          stage: "zamknięcie",
+          reason: "Aplikacja została zamknięta w trakcie dyktowania",
+        });
+      } catch {}
+    }
     /* Nagrywanie trzeba domknąć, zanim proces zniknie. Program pomocniczy
        przeżyłby zamknięcie okna, a pliki WAV zostałyby bez nagłówka —
        czyli jako bajty, których nic nie otworzy. */

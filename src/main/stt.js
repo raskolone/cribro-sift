@@ -2,6 +2,7 @@
 
 const { keyFor } = require("./providers");
 const { directive, fixedCode, whisperHint } = require("./languages");
+const aiRegistry = require("./ai-registry");
 
 /**
  * Krok 1 — głos na tekst.
@@ -16,6 +17,8 @@ const { directive, fixedCode, whisperHint } = require("./languages");
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const OPENAI_URL = "https://api.openai.com/v1/audio/transcriptions";
+const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+const DEEPGRAM_URL = "https://api.deepgram.com/v1/listen";
 const MAX_INLINE_BYTES = 18 * 1024 * 1024; // Gemini przyjmuje 20 MB na całe żądanie
 
 /**
@@ -60,6 +63,20 @@ async function fetchWithin(url, options, ms = DEADLINE) {
 }
 
 /**
+ * Czy błąd wskazuje na przekroczenie limitu zapytań (HTTP 429 / RESOURCE_EXHAUSTED).
+ * W odróżnieniu od zwykłych usterek sieciowych, rate limit wymaga dłuższego
+ * czasu na zresetowanie okna limitów u dostawcy (np. 15–60 s zamiast 1.5 s).
+ */
+function isRateLimit(error) {
+  const msg = String(error?.message || error || "");
+  if (/zwrócił błąd 429\b/i.test(msg)) return true;
+  if (/przekroczony limit zapytań/i.test(msg)) return true;
+  if (/\b429\b/.test(msg)) return true;
+  if (/RESOURCE_EXHAUSTED/i.test(msg)) return true;
+  return false;
+}
+
+/**
  * Usterki, po których ma sens spróbować jeszcze raz: sieć się potknęła,
  * limit żądań akurat minął, dostawca ma chwilową czkawkę. Klucz odrzucony
  * albo model, którego nie ma, nie znikną same po odczekaniu — te lecą dalej
@@ -71,10 +88,10 @@ function isTransient(error) {
      Dlatego traktujemy je jak czkawkę sieci: jedna powtórka, a dopiero
      druga porażka z rzędu znaczy, że to nie pech. */
   if (error?.kind === "zapętlenie") return true;
+  if (isRateLimit(error)) return true;
   const msg = String(error?.message || error || "");
   if (/nie odpowiedział w \d+ s/.test(msg)) return true; // nasz własny czas z fetchWithin
-  if (/zwrócił błąd (429|500|502|503|504)\b/.test(msg)) return true;
-  if (/przekroczony limit zapytań/.test(msg)) return true;
+  if (/zwrócił błąd (500|502|503|504)\b/.test(msg)) return true;
   if (/fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED/i.test(msg)) return true;
   return false;
 }
@@ -236,8 +253,33 @@ function hintFor(about) {
   return parts.length ? `\n\n${parts.join("\n")}` : "";
 }
 
+async function dispatchWithProtection(dispatchFn) {
+  let firstAttemptOut = null;
+  return withRetry(async (attempt = 1) => {
+    const temperature = attempt > 1 ? 0.4 : 0.1;
+    const out = await dispatchFn({ temperature, attempt });
+    const looped = loopedTranscript(out.text);
+    if (looped) {
+      if (attempt === 1) {
+        firstAttemptOut = out;
+        const error = new Error(`Transkrypcja się zapętliła — ${looped}.`);
+        error.kind = "zapętlenie";
+        throw error;
+      }
+      const healed = collapseLoops(out.text) || (firstAttemptOut ? collapseLoops(firstAttemptOut.text) : "");
+      if (healed && !loopedTranscript(healed)) {
+        return { ...out, text: healed, loopHealed: true };
+      }
+      const error = new Error(`Transkrypcja się zapętliła — ${looped}.`);
+      error.kind = "zapętlenie";
+      throw error;
+    }
+    return out;
+  });
+}
+
 async function transcribe(audio, settings, about = null) {
-  const { provider, model } = settings.stt;
+  const { provider, model } = settings.stt ?? {};
   const language = settings.language;
 
   if (provider === "mock") {
@@ -252,48 +294,162 @@ async function transcribe(audio, settings, about = null) {
     );
   }
 
-  const apiKey = keyFor(provider, settings);
-  if (!apiKey) throw new Error(`Brak klucza API dla dostawcy „${provider}".`);
+  const primaryProvider = provider || "gemini";
+  const primaryModel =
+    model ||
+    (primaryProvider === "deepgram"
+      ? "nova-3"
+      : primaryProvider === "gemini"
+        ? "gemini-3.1-flash-lite"
+        : "whisper-1");
+  const primaryKey = keyFor(primaryProvider, settings);
 
-  const dispatch =
-    provider === "gemini"
-      ? (opts) => geminiTranscribe(audio, model, apiKey, language, about, opts)
-      : provider === "openai"
-        ? (opts) => openaiTranscribe(audio, model, apiKey, language, about, opts)
-        : null;
-  if (!dispatch) throw new Error(`Nieznany dostawca transkrypcji: ${provider}`);
+  // Budujemy łańcuch prób: Główny -> Deepgram -> OpenAI -> Groq -> Gemini
+  const tiers = [
+    {
+      provider: primaryProvider,
+      model: primaryModel,
+      apiKey: primaryKey,
+      isFallback: false,
+    },
+  ];
 
-  let firstAttemptOut = null;
-
-  return withRetry(async (attempt = 1) => {
-    // Na 1. próbie ostrożna temperatura 0.1 z karami obecności/częstości.
-    // Jeśli model wpadł w zapętlenie, na 2. próbie podbijamy temperaturę do 0.4,
-    // co rozbija deterministyczne zacięcie próbkowania greedy.
-    const temperature = attempt > 1 ? 0.4 : 0.1;
-    const out = await dispatch({ temperature, attempt });
-    const looped = loopedTranscript(out.text);
-    if (looped) {
-      if (attempt === 1) {
-        firstAttemptOut = out;
-        /* Rzucamy błąd zapętlenia, aby uruchomić ponowną próbę (retry) z wyższą temperaturą */
-        const error = new Error(`Transkrypcja się zapętliła — ${looped}.`);
-        error.kind = "zapętlenie";
-        throw error;
-      }
-      /* Druga próba też się zapętliła — ratujemy wypowiedź użytkownika poprzez auto-healing */
-      const healed = collapseLoops(out.text) || (firstAttemptOut ? collapseLoops(firstAttemptOut.text) : "");
-      if (healed && !loopedTranscript(healed)) {
-        return { ...out, text: healed, loopHealed: true };
-      }
-      /* Rzucamy, zamiast oddać tekst: zapętlona odpowiedź nie jest gorszą
-         transkrypcją, tylko żadną — a zapisana w historii psuje potem całą
-         listę (patrz komentarz przy loopedTranscript). */
-      const error = new Error(`Transkrypcja się zapętliła — ${looped}.`);
-      error.kind = "zapętlenie";
-      throw error;
+  if (primaryProvider !== "deepgram") {
+    const dgModel = settings.stt?.deepgramModel || "nova-3";
+    const dgKey = keyFor("deepgram", settings);
+    if (dgKey) {
+      tiers.push({
+        provider: "deepgram",
+        model: dgModel,
+        apiKey: dgKey,
+        isFallback: true,
+      });
     }
-    return out;
-  });
+  }
+
+  if (primaryProvider !== "openai") {
+    const fbModel = settings.stt?.fallbackModel || "whisper-1";
+    const fbKey = keyFor("openai", settings);
+    tiers.push({
+      provider: "openai",
+      model: fbModel,
+      apiKey: fbKey,
+      isFallback: true,
+    });
+  }
+
+  if (primaryProvider !== "groq") {
+    const groqModel = settings.stt?.groqModel || "whisper-large-v3-turbo";
+    const groqKey = keyFor("groq", settings);
+    tiers.push({
+      provider: "groq",
+      model: groqModel,
+      apiKey: groqKey,
+      isFallback: true,
+    });
+  }
+
+  if (primaryProvider !== "gemini") {
+    const geminiKey = keyFor("gemini", settings);
+    if (geminiKey) {
+      tiers.push({
+        provider: "gemini",
+        model: "gemini-3.1-flash-lite",
+        apiKey: geminiKey,
+        isFallback: true,
+      });
+    }
+  }
+
+  let firstError = null;
+  const errors = [];
+
+  for (let i = 0; i < tiers.length; i++) {
+    const tier = tiers[i];
+
+    if (!tier.apiKey) {
+      if (!tier.isFallback) {
+        firstError = new Error(`Brak klucza API dla dostawcy „${tier.provider}”.`);
+        errors.push(firstError);
+      }
+      continue;
+    }
+
+    const req = aiRegistry.start({
+      stage: "stt",
+      stageLabel: "Transkrypcja",
+      provider: tier.provider,
+      model: tier.model,
+      isFallback: tier.isFallback,
+      inputInfo: `${Math.round(audio.length / 1024)} kB WAV`,
+    });
+
+    try {
+      const dispatchFn = (opts) => {
+        if (tier.provider === "deepgram") {
+          return deepgramTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
+        }
+        if (tier.provider === "gemini") {
+          return geminiTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
+        }
+        if (tier.provider === "openai") {
+          return openaiTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
+        }
+        if (tier.provider === "groq") {
+          return groqTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
+        }
+        throw new Error(`Nieznany dostawca transkrypcji: ${tier.provider}`);
+      };
+
+      const out = await dispatchWithProtection(dispatchFn);
+
+      // Sprawdzenie na fałszywą ciszę (pusty tekst przy nagraniu z wyraźnym dźwiękiem > 32 kB):
+      const emptyOnSound = !out?.text?.trim() && audio.length > 32000;
+      if (emptyOnSound) {
+        const hasNextWithKey = tiers.slice(i + 1).some((t) => t.apiKey);
+        if (hasNextWithKey) {
+          const silenceErr = new Error(`Dostawca ${tier.provider} zwrócił pusty tekst mimo dźwięku`);
+          req.failure({ error: silenceErr, outputInfo: "Pusta odpowiedź mimo dźwięku" });
+          errors.push(silenceErr);
+          if (!firstError) firstError = silenceErr;
+          continue;
+        }
+      }
+
+      req.success({
+        statusCode: 200,
+        outputInfo: `${out?.text?.length ?? 0} znaków`,
+        textPreview: out?.text ?? "",
+      });
+
+      if (tier.isFallback) {
+        return {
+          ...out,
+          fallback: true,
+          primaryProvider,
+          primaryError: firstError ? (firstError.message || String(firstError)) : null,
+        };
+      }
+      return out;
+    } catch (err) {
+      req.failure({ error: err, outputInfo: err.message });
+      errors.push(err);
+      if (!firstError) firstError = err;
+    }
+  }
+
+  if (firstError) {
+    if (errors.length > 1) {
+      const summary = errors.map((e) => e.message || String(e)).join(" | ");
+      const combined = new Error(`Wszystkie próby transkrypcji nie powiodły się: ${summary}`);
+      combined.primaryError = firstError;
+      combined.errors = errors;
+      throw combined;
+    }
+    throw firstError;
+  }
+
+  throw new Error(`Brak klucza API dla dostawcy „${primaryProvider}”.`);
 }
 
 async function geminiTranscribe(audio, model, apiKey, language, about, options = {}) {
@@ -370,6 +526,75 @@ async function openaiTranscribe(audio, model, apiKey, language, about, options =
   return { text: (data.text ?? "").trim(), provider: "openai", model };
 }
 
+async function groqTranscribe(audio, model, apiKey, language, about, options = {}) {
+  const form = new FormData();
+  form.append("file", new Blob([audio], { type: "audio/wav" }), "dictation.wav");
+  form.append("model", model || "whisper-large-v3-turbo");
+  form.append("response_format", "json");
+  if (Number.isFinite(options?.temperature)) {
+    form.append("temperature", String(options.temperature));
+  }
+
+  const code = fixedCode(language);
+  if (code) form.append("language", code);
+  const hint = [whisperHint(language), hintFor(about).trim()].filter(Boolean).join(" ");
+  if (hint) form.append("prompt", hint);
+
+  const response = await fetchWithin(GROQ_URL, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+
+  if (!response.ok) throw new Error(await describeError(response, "Groq"));
+
+  const data = await response.json();
+  return { text: (data.text ?? "").trim(), provider: "groq", model: model || "whisper-large-v3-turbo" };
+}
+
+async function deepgramTranscribe(audio, model, apiKey, language, about, options = {}) {
+  const modelName = model || "nova-3";
+  const code = fixedCode(language) || "pl";
+  const urlObj = new URL(DEEPGRAM_URL);
+  urlObj.searchParams.set("model", modelName);
+  urlObj.searchParams.set("smart_format", "true");
+  urlObj.searchParams.set("punctuate", "true");
+
+  if (language?.mode === "bilingual") {
+    urlObj.searchParams.set("detect_language", "true");
+  } else {
+    urlObj.searchParams.set("language", code);
+  }
+
+  const names = (about?.glossary ?? []).filter(Boolean);
+  for (const name of names.slice(0, 50)) {
+    urlObj.searchParams.append("keywords", `${name}:2`);
+  }
+
+  const response = await fetchWithin(urlObj.toString(), {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${apiKey}`,
+      "Content-Type": "audio/wav",
+    },
+    body: audio,
+  });
+
+  if (!response.ok) throw new Error(await describeError(response, "Deepgram"));
+
+  const data = await response.json();
+  const transcript =
+    data.results?.channels?.[0]?.alternatives?.[0]?.transcript ??
+    data.results?.channels?.[0]?.alternatives?.[0]?.words?.map((w) => w.word).join(" ") ??
+    "";
+
+  return {
+    text: transcript.trim(),
+    provider: "deepgram",
+    model: modelName,
+  };
+}
+
 /** Komunikat, z którym da się cokolwiek zrobić, zamiast samego kodu HTTP. */
 async function describeError(response, who) {
   const body = await response.text().catch(() => "");
@@ -394,12 +619,18 @@ async function describeError(response, who) {
 
 module.exports = {
   transcribe,
+  deepgramTranscribe,
+  geminiTranscribe,
+  openaiTranscribe,
+  groqTranscribe,
   describeError,
   hintFor,
   fetchWithin,
   DEADLINE,
   isTransient,
+  isRateLimit,
   withRetry,
   loopedTranscript,
   collapseLoops,
 };
+

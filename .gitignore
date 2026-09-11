@@ -4,3 +4,4 @@ release/
 .shots/
 .DS_Store
 native/build/
+ai-requests.json

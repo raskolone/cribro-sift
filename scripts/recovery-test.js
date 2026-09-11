@@ -171,6 +171,79 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-recovery-"));
     check("Wpis zawiera czytelną informację dla człowieka", /Zapis obejmuje/i.test(meeting.transcriptError));
   }
 
+  /* ── 3. Rozpoznawanie rate limitu (429) ── */
+  {
+    const { isRateLimit } = require("../src/main/stt");
+    check("isRateLimit rozpoznaje HTTP 429", isRateLimit(new Error("Gemini: przekroczony limit zapytań (429).")));
+    check("isRateLimit rozpoznaje kod 429", isRateLimit(new Error("OpenAI zwrócił błąd 429: Rate limit reached")));
+    check("isRateLimit rozpoznaje RESOURCE_EXHAUSTED", isRateLimit(new Error("RESOURCE_EXHAUSTED: quota exceeded")));
+    check("isRateLimit nie myli zwykłych błędów sieciowych z 429", !isRateLimit(new Error("fetch failed: ECONNRESET")));
+    check("Meetings.isRateLimit działa tak samo", Meetings.isRateLimit(new Error("429 Too Many Requests")));
+    check("Meetings.CONCURRENT jest domyślnie równe 2", Meetings.CONCURRENT === 2);
+    check("Meetings.RATE_LIMIT_BACKOFF wynosi 15 sekund", Meetings.RATE_LIMIT_BACKOFF === 15000);
+  }
+
+  /* ── 4. Limit współbieżności zapytań STT (semafor) ── */
+  {
+    const store = fakeStore(path.join(work, "semafor"));
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const meetings = new Meetings(store, {
+      slice: { span: 1, overlap: 0.1 },
+      backoff: 10,
+      concurrent: 2,
+      transcribe: async () => {
+        inFlight += 1;
+        if (inFlight > maxInFlight) maxInFlight = inFlight;
+        await new Promise((r) => setTimeout(r, 60));
+        inFlight -= 1;
+        return { text: "odcinek" };
+      },
+    });
+
+    await meetings.start({ title: "test semafora" });
+    talk(6);
+    await new Promise((r) => setTimeout(r, 300));
+    await meetings.stop();
+
+    check("Maksymalna liczba równoległych zapytań nie przekracza limitu (2)", maxInFlight <= 2 && maxInFlight > 0);
+  }
+
+  /* ── 5. Adaptacyjny backoff po 429 ── */
+  {
+    const store = fakeStore(path.join(work, "backoff-429"));
+    let attempts = 0;
+    const timestampsByLane = { mic: [], system: [] };
+    const meetings = new Meetings(store, {
+      slice: { span: 1, overlap: 0.1 },
+      backoff: 10,
+      rateLimitBackoff: 80,
+      transcribe: async (_wav, _settings, about) => {
+        attempts += 1;
+        if (about?.lane && timestampsByLane[about.lane]) {
+          timestampsByLane[about.lane].push(Date.now());
+        }
+        if (attempts <= 2) {
+          throw new Error("Gemini: przekroczony limit zapytań (429).");
+        }
+        return { text: "udało się po odczekaniu" };
+      },
+    });
+
+    await meetings.start({ title: "test 429" });
+    talk(6);
+    await new Promise((r) => setTimeout(r, 250));
+    const { meeting, discarded } = await meetings.stop();
+
+    check("Spotkanie nie zostało odrzucone", discarded === false && meeting !== null);
+    check("Odcinek po 429 został ponowiony", attempts >= 2);
+    const micTimes = timestampsByLane.mic;
+    check("Odcinek ma co najmniej dwie próby w tym samym torze", micTimes.length >= 2);
+    const delay = micTimes[1] - micTimes[0];
+    check("Odstęp po 429 uwzględnia dłuższy rateLimitBackoff (>= 60 ms)", delay >= 60);
+    check("Zapis zawiera odzyskany odcinek", meeting.transcript.some((t) => t.text.includes("udało się")));
+  }
+
   fs.rmSync(work, { recursive: true, force: true });
   console.log(`\n${passed} sprawdzeń testu recovery przeszło pomyślnie.`);
 })().catch((err) => {

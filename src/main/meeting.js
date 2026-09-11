@@ -6,6 +6,7 @@ const { record, wavHeader } = require("./tap");
 const { cutter, FLOOR } = require("./segments");
 const { splice } = require("./merge");
 const { shrink, expand } = require("./audio");
+const { transcribe: defaultTranscribe, isRateLimit } = require("./stt");
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -63,6 +64,8 @@ class Meetings {
       transcribe,
       slice,
       backoff,
+      rateLimitBackoff,
+      concurrent,
       patience,
       drain,
       probeInterval,
@@ -87,7 +90,7 @@ class Meetings {
        menu aplikacji; przybycie odcinka zapisu nie zmienia ani jednego,
        ani drugiego — a przychodzi co dwie minuty przez całą rozmowę. */
     this.onTranscript = onTranscript ?? (() => {});
-    this.transcribe = transcribe ?? require("./stt").transcribe;
+    this.transcribe = transcribe ?? defaultTranscribe;
     /* Jak kroimy tor — domyślnie tak, jak mówi main/segments.js. Podawane
        z zewnątrz wyłącznie w teście: żeby sprawdzić przepisywanie w biegu
        na trzysekundowym nagraniu, odcinek musi trwać sekundę, a nie dwie
@@ -98,6 +101,12 @@ class Meetings {
        po półtorej sekundy przed każdym. Nagranie prawdziwe zostaje przy
        swoim — mrugnięcie sieci mija w sekundę, a nie w milisekundę. */
     this.backoff = backoff ?? Meetings.BACKOFF;
+    /* Odstęp przed powtórką po błędzie 429 (rate limit). Podawany z zewnątrz
+       w teście, żeby nie czekać 15 sekund w teście jednostkowym. */
+    this.rateLimitBackoff = rateLimitBackoff ?? Meetings.RATE_LIMIT_BACKOFF;
+    /* Ile żądań transkrypcji może biec równolegle w biegu. Domyślnie 2
+       (po jednym na tor), konfigurowalne w teście. */
+    this.concurrent = concurrent ?? Meetings.CONCURRENT;
     /* Ile czekamy na JEDNO podejście do dostawcy i ile na wszystkie odcinki
        naraz przy zamykaniu. Podawane z zewnątrz wyłącznie w teście —
        powody obu liczb stoją przy PATIENCE i DRAIN niżej. */
@@ -148,6 +157,8 @@ class Meetings {
       cutters: null,
       pieces: [],
       jobs: [],
+      running: 0,
+      waiters: [],
       misses: 0,
       offline: false,
       offlineQueue: [],
@@ -256,6 +267,28 @@ class Meetings {
   /** Odstęp przed kolejną próbą, w milisekundach. Rośnie z każdą. */
   static get BACKOFF() {
     return 1500;
+  }
+
+  /**
+   * Odstęp przed kolejną próbą po błędzie 429 (rate limit), w milisekundach.
+   * Dostawcy (np. Gemini) resetują okno zapytań zwykle co minutę,
+   * więc odstęp 15 s na próbę (15s, 30s) daje czas na odzyskanie limitu.
+   */
+  static get RATE_LIMIT_BACKOFF() {
+    return 15_000;
+  }
+
+  /**
+   * Ile żądań transkrypcji może biec równolegle do dostawcy.
+   * Dwa (po jednym na tor) chronią przed zalaniem API i błędem 429.
+   */
+  static get CONCURRENT() {
+    return 2;
+  }
+
+  /** Czy dany błąd to przekroczenie limitu zapytań (429). */
+  static isRateLimit(error) {
+    return isRateLimit(error);
   }
 
   /**
@@ -521,7 +554,16 @@ class Meetings {
 
     const row = this.#note(session, piece, "sent");
     const job = (async () => {
+      await this.#acquireSlot(session);
       try {
+        if (session.closed) return;
+        if (session.offline) {
+          row.state = "queued";
+          this.#jot(session, row);
+          session.offlineQueue.push({ piece, row });
+          return;
+        }
+
         const wav = Buffer.concat([wavHeader(piece.pcm.length), piece.pcm]);
         /* Trzeci argument mówi, CZYJ to odcinek i kiedy padł. Dostawcy
            w main/stt.js go nie czytają, a przydaje się dwóm rzeczom:
@@ -598,6 +640,8 @@ class Meetings {
             this.#tell(this.onError, `Nie udało się przepisać fragmentu: ${msg}`);
           }
         }
+      } finally {
+        this.#releaseSlot(session);
       }
     })();
     session.jobs.push(job);
@@ -605,6 +649,29 @@ class Meetings {
       const at = session.jobs.indexOf(job);
       if (at >= 0) session.jobs.splice(at, 1);
     });
+  }
+
+  /** Rezerwacja slotu współbieżności STT w ramach sesji. */
+  async #acquireSlot(session) {
+    const limit = this.concurrent ?? Meetings.CONCURRENT;
+    if ((session.running ?? 0) < limit) {
+      session.running = (session.running ?? 0) + 1;
+      return;
+    }
+    return new Promise((resolve) => {
+      session.waiters = session.waiters ?? [];
+      session.waiters.push(resolve);
+    });
+  }
+
+  /** Zwolnienie slotu współbieżności STT i obudzenie następnego oczekującego. */
+  #releaseSlot(session) {
+    session.running = Math.max(0, (session.running ?? 1) - 1);
+    if (session.waiters && session.waiters.length > 0) {
+      session.running += 1;
+      const next = session.waiters.shift();
+      next();
+    }
   }
 
   /**
@@ -649,7 +716,13 @@ class Meetings {
       } catch (problem) {
         last = problem;
       }
-      if (attempt < Meetings.TRIES) await wait(this.backoff * attempt);
+      if (attempt < Meetings.TRIES) {
+        const isRate = isRateLimit(last);
+        const stepDelay = isRate
+          ? (this.rateLimitBackoff ?? Meetings.RATE_LIMIT_BACKOFF)
+          : this.backoff;
+        await wait(stepDelay * attempt);
+      }
     }
 
     throw last ?? new Error("nie udało się przepisać odcinka");
@@ -1215,6 +1288,11 @@ class Meetings {
     });
     const done = await Promise.race([Promise.allSettled(waiting).then(() => "wszystkie"), patience]);
     clearTimeout(timer);
+    if (session.waiters && session.waiters.length > 0) {
+      const pending = session.waiters;
+      session.waiters = [];
+      for (const wake of pending) wake();
+    }
     if (done === "wszystkie") return;
 
     /* Które nie zdążyły — po rejestrze, bo tylko on wie o każdym odcinku

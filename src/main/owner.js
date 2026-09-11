@@ -114,7 +114,7 @@ function publicSettings(settings, owner, ready = () => true) {
   if (owner) return { ...settings, owner: true, enginesReady: true };
 
   const strip = (stage) => {
-    const { provider, model, apiKey, ...rest } = settings?.[stage] ?? {};
+    const { provider, model, apiKey, fallbackProvider, fallbackModel, fallbackApiKey, ...rest } = settings?.[stage] ?? {};
     return rest;
   };
 
@@ -129,7 +129,7 @@ function publicSettings(settings, owner, ready = () => true) {
 }
 
 /** Pola, których zapis od zwykłego użytkownika nie ma prawa ruszyć. */
-const SEALED = ["provider", "model", "apiKey"];
+const SEALED = ["provider", "model", "apiKey", "fallbackProvider", "fallbackModel", "fallbackApiKey"];
 
 /**
  * Zmiana ustawień okrojona do tego, co zwykłemu użytkownikowi wolno.

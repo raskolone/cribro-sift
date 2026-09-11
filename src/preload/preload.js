@@ -312,6 +312,14 @@ contextBridge.exposeInMainWorld("cribro", {
     tail: (lines) => ipcRenderer.invoke("logs:tail", lines),
   },
 
+  // Rejestr zapytań AI i telemetryka modeli
+  ai: {
+    registry: () => ipcRenderer.invoke("ai:registry:list"),
+    clearRegistry: () => ipcRenderer.invoke("ai:registry:clear"),
+    onRequestNew: on("ai:request:new"),
+    onRegistryCleared: on("ai:registry:cleared"),
+  },
+
   // Kanały wyłącznie dla HUD-a
   hud: {
     onStart: on("rec:start"),

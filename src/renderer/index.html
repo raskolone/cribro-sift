@@ -105,6 +105,11 @@
           />
           <circle cx="12" cy="12" r="3.1" fill="none" stroke="currentColor" stroke-width="1.5" />
         </symbol>
+        <symbol id="i-cpu" viewBox="0 0 24 24">
+          <rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.4" />
+          <path d="M8.5 1v3M15.5 1v3M8.5 20v3M15.5 20v3M1 8.5h3M1 15.5h3M20 8.5h3M20 15.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </symbol>
         <symbol id="i-mic" viewBox="0 0 24 24">
           <rect
             x="9"
@@ -281,16 +286,13 @@
           <button class="nav__item" title="Ustawienia" data-view="settings" aria-selected="false">
             <svg><use href="#i-gear" /></svg> <span>Ustawienia</span>
           </button>
-          <!-- OSOBNA POZYCJA, nie karta w Ustawieniach. Ustawienia to
-               decyzje o TEJ instalacji; panel to decyzje o cudzych kontach.
-               Zmieszane w jednym oknie kazałyby przy każdym kliknięciu
-               pytać, czyje ustawienie się właśnie zmienia.
-
-               Widoczna wyłącznie na koncie właściciela — chowa ją render()
-               w js/app.js, a odmowa i tak zapada w bazie. -->
-          <button class="nav__item nav__item--admin" title="Panel admina"
+          <!-- OSOBNA POZYCJA, nie karta w Ustawieniach. Łączy w sobie
+               konfigurację Silników AI (STT, Sito, OCR, Fallbacki, Rejestr)
+               oraz panel zarządzania subskrypcjami i kontami.
+               Widoczna wyłącznie na koncie właściciela — chowa ją render(). -->
+          <button class="nav__item nav__item--admin" title="Silniki AI & Panel Admina"
                   data-view="admin" aria-selected="false" hidden>
-            <svg><use href="#i-shield" /></svg> <span>Panel</span>
+            <svg><use href="#i-cpu" /></svg> <span>Silniki AI</span>
           </button>
         </nav>
 
@@ -329,6 +331,7 @@
         <section class="view" id="view-sieve" hidden></section>
         <section class="view" id="view-grains" hidden></section>
         <section class="view" id="view-commands" hidden></section>
+        <section class="view" id="view-ai" hidden></section>
         <section class="view" id="view-settings" hidden></section>
         <section class="view" id="view-admin" hidden></section>
       </main>

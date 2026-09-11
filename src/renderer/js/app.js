@@ -24,20 +24,148 @@ const VIEWS = {
   sieve: { title: "Funkcja sita", subtitle: "Jedno pokrętło: jak gęsto przesiewać." },
   grains: { title: "Ziarna", subtitle: "Słowa, których sito nigdy nie tknie." },
   commands: { title: "Polecenia", subtitle: "Zdania, po których sito wie, co zrobić." },
-  settings: { title: "Ustawienia", subtitle: "Skróty, dostawcy, prywatność." },
+  ai: {
+    title: "Ustawienia modeli i fallbacków AI",
+    subtitle: "Główny model mowy (Deepgram Nova-3), czyszczenie sita, wielopoziomowy fallback oraz rejestr zapytań na żywo.",
+  },
+  settings: { title: "Ustawienia", subtitle: "Skróty, prywatność, wygląd." },
   admin: {
-    title: "Panel admina",
-    subtitle: "Kto się zarejestrował i co widzi. Na czas wdrażania.",
+    title: "Silniki AI & Panel",
+    subtitle: "Modele transkrypcji (Deepgram Nova-3), czyszczenia tekstu, analizy ekranu, fallbacki oraz zarządzanie instalacją.",
   },
 };
 
 const KEY_GLYPH = { Alt: "⌥", Ctrl: "⌃", Shift: "⇧", Meta: "⌘", Space: "␣" };
+
+const DEFAULT_PROVIDERS = {
+  stt: {
+    deepgram: {
+      label: "Deepgram (Nova-3 / Nova-2 — Rekomendowany)",
+      needsKey: true,
+      keyHint: "Klucz z console.deepgram.com",
+      keyUrl: "https://console.deepgram.com/",
+      models: [
+        ["nova-3", "Deepgram Nova-3 — najnowszy, najdokładniejszy i błyskawiczny (~0.3s)"],
+        ["nova-2", "Deepgram Nova-2 — sprawdzony model produkcyjny"],
+        ["nova-2-general", "Deepgram Nova-2 General"],
+        ["enhanced", "Deepgram Enhanced"],
+        ["base", "Deepgram Base"],
+      ],
+    },
+    openai: {
+      label: "OpenAI",
+      needsKey: true,
+      keyHint: "sk-…",
+      keyUrl: "https://platform.openai.com/api-keys",
+      models: [
+        ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
+        ["gpt-transcribe", "GPT Transcribe — najdokładniejszy"],
+        ["gpt-4o-transcribe", "GPT-4o Transcribe"],
+        ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe — najtańszy"],
+      ],
+    },
+    groq: {
+      label: "Groq (LPU — ultra-szybki)",
+      needsKey: true,
+      keyHint: "gsk_…",
+      keyUrl: "https://console.groq.com/keys",
+      models: [
+        ["whisper-large-v3-turbo", "Whisper Large v3 Turbo — błyskawiczny (0.4s)"],
+        ["whisper-large-v3", "Whisper Large v3 — dokładniejszy"],
+      ],
+    },
+    gemini: {
+      label: "Google Gemini",
+      needsKey: true,
+      keyHint: "AIza…",
+      keyUrl: "https://aistudio.google.com/apikey",
+      models: [
+        ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — domyślny, najluźniejsze limity"],
+        ["gemini-3.7-flash", "Gemini 3.7 Flash — szybki, ale zatłoczony na darmowym poziomie"],
+        ["gemini-3.1-pro", "Gemini 3.1 Pro — dokładniejszy, wolniejszy"],
+        ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy, tańszy"],
+      ],
+    },
+    mock: {
+      label: "Atrapa (bez klucza)",
+      needsKey: false,
+      models: [["mock", "Przykładowe zdania — do klikania bez kluczy"]],
+    },
+  },
+  sieve: {
+    gemini: {
+      label: "Google Gemini",
+      needsKey: true,
+      keyHint: "AIza…",
+      keyUrl: "https://aistudio.google.com/apikey",
+      models: [
+        ["gemini-2.5-flash", "Gemini 2.5 Flash — szybki i stabilny"],
+        ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — najluźniejsze limity"],
+        ["gemini-3.1-pro", "Gemini 3.1 Pro — najlepsza redakcja"],
+        ["gemini-3.7-flash", "Gemini 3.7 Flash — szybki, domyślny"],
+      ],
+    },
+    openai: {
+      label: "OpenAI",
+      needsKey: true,
+      keyHint: "sk-…",
+      keyUrl: "https://platform.openai.com/api-keys",
+      models: [
+        ["gpt-4o-mini", "GPT-4o mini — szybki, tani i dokładny"],
+        ["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"],
+        ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"],
+        ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"],
+      ],
+    },
+    groq: {
+      label: "Groq (LPU — ultra-szybki)",
+      needsKey: true,
+      keyHint: "gsk_…",
+      keyUrl: "https://console.groq.com/keys",
+      models: [
+        ["llama-3.3-70b-versatile", "Llama 3.3 70B — znakomity i darmowy"],
+        ["mixtral-8x7b-32768", "Mixtral 8x7B"],
+      ],
+    },
+    anthropic: {
+      label: "Anthropic Claude",
+      needsKey: true,
+      keyHint: "sk-ant-…",
+      keyUrl: "https://console.anthropic.com/settings/keys",
+      models: [
+        ["claude-3-5-haiku-20241022", "Claude 3.5 Haiku — szybki i precyzyjny"],
+        ["claude-opus-5", "Claude Opus 5"],
+        ["claude-sonnet-5", "Claude Sonnet 5"],
+        ["claude-haiku-4-5", "Claude Haiku 4.5 — najszybszy"],
+      ],
+    },
+  },
+  shot: {
+    openai: {
+      label: "OpenAI",
+      needsKey: true,
+      keyHint: "sk-…",
+      keyUrl: "https://platform.openai.com/api-keys",
+      models: [
+        ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy, domyślny"],
+        ["gpt-5.6-terra", "GPT-5.6 Terra — pewniejszy przy piśmie odręcznym"],
+        ["gpt-4o-mini", "GPT-4o mini — starszy, tani klasyk"],
+      ],
+    },
+    mock: {
+      label: "Atrapa (bez klucza)",
+      needsKey: false,
+      models: [["mock", "Przykładowy odczyt — do klikania bez kluczy"]],
+    },
+  },
+};
 
 const state = {
   view: "start",
   settings: null,
   history: [],
   stats: null,
+  aiRegistry: [],
   status: { backend: "none", accessibility: true, microphone: "granted" },
   query: "",
   /* Różnica surowe→przesiane pokazuje się DOMYŚLNIE, przy każdym wpisie —
@@ -898,6 +1026,111 @@ function renderConflicts() {
   return `<div class="setup__result ${clash ? "is-bad" : "is-ok"}">${lines.join("<br />")}</div>`;
 }
 
+function renderAiRegistryRow(e) {
+  const formatTime = (iso) => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch {
+      return iso || "";
+    }
+  };
+
+  const statusPill = (entry) => {
+    if (entry.status === "ok") {
+      return `<span class="ai-pill ai-pill--ok">200 OK</span>`;
+    }
+    if (entry.status === "rate_limit" || entry.statusCode === 429) {
+      return `<span class="ai-pill ai-pill--rate-limit">429 LIMIT</span>`;
+    }
+    if (entry.status === "overload" || entry.statusCode === 503) {
+      return `<span class="ai-pill ai-pill--overload">503 PRZECIĄŻENIE</span>`;
+    }
+    return `<span class="ai-pill ai-pill--error">${escape(entry.statusLabel || "BŁĄD")}</span>`;
+  };
+
+  return `
+    <tr>
+      <td style="font-family:var(--font-mono); color:var(--text-mute);">${formatTime(e.timestamp)}</td>
+      <td><strong>${escape(e.stageLabel || e.stage)}</strong></td>
+      <td><code>${escape(e.provider)}</code> <span style="color:var(--text-mute); font-size:11px;">/ ${escape(e.model)}</span></td>
+      <td>
+        ${e.isFallback ? `<span class="ai-pill ai-pill--fallback">FALLBACK</span>` : `<span style="color:var(--text-faint); font-size:11px;">GŁÓWNY</span>`}
+      </td>
+      <td>${statusPill(e)}</td>
+      <td style="font-family:var(--font-mono);">${e.durationMs != null ? `${e.durationMs} ms` : "—"}</td>
+      <td style="color:var(--text-mute); font-size:11px;">${escape(e.inputInfo || "—")} ${e.outputInfo ? `→ ${escape(e.outputInfo)}` : ""}</td>
+      <td>
+        ${
+          e.error
+            ? `<span class="ai-error-detail" title="${escape(e.error)}">${escape(e.error)}</span>`
+            : e.textPreview
+              ? `<span class="ai-text-preview" title="${escape(e.textPreview)}">„${escape(e.textPreview)}"</span>`
+              : `<span style="color:var(--text-faint);">—</span>`
+        }
+      </td>
+    </tr>`;
+}
+
+function updateAiRegistryDom(logs = []) {
+  const countEl = $("#ai-count");
+  if (countEl) countEl.textContent = `${logs.length} zapytań`;
+  const bodyEl = $("#ai-registry-body");
+  if (!bodyEl) return;
+  if (logs.length === 0) {
+    bodyEl.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:var(--s-5); color:var(--text-mute);">Brak zarejestrowanych zapytań AI. Wykonaj dyktowanie lub test połączenia.</td></tr>`;
+    return;
+  }
+  bodyEl.innerHTML = logs.map((e) => renderAiRegistryRow(e)).join("");
+}
+
+function renderAiRegistrySection(logs = []) {
+  return `
+    <div class="card" style="margin-top:var(--s-4);">
+      <div class="ai-registry-head" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:var(--s-3); flex-wrap:wrap; gap:var(--s-2);">
+        <div>
+          <h2 style="margin:0;">Rejestr zapytań AI (Live Registry)</h2>
+          <p class="sub" style="margin-bottom:0;">
+            Podgląd zapytań w czasie rzeczywistym: czas odpowiedzi, kody HTTP (200, 429, 503), błędy i aktywacja fallbacku.
+          </p>
+        </div>
+        <div style="display:flex; gap:var(--s-2); align-items:center;">
+          <span class="pill" id="ai-count">${logs.length} zapytań</span>
+          <button class="btn btn--sm" data-act="clear-ai-registry">Wyczyść rejestr</button>
+        </div>
+      </div>
+
+      <div class="ai-table-wrap">
+        <table class="ai-table">
+          <thead>
+            <tr>
+              <th>Czas</th>
+              <th>Krok</th>
+              <th>Dostawca & Model</th>
+              <th>Tryb</th>
+              <th>Status</th>
+              <th>Czas</th>
+              <th>Wejście / Wyjście</th>
+              <th>Szczegóły</th>
+            </tr>
+          </thead>
+          <tbody id="ai-registry-body">
+            ${
+              logs.length === 0
+                ? `<tr><td colspan="8" style="text-align:center; padding:var(--s-5); color:var(--text-mute);">Brak zarejestrowanych zapytań AI. Wykonaj dyktowanie lub test połączenia.</td></tr>`
+                : logs.map((e) => renderAiRegistryRow(e)).join("")
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+async function renderAi() {
+  state.view = "admin";
+  render();
+}
+
 function renderSettings() {
   const { settings, status } = state;
   const hold = settings.hotkey.hold.map((key) => KEY_GLYPH[key] ?? key);
@@ -913,6 +1146,25 @@ function renderSettings() {
     </div>`;
 
   $("#view-settings").innerHTML = `
+    ${
+      state.settings?.owner
+        ? `<div class="card card--ai" id="card-ai-link" style="border: 1px solid var(--accent-30); background: linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent);">
+             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:var(--s-3);">
+               <div>
+                 <div style="display:flex; align-items:center; gap:var(--s-2); margin-bottom:var(--s-1);">
+                   <h2 style="margin:0;">Silniki AI i Modele</h2>
+                   <span class="pill pill--mint">Osobna karta w menu</span>
+                 </div>
+                 <p class="sub" style="margin-bottom:0;">
+                   Konfiguracja modeli AI (Deepgram Nova-3, OpenAI, Groq, Gemini), wielopoziomowy fallback, analiza ze zrzutu ekranu oraz rejestr zapytań na żywo znajdują się w dedykowanej zakładce Silniki AI.
+                 </p>
+               </div>
+               <button class="btn btn--primary" data-act="go-to-admin">Przejdź do Silników AI →</button>
+             </div>
+           </div>`
+        : ""
+    }
+
     <div class="card">
       <h2>Skrót</h2>
       <p class="sub">
@@ -1086,8 +1338,6 @@ function renderSettings() {
 
     ${renderSpellcheck()}
 
-    ${renderEngines()}
-
     ${renderShotCard()}
 
     ${renderCloud()}
@@ -1254,7 +1504,11 @@ function renderShotCard() {
         shot.copy !== false,
       )}
 
-      ${engineBlock("shot", "Odczyt", "Czyta tekst z obrazka. Zadanie odtwórcze, więc domyślnie najtańszy model — różnicę widać na rachunku, nie w wyniku.")}
+      ${
+        state.settings?.owner
+          ? `<p class="hintline">Ustawienia modelu AI dla odczytu ekranu znajdziesz w zakładce <a href="#" data-act="go-to-admin">Silniki AI</a>.</p>`
+          : ""
+      }
     </div>`;
 }
 
@@ -1277,16 +1531,63 @@ function renderEngines() {
   const { settings } = state;
   return `
     <div class="card">
-      <h2>Silniki</h2>
-      <p class="sub">
-        Dwa osobne kroki. Najpierw ktoś zamienia głos na tekst, potem ktoś inny
-        ten tekst czyści. Możesz dać oba jednemu dostawcy albo je rozdzielić.
-      </p>
-      ${engineBlock("stt", "Krok 1 — transkrypcja", "Zamienia nagranie na wierny zapis, razem z wahaniami i zacięciami.")}
-      ${engineBlock("sieve", "Krok 2 — sito", "Czyści zapis: usuwa szum mowy, rozstrzyga autopoprawki, stawia interpunkcję.")}
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:var(--s-3); flex-wrap:wrap; gap:var(--s-2);">
+        <div>
+          <h2>Silniki AI i Modele</h2>
+          <p class="sub" style="margin-bottom:0;">
+            Ustawienia modeli sztucznej inteligencji dla wszystkich funkcji aplikacji (transkrypcja mowy, czyszczenie sita, analiza ekranu) oraz wielopoziomowy fallback.
+          </p>
+        </div>
+        <span class="pill pill--mint">Automatyczny Fallback Aktywny</span>
+      </div>
+
+      <div class="ai-rec-grid" style="margin-bottom:var(--s-4);">
+        <div class="ai-rec-card">
+          <div class="ai-rec-card__head">
+            <span class="ai-rec-card__title">1. Główny STT: Deepgram</span>
+            <span class="pill pill--mint" style="font-size:9px; padding:2px 6px;">Rekomendowany</span>
+          </div>
+          <div class="ai-rec-card__models">
+            Transkrypcja: <code>nova-3</code> lub <code>nova-2</code><br>
+            Ultraszybki (~0.3s), bezbłędny polski, automatyczna interpunkcja i formatowanie liczb.<br>
+            <span style="color:var(--mint); font-size:11px;">✨ $200 darmowych kredytów na start.</span>
+          </div>
+          <a class="ai-rec-card__link" href="https://console.deepgram.com/" data-act="open-link">Zdobądź klucz Deepgram ($200 free) →</a>
+        </div>
+
+        <div class="ai-rec-card">
+          <div class="ai-rec-card__head">
+            <span class="ai-rec-card__title">2. Zapasowy 1: OpenAI</span>
+            <span class="pill" style="font-size:9px; padding:2px 6px; color:var(--info); border-color:var(--info);">Fallback 1</span>
+          </div>
+          <div class="ai-rec-card__models">
+            Transkrypcja: <code>whisper-1</code> (sprawdzony wzorzec mowy)<br>
+            Sito (Clean up): <code>gpt-4o-mini</code> (błyskawiczny, tani i dokładny)<br>
+            Niezawodna dostępność i odporność na skoki ruchu.
+          </div>
+          <a class="ai-rec-card__link" href="https://platform.openai.com/api-keys" data-act="open-link">Zdobądź klucz OpenAI API →</a>
+        </div>
+
+        <div class="ai-rec-card">
+          <div class="ai-rec-card__head">
+            <span class="ai-rec-card__title">3. Zapasowy 2: Groq LPU</span>
+            <span class="pill" style="font-size:9px; padding:2px 6px; color:var(--accent); border-color:var(--accent);">Fallback 2 (Darmowy)</span>
+          </div>
+          <div class="ai-rec-card__models">
+            Transkrypcja: <code>whisper-large-v3-turbo</code> (~0.4s!)<br>
+            Sito (Clean up): <code>llama-3.3-70b-versatile</code><br>
+            Dedykowany procesor LPU. Darmowe konto z wysokimi limitami.
+          </div>
+          <a class="ai-rec-card__link" href="https://console.groq.com/keys" data-act="open-link">Zdobądź darmowy klucz Groq API →</a>
+        </div>
+      </div>
+
+      ${engineBlock("stt", "Krok 1 — Transkrypcja mowy (STT)", "Zamienia nagranie na wierny zapis mowy. Rekomendowany: Deepgram Nova-3 (~0.3s) z zapasowym Whisper / Groq.")}
+      ${engineBlock("sieve", "Krok 2 — Sito (Clean up tekstu)", "Czyści zapis: usuwa szum mowy, zacięcia, stawia interpunkcję i formatuje notatkę.")}
+      ${engineBlock("shot", "Krok 3 — Analiza tekstu ze zrzutu ekranu (OCR)", "Czyta tekst z zaznaczonego fragmentu ekranu lub pliku graficznego.")}
       ${
         settings.stt.provider === settings.sieve.provider && settings.stt.provider !== "mock"
-          ? `<p class="hintline">Oba kroki chodzą na tym samym dostawcy — klucz wystarczy wpisać raz, w dowolnym z nich.</p>`
+          ? `<p class="hintline">Oba kroki (transkrypcja i sito) chodzą na tym samym dostawcy — klucz wystarczy wpisać raz, w dowolnym z nich.</p>`
           : ""
       }
     </div>`;
@@ -1902,9 +2203,12 @@ function engineBlock(stage, title, hint) {
      tylko odpowiedź. Proces główny wysyła katalog wyłącznie właścicielowi
      (patrz providers:get w main/main.js i nagłówek main/owner.js). */
   if (!state.settings?.owner) return "";
-  const cfg = state.settings[stage];
-  const catalogue = state.providers[stage] ?? {};
-  const provider = catalogue[cfg.provider];
+  const cfg = state.settings[stage] ?? {};
+  const catalogue = (state.providers && Object.keys(state.providers[stage] || {}).length > 0)
+    ? state.providers[stage]
+    : (DEFAULT_PROVIDERS[stage] ?? {});
+  const providerKey = cfg.provider && catalogue[cfg.provider] ? cfg.provider : Object.keys(catalogue)[0];
+  const provider = catalogue[providerKey];
   const result = state.tests[stage];
 
   const options = (entries, current) =>
@@ -1913,23 +2217,23 @@ function engineBlock(stage, title, hint) {
       .join("");
 
   return `
-    <div class="engine">
+    <div class="engine" style="margin-bottom:var(--s-4);">
       <div class="engine__head">
         <strong>${escape(title)}</strong>
         <span>${escape(hint)}</span>
       </div>
 
       <div class="field">
-        <div class="field__label"><strong>Dostawca</strong></div>
+        <div class="field__label"><strong>Dostawca główny</strong><span>Podstawowy silnik do tej funkcji.</span></div>
         <div class="field__control">
           <select data-setting="${stage}.provider">
-            ${options(Object.entries(catalogue).map(([key, value]) => [key, value.label]), cfg.provider)}
+            ${options(Object.entries(catalogue).map(([key, value]) => [key, value.label]), providerKey)}
           </select>
         </div>
       </div>
 
       <div class="field">
-        <div class="field__label"><strong>Model</strong></div>
+        <div class="field__label"><strong>Model główny</strong><span>Konkretny model wybranego dostawcy.</span></div>
         <div class="field__control">
           <select data-setting="${stage}.model">
             ${options(provider?.models ?? [], cfg.model)}
@@ -1946,9 +2250,174 @@ function engineBlock(stage, title, hint) {
                </div>
                <div class="field__control">
                  <input type="password" data-setting="${stage}.apiKey"
-                        value="${escape(cfg.apiKey)}" placeholder="${escape(provider.keyHint ?? "")}" />
+                        value="${escape(cfg.apiKey ?? "")}" placeholder="${escape(provider.keyHint ?? "")}" />
                </div>
              </div>`
+          : ""
+      }
+
+      ${
+        stage === "sieve"
+          ? `<div class="field">
+               <div class="field__label">
+                 <strong>Własna instrukcja (prompt)</strong>
+                 <span>Dodatkowa reguła czyszczenia tekstu dla sita.</span>
+               </div>
+               <div class="field__control">
+                 <input type="text" data-setting="sieve.customInstruction"
+                        value="${escape(cfg.customInstruction ?? "")}" placeholder="np. Pisz zawsze bezokolicznikami. Nie używaj wykrzykników." />
+               </div>
+             </div>`
+          : ""
+      }
+
+      ${
+        stage === "stt"
+          ? `
+            <div style="margin: var(--s-3) 0 var(--s-2); padding: var(--s-3); background: rgba(255,255,255,0.02); border: 1px dashed var(--line-strong); border-radius: var(--r-md);">
+              <div style="font-weight:700; font-size:12px; margin-bottom:var(--s-2); color:var(--text-hi); display:flex; justify-content:space-between; align-items:center;">
+                <span>🛡️ Zapasowe modele i wybór Fallbacku (Transkrypcja)</span>
+                <span class="pill pill--mint" style="font-size:9px; padding:2px 6px;">Automatyczne przełączanie</span>
+              </div>
+              <p class="sub" style="font-size:11px; margin-bottom:var(--s-3);">
+                Gdy główny model (np. Deepgram) przekroczy limit lub nie odpowie, transkrypcję natychmiast przejmuje skonfigurowany model zapasowy bez utraty nagrania.
+              </p>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Zapasowy model 1 (OpenAI Fallback)</strong>
+                  <span>Sprawdzony wzorzec mowy OpenAI.</span>
+                </div>
+                <div class="field__control">
+                  <select data-setting="stt.fallbackModel">
+                    ${options(
+                      [
+                        ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
+                        ["gpt-transcribe", "GPT Transcribe — najdokładniejszy"],
+                        ["gpt-4o-transcribe", "GPT-4o Transcribe"],
+                        ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe — najtańszy"],
+                      ],
+                      cfg.fallbackModel || "whisper-1",
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Klucz OpenAI API (Fallback 1)</strong>
+                  <span><a href="https://platform.openai.com/api-keys" data-act="open-link">Zdobądź klucz OpenAI</a> (współdzielony z sitem jeśli pusty)</span>
+                </div>
+                <div class="field__control">
+                  <input type="password" data-setting="stt.fallbackApiKey"
+                         value="${escape(cfg.fallbackApiKey ?? "")}" placeholder="Opcjonalny klucz sk-…" />
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Zapasowy model 2 (Groq LPU — ultra-szybki fallback)</strong>
+                  <span>Błyskawiczny (~0.4s) procesor LPU.</span>
+                </div>
+                <div class="field__control">
+                  <select data-setting="stt.groqModel">
+                    ${options(
+                      [
+                        ["whisper-large-v3-turbo", "Whisper Large v3 Turbo — błyskawiczny (~0.4s)"],
+                        ["whisper-large-v3", "Whisper Large v3 — dokładniejszy"],
+                      ],
+                      cfg.groqModel || "whisper-large-v3-turbo",
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Klucz Groq API (Fallback 2)</strong>
+                  <span><a href="https://console.groq.com/keys" data-act="open-link">Zdobądź darmowy klucz Groq</a></span>
+                </div>
+                <div class="field__control">
+                  <input type="password" data-setting="stt.groqApiKey"
+                         value="${escape(cfg.groqApiKey ?? state.settings?.groqApiKey ?? "")}" placeholder="Klucz gsk_…" />
+                </div>
+              </div>
+            </div>`
+          : ""
+      }
+
+      ${
+        stage === "sieve"
+          ? `
+            <div style="margin: var(--s-3) 0 var(--s-2); padding: var(--s-3); background: rgba(255,255,255,0.02); border: 1px dashed var(--line-strong); border-radius: var(--r-md);">
+              <div style="font-weight:700; font-size:12px; margin-bottom:var(--s-2); color:var(--text-hi); display:flex; justify-content:space-between; align-items:center;">
+                <span>🛡️ Zapasowe modele i wybór Fallbacku (Sito / Clean up)</span>
+                <span class="pill pill--mint" style="font-size:9px; padding:2px 6px;">Automatyczne przełączanie</span>
+              </div>
+              <p class="sub" style="font-size:11px; margin-bottom:var(--s-3);">
+                Gdy główny model czyszczący zwróci błąd limitu (429) lub przeciążenia (503), redakcję tekstu płynnie przejmuje kolejny model.
+              </p>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Zapasowy model 1 (OpenAI Fallback)</strong>
+                  <span>Szybka i precyzyjna redakcja tekstu.</span>
+                </div>
+                <div class="field__control">
+                  <select data-setting="sieve.fallbackModel">
+                    ${options(
+                      [
+                        ["gpt-4o-mini", "GPT-4o mini — szybki, tani i dokładny"],
+                        ["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"],
+                        ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"],
+                        ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"],
+                      ],
+                      cfg.fallbackModel || "gpt-4o-mini",
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Klucz OpenAI API (Fallback 1)</strong>
+                  <span><a href="https://platform.openai.com/api-keys" data-act="open-link">Zdobądź klucz OpenAI</a> (współdzielony jeśli pusty)</span>
+                </div>
+                <div class="field__control">
+                  <input type="password" data-setting="sieve.fallbackApiKey"
+                         value="${escape(cfg.fallbackApiKey ?? "")}" placeholder="Opcjonalny klucz sk-…" />
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Zapasowy model 2 (Groq LPU Fallback)</strong>
+                  <span>Ostateczny fallback redakcyjny na procesorach LPU Groq.</span>
+                </div>
+                <div class="field__control">
+                  <select data-setting="sieve.groqModel">
+                    ${options(
+                      [
+                        ["llama-3.3-70b-versatile", "Llama 3.3 70B Versatile — darmowy, znakomity polski"],
+                        ["mixtral-8x7b-32768", "Mixtral 8x7B"],
+                      ],
+                      cfg.groqModel || "llama-3.3-70b-versatile",
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field__label">
+                  <strong>Klucz Groq API (Fallback 2)</strong>
+                  <span><a href="https://console.groq.com/keys" data-act="open-link">Zdobądź darmowy klucz Groq</a></span>
+                </div>
+                <div class="field__control">
+                  <input type="password" data-setting="sieve.groqApiKey"
+                         value="${escape(cfg.groqApiKey ?? state.settings?.groqApiKey ?? "")}" placeholder="Klucz gsk_…" />
+                </div>
+              </div>
+            </div>`
           : ""
       }
 
@@ -2052,11 +2521,10 @@ async function renderAdmin() {
 
   if (!admin.users.length && !admin.error && !admin.loading) {
     admin.loading = true;
-    root.innerHTML = `<div class="card"><p class="muted">Pytam serwer…</p></div>`;
     try {
-      const state = await api.admin.state();
-      admin.users = state.users ?? [];
-      admin.features = state.features ?? [];
+      const serverState = await api.admin.state();
+      admin.users = serverState.users ?? [];
+      admin.features = serverState.features ?? [];
       admin.error = null;
     } catch (problem) {
       admin.error = String(problem.message ?? problem);
@@ -2065,29 +2533,36 @@ async function renderAdmin() {
     }
   }
 
-  if (admin.error) {
-    /* Najczęstsza przyczyna nie jest awarią, tylko brakiem: schematu nie
-       wgrano jeszcze do bazy. Mówimy o tym wprost i podajemy plik, bo to
-       jest cała robota do wykonania. */
-    root.innerHTML = `
-      <div class="card">
-        <h3>Panel nie odpowiada</h3>
-        <p class="muted">${escape(admin.error)}</p>
-        <p class="muted">Jeśli to pierwszy raz: wklej <code>supabase/schema.sql</code>
-           do SQL Editora w panelu Supabase i naciśnij Run.</p>
-        <button class="btn" data-admin="reload">Spróbuj ponownie</button>
-      </div>`;
-    return translateTree(root);
-  }
+  let logs = state.aiRegistry ?? [];
+  try {
+    if (api.ai?.registry) {
+      logs = await api.ai.registry();
+      state.aiRegistry = logs;
+    }
+  } catch {}
 
   root.innerHTML = `
-    <div class="card">
-      <h3>Funkcje</h3>
+    ${renderEngines()}
+
+    ${renderAiRegistrySection(logs)}
+
+    <div class="card" style="margin-top:var(--s-4);">
+      <h3>Funkcje subskrybentów</h3>
       <p class="muted">Co widzą subskrybenci. Zmiana działa u nich od następnego uruchomienia aplikacji.</p>
-      <div class="admin__features">${admin.features.map(featureRow).join("")}</div>
+      ${
+        admin.error
+          ? `<div class="card card--quiet">
+               <h3>Panel nie odpowiada</h3>
+               <p class="muted">${escape(admin.error)}</p>
+               <p class="muted">Jeśli to pierwszy raz: wklej <code>supabase/schema.sql</code>
+                  do SQL Editora w panelu Supabase i naciśnij Run.</p>
+               <button class="btn btn--sm" data-admin="reload">Spróbuj ponownie</button>
+             </div>`
+          : `<div class="admin__features">${admin.features.map(featureRow).join("")}</div>`
+      }
     </div>
 
-    <div class="card">
+    <div class="card" style="margin-top:var(--s-4);">
       <h3>Zarejestrowani <span class="pill">${admin.users.length}</span></h3>
       <p class="muted">Konta z bazy. Znaczek w kolumnie funkcji znaczy: nadane imiennie.</p>
       ${admin.users.length ? usersTable() : '<p class="muted">Jeszcze nikogo.</p>'}
@@ -2284,6 +2759,7 @@ function render() {
   if (state.view === "sieve") renderSieve();
   if (state.view === "grains") renderGrains();
   if (state.view === "commands") renderCommands();
+  if (state.view === "ai") void renderAi();
   if (state.view === "settings") renderSettings();
   if (state.view === "admin") void renderAdmin();
 
@@ -2343,6 +2819,19 @@ document.addEventListener("click", async (event) => {
 
   if (event.target.closest('[data-act="quick-note"]')) {
     await api.notes.quick();
+    return;
+  }
+
+  if (event.target.closest('[data-act="go-to-admin"]') || event.target.closest('[data-act="go-to-ai"]')) {
+    state.view = "admin";
+    render();
+    return;
+  }
+
+  if (event.target.closest('[data-act="clear-ai-registry"]')) {
+    await api.ai?.clearRegistry?.();
+    state.aiRegistry = [];
+    updateAiRegistryDom([]);
     return;
   }
 
@@ -2761,8 +3250,9 @@ document.addEventListener("change", async (event) => {
   // Po zmianie dostawcy stary model prawie na pewno u niego nie istnieje —
   // przestawiamy na pierwszy z jego listy, zamiast czekać na błąd 404.
   const [stage, key] = field.dataset.setting.split(".");
-  if (key === "provider" && (stage === "stt" || stage === "sieve")) {
-    const first = state.providers[stage]?.[field.value]?.models?.[0]?.[0];
+  if (key === "provider" && (stage === "stt" || stage === "sieve" || stage === "shot")) {
+    const catalogue = state.providers[stage] || DEFAULT_PROVIDERS[stage] || {};
+    const first = catalogue[field.value]?.models?.[0]?.[0];
     if (first) await save(`${stage}.model`, first);
     state.tests[stage] = null;
     render();
@@ -2775,7 +3265,7 @@ document.addEventListener("change", async (event) => {
   }
   // Zmiana widoku widgetu przepisuje wyjaśnienie pod pokrętłem — a jest
   // ono tym, co w ogóle mówi, czym te dwa widoki się różnią.
-  const rerender = ["mesh", "hotkey", "language", "widget.mode"];
+  const rerender = ["mesh", "hotkey", "language", "widget.mode", "stt", "sieve", "shot"];
   if (rerender.some((prefix) => field.dataset.setting.startsWith(prefix))) render();
 });
 
@@ -3221,6 +3711,22 @@ api.onError(({ message, stage, empty }) => {
 api.onRescue?.(({ done }) => {
   if (!done) return;
   toast(t(done === 1 ? "Odzyskano {n} zaległe nagranie" : "Odzyskano {n} zaległych nagrań", { n: done }));
+});
+
+api.ai?.onRequestNew?.((item) => {
+  if (!state.aiRegistry) state.aiRegistry = [];
+  state.aiRegistry.unshift(item);
+  if (state.aiRegistry.length > 120) state.aiRegistry.length = 120;
+  if (state.view === "ai") {
+    updateAiRegistryDom(state.aiRegistry);
+  }
+});
+
+api.ai?.onRegistryCleared?.(() => {
+  state.aiRegistry = [];
+  if (state.view === "ai") {
+    updateAiRegistryDom([]);
+  }
 });
 
 api.settings.onChange((settings) => {

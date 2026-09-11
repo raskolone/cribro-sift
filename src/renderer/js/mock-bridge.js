@@ -93,8 +93,8 @@ if (!window.cribro) {
     playSound: true,
     launchAtLogin: false,
     keepRaw: true,
-    stt: { provider: "gemini", model: "gemini-3.1-flash-lite", apiKey: "" },
-    sieve: { provider: "gemini", model: "gemini-3.7-flash", apiKey: "", customInstruction: "" },
+    stt: { provider: "deepgram", model: "nova-3", apiKey: "", fallbackProvider: "openai", fallbackModel: "whisper-1", fallbackApiKey: "", groqModel: "whisper-large-v3-turbo", groqApiKey: "" },
+    sieve: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "", customInstruction: "", fallbackProvider: "openai", fallbackModel: "gpt-4o-mini", fallbackApiKey: "", groqModel: "llama-3.3-70b-versatile", groqApiKey: "" },
     /* Tekst z ekranu. W przeglądarce nie ma czego zaznaczać, więc atrapa
        stoi na dostawcy „mock" — karta w Ustawieniach ma pokazywać kształt
        wyboru, a nie prosić o cudzy klucz. */
@@ -995,47 +995,124 @@ if (!window.cribro) {
       // ta lista przychodzi z procesu głównego.
       providers: async () => ({
         stt: {
-          mock: { label: "Atrapa (bez klucza)", needsKey: false, models: [["mock", "Przykładowe zdania"]] },
+          deepgram: {
+            label: "Deepgram (Nova-3 / Nova-2 — Rekomendowany)",
+            needsKey: true,
+            keyHint: "Klucz z console.deepgram.com",
+            keyUrl: "https://console.deepgram.com/",
+            models: [
+              ["nova-3", "Deepgram Nova-3 — najnowszy, najdokładniejszy i błyskawiczny (~0.3s)"],
+              ["nova-2", "Deepgram Nova-2 — sprawdzony, stabilny model produkcyjny"],
+              ["nova-2-general", "Deepgram Nova-2 General"],
+              ["enhanced", "Deepgram Enhanced"],
+              ["base", "Deepgram Base"],
+            ],
+          },
           gemini: {
-            label: "Google Gemini", needsKey: true, keyHint: "AIza…",
+            label: "Google Gemini",
+            needsKey: true,
+            keyHint: "AIza…",
             keyUrl: "https://aistudio.google.com/apikey",
-            models: [["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — domyślny, najluźniejsze limity"], ["gemini-3.7-flash", "Gemini 3.7 Flash — zatłoczony na darmowym poziomie"], ["gemini-3.1-pro", "Gemini 3.1 Pro — dokładniejszy"], ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy"]],
+            models: [
+              ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — domyślny, najluźniejsze limity"],
+              ["gemini-3.7-flash", "Gemini 3.7 Flash — zatłoczony na darmowym poziomie"],
+              ["gemini-3.1-pro", "Gemini 3.1 Pro — dokładniejszy"],
+              ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy"],
+            ],
           },
           openai: {
-            label: "OpenAI", needsKey: true, keyHint: "sk-…",
+            label: "OpenAI",
+            needsKey: true,
+            keyHint: "sk-…",
             keyUrl: "https://platform.openai.com/api-keys",
-            models: [["gpt-transcribe", "GPT Transcribe — najdokładniejszy"], ["gpt-4o-transcribe", "GPT-4o Transcribe"], ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe"], ["whisper-1", "Whisper v1"]],
+            models: [
+              ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
+              ["gpt-transcribe", "GPT Transcribe — najdokładniejszy"],
+              ["gpt-4o-transcribe", "GPT-4o Transcribe"],
+              ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe"],
+            ],
           },
+          groq: {
+            label: "Groq (LPU — ultra-szybki)",
+            needsKey: true,
+            keyHint: "gsk_…",
+            keyUrl: "https://console.groq.com/keys",
+            models: [
+              ["whisper-large-v3-turbo", "Whisper Large v3 Turbo — błyskawiczny (~0.4s)"],
+              ["whisper-large-v3", "Whisper Large v3 — dokładniejszy"],
+            ],
+          },
+          mock: { label: "Atrapa (bez klucza)", needsKey: false, models: [["mock", "Przykładowe zdania"]] },
         },
         sieve: {
           gemini: {
-            label: "Google Gemini", needsKey: true, keyHint: "AIza…",
+            label: "Google Gemini",
+            needsKey: true,
+            keyHint: "AIza…",
             keyUrl: "https://aistudio.google.com/apikey",
-            models: [["gemini-3.7-flash", "Gemini 3.7 Flash — szybki, domyślny"], ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — najluźniejsze limity"], ["gemini-3.1-pro", "Gemini 3.1 Pro — najlepsza redakcja"], ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy"]],
+            models: [
+              ["gemini-2.5-flash", "Gemini 2.5 Flash — szybki, sprawdzony"],
+              ["gemini-3.7-flash", "Gemini 3.7 Flash — domyślny"],
+              ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — najluźniejsze limity"],
+              ["gemini-3.1-pro", "Gemini 3.1 Pro — najlepsza redakcja"],
+            ],
           },
           openai: {
-            label: "OpenAI", needsKey: true, keyHint: "sk-…",
+            label: "OpenAI",
+            needsKey: true,
+            keyHint: "sk-…",
             keyUrl: "https://platform.openai.com/api-keys",
-            models: [["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"], ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"], ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"]],
+            models: [
+              ["gpt-4o-mini", "GPT-4o mini — szybki, tani i dokładny"],
+              ["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"],
+              ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"],
+              ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"],
+            ],
+          },
+          groq: {
+            label: "Groq (LPU — ultra-szybki)",
+            needsKey: true,
+            keyHint: "gsk_…",
+            keyUrl: "https://console.groq.com/keys",
+            models: [
+              ["llama-3.3-70b-versatile", "Llama 3.3 70B Versatile — znakomity i darmowy"],
+              ["mixtral-8x7b-32768", "Mixtral 8x7B"],
+            ],
           },
           anthropic: {
-            label: "Anthropic Claude", needsKey: true, keyHint: "sk-ant-…",
+            label: "Anthropic Claude",
+            needsKey: true,
+            keyHint: "sk-ant-…",
             keyUrl: "https://console.anthropic.com/settings/keys",
-            models: [["claude-opus-5", "Claude Opus 5"], ["claude-sonnet-5", "Claude Sonnet 5"], ["claude-haiku-4-5", "Claude Haiku 4.5"]],
+            models: [
+              ["claude-3-5-haiku-20241022", "Claude 3.5 Haiku — szybki i dokładny"],
+              ["claude-opus-5", "Claude Opus 5"],
+              ["claude-sonnet-5", "Claude Sonnet 5"],
+            ],
           },
         },
         shot: {
           openai: {
-            label: "OpenAI", needsKey: true, keyHint: "sk-…",
+            label: "OpenAI",
+            needsKey: true,
+            keyHint: "sk-…",
             keyUrl: "https://platform.openai.com/api-keys",
-            models: [["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy, domyślny"], ["gpt-5.6-terra", "GPT-5.6 Terra — pewniejszy przy piśmie odręcznym"], ["gpt-4o-mini", "GPT-4o mini — starszy, tani klasyk"]],
+            models: [
+              ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy, domyślny"],
+              ["gpt-5.6-terra", "GPT-5.6 Terra — pewniejszy przy piśmie odręcznym"],
+              ["gpt-4o-mini", "GPT-4o mini — starszy, tani klasyk"],
+            ],
           },
           mock: { label: "Atrapa (bez klucza)", needsKey: false, models: [["mock", "Przykładowy odczyt"]] },
         },
       }),
       testStt: async () => {
         await wait(600);
-        return { ok: true, note: `${settings.stt.provider} / ${settings.stt.model} odpowiedział w 612 ms.` };
+        return { ok: true, note: `${settings.stt.provider} / ${settings.stt.model} odpowiedział w 312 ms.` };
+      },
+      testShot: async () => {
+        await wait(500);
+        return { ok: true, note: `${settings.shot?.provider ?? "openai"} / ${settings.shot?.model ?? "gpt-5.6-luna"} odczytał tekst z obrazu w 410 ms.` };
       },
       testSieve: async () => {
         await wait(900);
@@ -1093,6 +1170,13 @@ if (!window.cribro) {
       path: async () => "/mock/activity.log",
       open: async () => true,
       tail: async () => [],
+    },
+
+    ai: {
+      registry: async () => [],
+      clearRegistry: async () => true,
+      onRequestNew: on("ai:request:new"),
+      onRegistryCleared: on("ai:registry:cleared"),
     },
 
     hud: {
