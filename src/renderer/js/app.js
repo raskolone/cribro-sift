@@ -2790,7 +2790,16 @@ function patchFor(path, value) {
 
 async function save(path, value) {
   setPath(state.settings, path, value);
-  state.settings = await api.settings.save(patchFor(path, value));
+  const wasOwner = state.settings?.owner;
+  const wasFeatures = state.settings?.features;
+  const updated = await api.settings.save(patchFor(path, value));
+  state.settings = { ...state.settings, ...updated };
+  if (wasOwner && state.settings.owner === undefined) {
+    state.settings.owner = true;
+  }
+  if (wasFeatures && !state.settings.features) {
+    state.settings.features = wasFeatures;
+  }
 }
 
 document.addEventListener("click", async (event) => {
@@ -3251,7 +3260,9 @@ document.addEventListener("change", async (event) => {
   // przestawiamy na pierwszy z jego listy, zamiast czekać na błąd 404.
   const [stage, key] = field.dataset.setting.split(".");
   if (key === "provider" && (stage === "stt" || stage === "sieve" || stage === "shot")) {
-    const catalogue = state.providers[stage] || DEFAULT_PROVIDERS[stage] || {};
+    const catalogue = (state.providers && Object.keys(state.providers[stage] || {}).length > 0)
+      ? state.providers[stage]
+      : (DEFAULT_PROVIDERS[stage] ?? {});
     const first = catalogue[field.value]?.models?.[0]?.[0];
     if (first) await save(`${stage}.model`, first);
     state.tests[stage] = null;

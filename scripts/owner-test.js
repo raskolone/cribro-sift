@@ -170,7 +170,8 @@ check("Pojedynczy krok potoku też pyta",
 const main = fs.readFileSync(path.join(__dirname, "..", "src", "main", "main.js"), "utf8");
 check("Ustawienia wychodzą do okna wyłącznie przez visibleSettings",
   !/broadcast\("settings:changed", store\.getSettings\(\)\)/.test(main) &&
-    /ipcMain\.handle\("settings:get", \(\) => visibleSettings\(\)\)/.test(main));
+    /ipcMain\.handle\("settings:get", \(\) => visibleSettings\(\)\)/.test(main) &&
+    /return visibleSettings\(settings\);/.test(main));
 check("Katalog dostawców nie jedzie do zwykłego użytkownika",
   /ipcMain\.handle\("providers:get", \(\) =>\s*\n?\s*ownerHere\(\)/.test(main));
 check("Sprawdzanie połączenia jest zamknięte po stronie procesu głównego",

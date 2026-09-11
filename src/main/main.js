@@ -4616,7 +4616,7 @@ function registerIpc() {
     }
     refreshMenus();
     tellSettings(settings);
-    return settings;
+    return visibleSettings(settings);
   });
 
   // Interfejs pyta o katalog dostawców zamiast trzymać własną kopię,
