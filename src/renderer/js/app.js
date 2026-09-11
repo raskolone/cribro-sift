@@ -30,7 +30,7 @@ const VIEWS = {
   },
   settings: { title: "Ustawienia", subtitle: "Skróty, prywatność, wygląd." },
   admin: {
-    title: "Silniki AI & Panel",
+    title: "Panel admina",
     subtitle: "Modele transkrypcji (Deepgram Nova-3), czyszczenia tekstu, analizy ekranu, fallbacki oraz zarządzanie instalacją.",
   },
 };
@@ -1156,10 +1156,10 @@ function renderSettings() {
                    <span class="pill pill--mint">Osobna karta w menu</span>
                  </div>
                  <p class="sub" style="margin-bottom:0;">
-                   Konfiguracja modeli AI (Deepgram Nova-3, OpenAI, Groq, Gemini), wielopoziomowy fallback, analiza ze zrzutu ekranu oraz rejestr zapytań na żywo znajdują się w dedykowanej zakładce Silniki AI.
+                   Konfiguracja modeli AI (Deepgram Nova-3, OpenAI, Groq, Gemini), wielopoziomowy fallback, analiza ze zrzutu ekranu oraz rejestr zapytań na żywo znajdują się w dedykowanej zakładce Panel admina.
                  </p>
                </div>
-               <button class="btn btn--primary" data-act="go-to-admin">Przejdź do Silników AI →</button>
+               <button class="btn btn--primary" data-act="go-to-admin">Przejdź do Panelu admina →</button>
              </div>
            </div>`
         : ""
@@ -1506,7 +1506,7 @@ function renderShotCard() {
 
       ${
         state.settings?.owner
-          ? `<p class="hintline">Ustawienia modelu AI dla odczytu ekranu znajdziesz w zakładce <a href="#" data-act="go-to-admin">Silniki AI</a>.</p>`
+          ? `<p class="hintline">Ustawienia modelu AI dla odczytu ekranu znajdziesz w zakładce <a href="#" data-act="go-to-admin">Panel admina</a>.</p>`
           : ""
       }
     </div>`;
@@ -3705,6 +3705,7 @@ api.onGoToView?.((view) => {
      tym samym kanałem, bo z punktu widzenia paska menu to jest ta sama
      rzecz: pokaż mi to. */
   if (view === "guide") return void window.CribroGuide?.open(0);
+  if (view === "ai") view = "admin";
   if (VIEWS[view]) {
     state.view = view;
     render();
