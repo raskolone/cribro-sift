@@ -225,6 +225,36 @@
   margin: 3px 0;
 }
 
+/* Poziomy numerowania: 1. → a. → I. i od nowa — tak samo jak w edytorach
+   tekstu, z których ludzie tu przychodzą. Poziom robi się Tabem (patrz
+   #indentItem w js/editor.js), a w PLIKU każdy poziom zostaje „1.", bo
+   innego zapisu Markdown nie ma. Znak numeru jest więc cechą WIDOKU
+   i musi wynikać z zagnieżdżenia, nie z tekstu punktu. */
+.prose ol {
+  list-style-type: decimal;
+}
+.prose ol ol {
+  list-style-type: lower-alpha;
+}
+.prose ol ol ol {
+  list-style-type: upper-roman;
+}
+.prose ol ol ol ol {
+  list-style-type: decimal;
+}
+
+/* To samo dla punktorów: kropka, kółko, kwadracik. Bez tego trzy poziomy
+   listy wyglądały jednakowo i po wcięciu nie było widać, że coś się stało. */
+.prose ul:not(.task) {
+  list-style-type: disc;
+}
+.prose ul:not(.task) ul:not(.task) {
+  list-style-type: circle;
+}
+.prose ul:not(.task) ul:not(.task) ul:not(.task) {
+  list-style-type: square;
+}
+
 /* Lista zadań: kwadrat rysowany zamiast punktora. Kliknięcie w niego
    odhacza — obsługa siedzi w js/editor.js, bo tylko tam widać kursor. */
 .prose ul.task {

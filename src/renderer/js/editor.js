@@ -45,6 +45,22 @@
      zadań: rysuje ją CSS, więc kliknięcie w nią jest kliknięciem w lewy
      skraj bloku i tylko tutaj wiadomo, gdzie ten skraj przebiega. */
   const TOGGLE_ZONE = 24;
+  /* Znaczniki, po których rozpoznajemy rodzaj listy, gdy ktoś wpisze je
+     ręcznie na początku akapitu i naciśnie spację. Tak wypunktowanie robi
+     się w każdym edytorze tekstu od trzydziestu lat — a kto nie wie, że tak
+     można, ten po prostu zobaczy wpisany myślnik i nic nie straci.
+
+     Litera i liczba rzymska też zaczynają listę NUMEROWANĄ, bo w pliku
+     wszystkie poziomy numerowania są tym samym „1." (Markdown nie zna
+     innych) — o tym, czy widać 1., a. czy I., decyduje poziom zagnieżdżenia,
+     tak jak w Wordzie. Patrz reguły `.prose ol` w css/prose.css. */
+  const LIST_MARKERS = [
+    [/^[-*+]$/, "bullet"],
+    [/^\[[ xX]?\]$/, "todo"],
+    [/^\d{1,3}[.)]$/, "numbered"],
+    [/^[a-zA-Z][.)]$/, "numbered"],
+  ];
+
   const BLOCKS = new Set(["P", "H1", "H2", "H3", "UL", "OL", "BLOCKQUOTE", "HR"]);
   const HEADINGS = ["H1", "H2", "H3"];
 
@@ -136,8 +152,8 @@
         this.#insertDivider();
       } else if (kind === "quote") {
         this.#setBlock("blockquote");
-      } else if (kind === "bullet" || kind === "todo") {
-        this.#toggleList(kind === "todo");
+      } else if (kind === "bullet" || kind === "todo" || kind === "numbered") {
+        this.#toggleList(kind);
       }
 
       this.#changed();
@@ -156,7 +172,8 @@
         h3: heading?.tagName === "H3",
         toggle: !!heading?.hasAttribute("data-toggle"),
         quote: !!block?.closest?.("blockquote"),
-        bullet: !!list && !list.classList.contains("task"),
+        bullet: list?.tagName === "UL" && !list.classList.contains("task"),
+        numbered: list?.tagName === "OL",
         todo: !!list && list.classList.contains("task"),
       };
     }
@@ -401,18 +418,24 @@
     }
 
     /**
-     * Lista i lista zadań to ta sama lista; różni je znacznik i pole
-     * do odhaczenia. Dzięki temu przełączanie między nimi nie gubi punktów.
+     * Lista punktowana, numerowana i lista zadań to ta sama lista; różni je
+     * znacznik listy i pole do odhaczenia. Dzięki temu przełączanie między
+     * nimi nie gubi punktów ani ich zagnieżdżenia.
+     *
+     * @param {"bullet"|"numbered"|"todo"} kind
      */
-    #toggleList(task) {
+    #toggleList(kind) {
+      const task = kind === "todo";
+      const tag = kind === "numbered" ? "ol" : "ul";
       const saved = this.#saveSelection();
       const units = this.#selectedUnits();
       if (!units.length) return;
 
       // Ten sam rodzaj listy drugi raz znaczy „wyjdź z listy".
+      const listOf = (unit) => (unit.tagName === "LI" ? unit.parentElement : unit);
       const sameKind = (unit) =>
-        (unit.tagName === "LI" ? unit.parentElement : unit).tagName === "UL" &&
-        (unit.tagName === "LI" ? unit.parentElement : unit).classList.contains("task") === task;
+        listOf(unit).tagName === tag.toUpperCase() &&
+        (tag === "ol" || listOf(unit).classList.contains("task") === task);
 
       if (units.every(sameKind)) {
         for (const unit of units) {
@@ -429,7 +452,7 @@
         unit.tagName === "LI" ? this.#extractItem(unit, "p") : unit,
       );
 
-      const list = document.createElement("ul");
+      const list = document.createElement(tag);
       if (task) list.classList.add("task");
 
       for (const block of blocks) {
@@ -451,6 +474,135 @@
       blocks[0].replaceWith(list);
       for (const block of blocks.slice(1)) block.remove();
       this.#restoreSelection(saved);
+    }
+
+    /** Kursor na początek bloku — po przebudowie, która zabrała stary. */
+    #caretTo(node) {
+      const range = document.createRange();
+      range.setStart(node, 0);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    /**
+     * „- ", „1. ", „a) ", „[] " na początku akapitu robią listę tego rodzaju.
+     * Znacznik znika z tekstu — wchodzi w jego miejsce prawdziwa lista, więc
+     * w pliku zostaje jeden zapis punktu, a nie punkt wpisany w punkt.
+     *
+     * @returns {boolean} czy spacja została zużyta na zrobienie listy
+     */
+    #autoList() {
+      const selection = window.getSelection();
+      if (!selection?.isCollapsed || !selection.rangeCount) return false;
+
+      const block = this.#blockAt(this.#anchor());
+      if (!block || block.tagName !== "P" || block.parentElement !== this.root) return false;
+
+      /* Tylko wtedy, gdy znacznik jest CAŁYM akapitem i kursor stoi tuż za
+         nim. Inaczej „1." wpisane w środku zdania albo przed gotowym tekstem
+         porywałoby linię, której nikt nie chciał ruszać. */
+      const typed = block.textContent ?? "";
+      const range = selection.getRangeAt(0);
+      const before = document.createRange();
+      before.selectNodeContents(block);
+      before.setEnd(range.endContainer, range.endOffset);
+      if (before.toString() !== typed) return false;
+
+      const found = LIST_MARKERS.find(([pattern]) => pattern.test(typed));
+      if (!found) return false;
+
+      const index = [...this.root.children].indexOf(block);
+      block.replaceChildren(document.createElement("br"));
+      this.#caretTo(block);
+      this.#toggleList(found[1]);
+
+      const item = this.root.children[index]?.querySelector?.("li");
+      if (item) this.#caretTo(item);
+      this.#changed();
+      return true;
+    }
+
+    /**
+     * Punkt o poziom głębiej — Tab, jak w Wordzie. Głębiej wchodzi tylko
+     * punkt, NAD którym coś stoi: pierwszy punkt listy nie ma pod co się
+     * podczepić, a lista zaczynająca się od wcięcia nie ma zapisu
+     * w Markdownie.
+     */
+    #indentItem(item) {
+      const previous = item.previousElementSibling;
+      if (previous?.tagName !== "LI") return false;
+
+      const list = item.parentElement;
+      const last = previous.lastElementChild;
+      const nested =
+        last && (last.tagName === "UL" || last.tagName === "OL")
+          ? last
+          : previous.appendChild(document.createElement(list.tagName.toLowerCase()));
+      if (!nested.className) nested.className = list.className;
+
+      const saved = this.#saveSelection();
+      nested.appendChild(item);
+      this.#restoreSelection(saved);
+      return true;
+    }
+
+    /**
+     * Punkt o poziom wyżej — ⇧Tab i Enter w pustym punkcie. Z najwyższego
+     * poziomu wychodzi się z listy w akapit: to ten sam ruch, tylko ostatni.
+     * Punkty stojące POD nim jadą razem z nim, jako jego zagnieżdżenie —
+     * inaczej wyjście ze środka listy rozrywałoby ją na dwie.
+     */
+    #outdentItem(item) {
+      const list = item.parentElement;
+      const host = list?.parentElement?.tagName === "LI" ? list.parentElement : null;
+
+      if (!host) {
+        const paragraph = this.#extractItem(item, "p");
+        if (!paragraph.childNodes.length) paragraph.appendChild(document.createElement("br"));
+        this.#caretTo(paragraph);
+        return true;
+      }
+
+      const saved = this.#saveSelection();
+      const after = [...list.children].slice([...list.children].indexOf(item) + 1);
+      host.after(item);
+      if (after.length) {
+        const tail = document.createElement(list.tagName.toLowerCase());
+        tail.className = list.className;
+        tail.append(...after);
+        item.appendChild(tail);
+      }
+      if (!list.children.length) list.remove();
+      this.#restoreSelection(saved);
+      return true;
+    }
+
+    /** Punkt, w którym stoi kursor — albo nic, gdy kursor jest poza listą. */
+    #itemAt() {
+      const node = this.#anchor();
+      if (!node) return null;
+
+      /* Kursor postawiony na KONIEC notatki (tak wraca po dyktowaniu, patrz
+         focusEnd) siedzi w samym korzeniu, między blokami — nie w tekście.
+         Wtedy punktem, w którym stoi, jest ostatni punkt bloku obok. */
+      if (node === this.root) {
+        const at = window.getSelection()?.anchorOffset ?? 0;
+        const block = this.root.children[Math.min(at, this.root.children.length - 1)];
+        const items = block?.querySelectorAll?.("li");
+        return items?.length ? items[items.length - 1] : null;
+      }
+
+      return this.#blockAt(node)?.closest?.("li") ?? null;
+    }
+
+    /** Czy w punkcie nie ma już nic — poza <br>, który trzyma pustą linię. */
+    #emptyItem(item) {
+      const own = [...item.childNodes].filter(
+        (node) => node.tagName !== "UL" && node.tagName !== "OL",
+      );
+      return own.every((node) => (node.textContent ?? "").trim() === "");
     }
 
     /* Tekst wpisany prosto do edytora, bez akapitu wokół, popsułby zapis
@@ -1477,6 +1629,41 @@
             event.preventDefault();
             this.#moveLine(line, event.key === "ArrowUp" ? -1 : 1);
             this.#paintPick();
+            return;
+          }
+        }
+      }
+
+      /* ══ LISTY: SPACJA, TAB, ENTER ══
+
+         Trzy klawisze, które w każdym edytorze tekstu robią listę i jej
+         poziomy. Chromium nie robi z nich nic sensownego w contenteditable
+         (Tab wychodzi z pola, Enter w pustym punkcie zostawia pusty punkt),
+         więc obsługa jest tutaj. */
+      if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (event.key === " " && this.#autoList()) {
+          event.preventDefault();
+          return;
+        }
+
+        if (event.key === "Tab") {
+          const item = this.#itemAt();
+          /* Poza listą Tab zostaje Tabem okna — przejściem do następnego
+             pola. Wewnątrz listy nie ma dokąd przechodzić: tam jest tekst. */
+          if (item) {
+            event.preventDefault();
+            if (event.shiftKey ? this.#outdentItem(item) : this.#indentItem(item)) this.#changed();
+            return;
+          }
+        }
+
+        if (event.key === "Enter" && !event.shiftKey) {
+          const item = this.#itemAt();
+          // Enter w pustym punkcie kończy poziom, a na najwyższym — listę.
+          if (item && this.#emptyItem(item)) {
+            event.preventDefault();
+            this.#outdentItem(item);
+            this.#changed();
             return;
           }
         }

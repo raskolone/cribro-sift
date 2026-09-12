@@ -30,6 +30,7 @@ const {
   folderColorOf,
   NOTE_COLORS,
   renameInPlace,
+  dateStamp,
   ensureIcons,
   actionBar,
   paintActions,
@@ -937,6 +938,9 @@ document.addEventListener("keydown", (event) => {
     // naciśnięcie wraca do wyrównania do lewej.
     const note = currentNote();
     if (note) void setAlign(note, note.align === "justify" ? "left" : "justify");
+  } else if (event.shiftKey && (event.key === "7" || event.key === "&")) {
+    event.preventDefault();
+    applyFormat("numbered");
   } else if (event.shiftKey && (event.key === "8" || event.key === "*")) {
     event.preventDefault();
     applyFormat("bullet");
@@ -963,11 +967,10 @@ function applyFormat(kind) {
   refreshFormatState();
 }
 
-/* Godzina wstawiona w miejscu kursora — w notatce ze spotkania to
-   najczęściej potrzebny znacznik, a sięganie po zegar rozprasza. */
+/* Data i godzina wstawione w miejscu kursora — w notatce ze spotkania to
+   najczęściej potrzebny znacznik, a sięganie po zegar i kalendarz rozprasza. */
 function insertStamp() {
-  const stamp = new Date().toLocaleTimeString(uiLocale(), { hour: "2-digit", minute: "2-digit" });
-  editor.insertText(`${stamp} — `);
+  editor.insertText(`${dateStamp()} — `);
 }
 
 function flash(message) {

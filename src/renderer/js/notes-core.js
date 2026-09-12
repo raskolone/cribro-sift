@@ -462,6 +462,20 @@
    * wyglądać w obu tak samo, więc brakujące symbole dokłada kod, który go
    * rysuje — zamiast trzeciej kopii tych samych ścieżek w trzecim pliku.
    */
+  /* Znacznik wstawiany do notatki: data I godzina. Sama godzina gubiła się,
+     gdy notatka żyła dłużej niż jeden dzień — nazajutrz „14:30" nie mówiło
+     już, którego dnia. Zapis idzie przez locale, bo po polsku i po angielsku
+     kolejność dnia i miesiąca jest inna. */
+  function dateStamp(date = new Date()) {
+    return date.toLocaleString(uiLocale(), {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
   const ICON_SHAPES = {
     "i-pin":
       '<path d="M9 3.5h6l-.8 5.2 3 2.6v2.2H6.8v-2.2l3-2.6L9 3.5ZM12 13.5V21" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" />',
@@ -475,6 +489,16 @@
       '<path d="M4.5 7h15M9.5 7V5.4a1.4 1.4 0 0 1 1.4-1.4h2.2a1.4 1.4 0 0 1 1.4 1.4V7M6.6 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.8-12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />',
     "i-omega":
       '<path d="M7 20h3.2v-1.6a6.4 6.4 0 1 1 3.6 0V20H17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />',
+    /* Lista numerowana: „1" i „2" zamiast kropek. Ikona żyje tutaj,
+       a nie w arkuszu symboli okna, bo pasek notatki rysują trzy okna
+       (patrz ensureIcons niżej) i wszystkie mają ją mieć. */
+    "i-list-num":
+      '<path d="M9.5 6.5h10.5M9.5 12h10.5M9.5 17.5h10.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><path d="M3.2 4.6h1.5v4.2M3.2 8.8h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /><path d="M3.2 14.6a1.4 1.4 0 1 1 2.5.9l-2.5 3h2.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />',
+    /* Kartka kalendarza z tarczą zegara w środku. Sam zegar mówił tylko
+       „godzina" — a przycisk wstawia DATĘ I GODZINĘ, więc rysunek ma
+       powiedzieć jedno i drugie, zanim ktokolwiek najedzie po podpowiedź. */
+    "i-datestamp":
+      '<path d="M4 6.6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v11.8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /><path d="M4 9.6h16" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M8 3.2v2.8M16 3.2v2.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><circle cx="12" cy="15" r="3.6" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M12 12.9V15h1.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />',
   };
 
   function ensureIcons(doc = document) {
@@ -762,6 +786,7 @@
     NOTE_COLORS,
     colorOf,
     renameInPlace,
+    dateStamp,
     ensureIcons,
     actionBar,
     paintActions,

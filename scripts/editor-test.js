@@ -88,6 +88,19 @@ const toHtml = [
     '<ul class="task"><li data-done="false">do zrobienia</li><li data-done="true">zrobione</li></ul>',
   ],
   [
+    "Lista numerowana",
+    "1. pierwszy\n2. drugi",
+    "<ol><li>pierwszy</li><li>drugi</li></ol>",
+  ],
+  [
+    /* Poziomy numerowania (1. → a. → I.) są cechą WIDOKU — rysuje je CSS
+       z zagnieżdżenia (patrz .prose ol w css/prose.css). W pliku każdy
+       poziom zostaje „1.", więc to zagnieżdżenie musi przeżyć obie drogi. */
+    "Trzy poziomy numerowania wchodzą jeden w drugi",
+    "1. raz\n  1. podpunkt\n    1. głębiej",
+    "<ol><li>raz<ol><li>podpunkt<ol><li>głębiej</li></ol></li></ol></li></ol>",
+  ],
+  [
     "Wcięty punkt wchodzi w poprzedni",
     "- plan\n  - pierwszy krok",
     "<ul><li>plan<ul><li>pierwszy krok</li></ul></li></ul>",
@@ -153,6 +166,16 @@ const toMarkdown = [
     "Lista zagnieżdżona dostaje wcięcie",
     root(el("ul", {}, [el("li", {}, [text("plan"), el("ul", {}, [el("li", {}, [text("krok")])])])])),
     "- plan\n  - krok",
+  ],
+  [
+    "Numerowanie liczy się od nowa na każdym poziomie",
+    root(
+      el("ol", {}, [
+        el("li", {}, [text("raz"), el("ol", {}, [el("li", {}, [text("podpunkt")]), el("li", {}, [text("drugi podpunkt")])])]),
+        el("li", {}, [text("dwa")]),
+      ]),
+    ),
+    "1. raz\n  1. podpunkt\n  2. drugi podpunkt\n2. dwa",
   ],
   [
     "Linia rozdzielająca wraca kreską",

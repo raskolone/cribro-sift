@@ -217,6 +217,7 @@ const KNOWN = new Set([
   "toggle",
   "divider",
   "bullet",
+  "numbered",
   "todo",
   "quote",
 ]);

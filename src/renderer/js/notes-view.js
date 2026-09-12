@@ -163,6 +163,7 @@
             </div>
           </div>
           <button class="icon-btn" data-format="bullet" title="Lista (⌘⇧8)"><svg><use href="#i-list" /></svg></button>
+          <button class="icon-btn" data-format="numbered" title="Lista numerowana (⌘⇧7)"><svg><use href="#i-list-num" /></svg></button>
           <button class="icon-btn" data-format="todo" title="Lista zadań (⌘⇧9)"><svg><use href="#i-todo" /></svg></button>
           <button class="icon-btn" data-format="quote" title="Cytat (⌘⇧')"><svg><use href="#i-quote" /></svg></button>
           <div class="notes__menu-wrap">
@@ -186,7 +187,7 @@
             <div class="notes__menu notes__menu--chars" id="noteCharsMenu" hidden></div>
           </div>
           <span class="notes__sep"></span>
-          <button class="icon-btn" data-note-act="stamp" title="Wstaw godzinę (⌘T)"><svg><use href="#i-clock" /></svg></button>
+          <button class="icon-btn" data-note-act="stamp" title="Wstaw datę i godzinę (⌘T)"><svg><use href="#i-datestamp" /></svg></button>
           <!-- Bez rozpychacza przed spodem. Pasek zawija się (flex-wrap),
                a rozpychacz odsyłał ostatnią ikonę do drugiego rzędu — jedną
                samotną ikonę pod całym paskiem. -->
@@ -1006,9 +1007,7 @@
         await api.notes.openWindow(note.id);
         break;
       case "stamp":
-        editor.insertText(
-          `${new Date().toLocaleTimeString(uiLocale(), { hour: "2-digit", minute: "2-digit" })} — `,
-        );
+        editor.insertText(`${dateStamp()} — `);
         break;
       case "undo-sift":
         Object.assign(note, await api.notes.undoSift(note.id), { previousText: null });
