@@ -41,6 +41,7 @@
     runAction,
     fitMenu,
     runShare,
+    dateStamp,
   } = window.NotesCore;
   const $ = (selector) => document.querySelector(selector);
 
@@ -75,9 +76,8 @@
      Cała robota siedzi w js/editor.js — tak samo jak w Notatniku (patrz
      applyFormat w js/notes.js). Tutaj zostaje jedno wywołanie i odświeżenie
      paska, żeby przyciski pokazywały, co jest włączone tam, gdzie stoi
-     kursor. Sześć znaczków w pasku i cztery skróty niżej to są DWIE DROGI
-     DO TEGO SAMEGO, a nie dwie funkcje: ta sama metoda edytora, ten sam
-     zapis w pliku.
+     kursor. Znaczki w pasku i skróty niżej to są DWIE DROGI DO TEGO SAMEGO,
+     a nie dwie funkcje: ta sama metoda edytora, ten sam zapis w pliku.
 
      Trzeciej drogi — samego pisania — nie ma tu w ogóle i to jest w tym
      najważniejsze. „- ", „1. " i „[] " na początku linii robią listę same,
@@ -99,12 +99,22 @@
     }
   }
 
+  /* Data i godzina w miejscu kursora — jedna rzecz, po którą na kartce
+     leżącej przy pracy sięga się równie często co po listę: „14:30 — " przed
+     zdaniem robi z notatki zapis przebiegu dnia. Znacznik niesie DATĘ I
+     GODZINĘ, bo sama godzina gubi się nazajutrz (patrz dateStamp
+     w js/notes-core.js) — i jest tym samym znacznikiem co w Notatniku. */
+  function insertStamp() {
+    editor.insertText(`${dateStamp()} — `);
+  }
+
   /* Naciśnięcie przycisku paska nie ma zabierać zaznaczenia z tekstu —
-     inaczej „B" pogrubiałoby to, co przed chwilą było zaznaczone, albo nic.
-     Osobny nasłuch, bo ten wyżej melduje kliknięcie procesowi głównemu
-     i ma dochodzić zawsze. */
+     inaczej „B" pogrubiałoby to, co przed chwilą było zaznaczone, albo nic,
+     a znacznik czasu wpadałby na koniec notatki zamiast tam, gdzie stoi
+     kursor. Osobny nasłuch, bo ten wyżej melduje kliknięcie procesowi
+     głównemu i ma dochodzić zawsze. */
   document.addEventListener("mousedown", (event) => {
-    if (event.target.closest("[data-format]")) event.preventDefault();
+    if (event.target.closest("[data-format], #stamp")) event.preventDefault();
   });
 
   document.addEventListener("selectionchange", () => {
@@ -392,6 +402,7 @@
 
     const tool = event.target.closest("[data-format]");
     if (tool) return applyFormat(tool.dataset.format);
+    if (event.target.closest("#stamp")) return insertStamp();
     if (event.target.closest("#hideAll")) return void hideDeck();
 
     /* Zwinięcie do nagłówka. Stan trzyma proces główny razem z resztą
@@ -518,7 +529,13 @@
   };
 
   document.addEventListener("keydown", (event) => {
-    if (event.defaultPrevented || !event.metaKey || !event.shiftKey) return;
+    if (event.defaultPrevented || !event.metaKey) return;
+    // ⌘T bez Shifta — ten sam klawisz co w Notatniku.
+    if (!event.shiftKey) {
+      if (event.key !== "t") return;
+      event.preventDefault();
+      return insertStamp();
+    }
     const kind = FORMAT_KEYS[event.key];
     if (!kind) return;
     event.preventDefault();

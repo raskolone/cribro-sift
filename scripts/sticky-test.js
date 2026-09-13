@@ -123,6 +123,9 @@ window.__shape = () => ({
   items: [...document.querySelectorAll("#text li")].map((li) => li.textContent.trim()),
 });
 
+/** Sam tekst notatki — do sprawdzenia, co wstawił znacznik czasu. */
+window.__text = () => document.getElementById("text").textContent;
+
 /** Co pasek ma podświetlone. */
 window.__pressed = () =>
   Object.fromEntries(
@@ -236,6 +239,18 @@ app.whenReady().then(async () => {
   await key("9", { modifiers: ["command", "shift"], char: "(" });
   out.shortcut = await js("window.__shape()");
 
+  /* ── Znacznik daty i godziny: przyciskiem i skrótem ── */
+  await js("window.__blank()");
+  await type("ustalenia: ");
+  await js("window.__click('#stamp')");
+  await wait(150);
+  out.stampClick = await js("window.__text()");
+
+  await js("window.__blank()");
+  await type("druga notatka ");
+  await key("t", { modifiers: ["command"] });
+  out.stampKey = await js("window.__text()");
+
   /* ── Pasek gaśnie poza listą ── */
   await js("window.__blank()");
   await type("zwykłe zdanie");
@@ -323,6 +338,22 @@ ok("Wypunktowanie rozpoznaje się w trakcie pisania, tak jak w Notatniku");
 
 assert.ok(out.shortcut.todo, "⌘⇧9 nie zrobiło listy zadań na kartce");
 ok("Skróty formatowania działają w kartce tak samo jak w Notatniku");
+
+/* Znacznik niesie DATĘ I GODZINĘ, a nie samą godzinę: notatka żyjąca dłużej
+   niż jeden dzień nie odpowiada nazajutrz na pytanie, którego dnia padło
+   „14:30". Zapis idzie przez locale, więc pytamy o kształt, nie o napis. */
+/* Odstępy jako \s, nie spacja: locale wstawia między godziną a myślnikiem
+   spację nierozdzielającą, a ta nie jest tym samym znakiem co spacja. */
+const STAMP = /\d{2}[./]\d{2}[./]\d{4},?\s\d{2}:\d{2}\s—\s$/;
+assert.ok(
+  out.stampClick.startsWith("ustalenia: ") && STAMP.test(out.stampClick),
+  `przycisk nie wstawił daty i godziny w miejscu kursora — dostałem: ${JSON.stringify(out.stampClick)}`,
+);
+assert.ok(
+  STAMP.test(out.stampKey),
+  `⌘T nie wstawiło znacznika na kartce — dostałem: ${JSON.stringify(out.stampKey)}`,
+);
+ok("Data i godzina wchodzą w miejscu kursora — przyciskiem i skrótem ⌘T");
 
 assert.ok(
   !out.plain.bullet && !out.plain.numbered && !out.plain.todo && !out.plain.quote,

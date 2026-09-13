@@ -330,13 +330,18 @@
          kwadracików było otwarcie notatki w Notatniku, czyli opuszczenie
          miejsca, po to żeby postawić kropkę.
 
-         SZEŚĆ przycisków, nie jedenaście jak w Notatniku, i ani jednego menu.
+         SIEDEM przycisków, nie jedenaście jak w Notatniku, i ani jednego menu.
          W pasku szerokim na dwieście dziesięć pikseli menu byłoby szufladą
          zasłaniającą całą kartkę, a nagłówki i wyrównanie należą do pisania
          dokumentu, nie do dopisywania punktu na wierzchu. Reszta formatowania
          zostaje pod ręką skrótem klawiaturowym (patrz js/sticky.js) i przez
          samo pisanie: „- ", „1. " i „[] " robią listę tak samo jak w każdym
          edytorze tekstu (patrz #autoList w js/editor.js).
+
+         Siódmy znaczek nie formatuje, tylko WSTAWIA: datę z godziną w miejscu
+         kursora. Stoi tu, bo na kartce leżącej przy pracy jest po nią równie
+         często ręka co po listę — „14:30 — " przed zdaniem robi z notatki
+         zapis przebiegu dnia, a sięganie po zegar i kalendarz rozprasza.
 
          Przyciski są znaczkami bez podpisów — jako jedyne w tej aplikacji
          mogą sobie na to pozwolić, bo „B", kropki listy i kwadracik zadań
@@ -354,7 +359,10 @@
         flex: none;
         width: 1px;
         height: 13px;
-        margin: 0 4px;
+        /* Trzy piksele, nie cztery: przy siedmiu znaczkach i dwóch kreskach
+           cały rząd ma 200 pikseli, a najwęższa kartka — 210. Odstęp jest
+           tym, co w tym rachunku zostało do oddania. */
+        margin: 0 3px;
         background: var(--line-strong);
       }
       .tool-btn {
@@ -730,6 +738,14 @@
             <button class="tool-btn" data-format="quote" title="Cytat (⌘⇧')"
                     aria-label="Cytat" aria-pressed="false">
               <svg><use href="#i-quote" /></svg>
+            </button>
+            <!-- Data i godzina w miejscu kursora. Stoi przy cytacie, a nie za
+                 własną kreską, bo na trzecią kreskę w rzędzie szerokim na
+                 dwieście pikseli po prostu nie ma miejsca — a wstawienie
+                 znacznika JEST pisaniem, więc należy do tej samej grupy. -->
+            <button class="tool-btn" id="stamp" title="Wstaw datę i godzinę (⌘T)"
+                    aria-label="Wstaw datę i godzinę">
+              <svg><use href="#i-datestamp" /></svg>
             </button>
           </div>
 

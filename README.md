@@ -1319,15 +1319,16 @@ notatkę rozpoznać, zanim się ją przeczyta.
 #### Pasek pisania — i listy, po które sięga się na kartce najczęściej
 
 Kartka ma **własny pasek narzędzi**, pod belką z tytułem: pogrubienie,
-kursywa, trzy rodzaje listy i cytat. Sześć znaczków, ani jednego menu.
+kursywa, trzy rodzaje listy, cytat i znacznik z datą i godziną. Siedem
+znaczków, ani jednego menu.
 
 Powód jest jeden i widać go po tym, co ludzie na kartkach trzymają: plan dnia,
 listę zakupów, trzy rzeczy do odhaczenia przed wyjściem. Do niedawna jedyną
 drogą do kwadracików było otwarcie notatki w Notatniku — czyli opuszczenie
 miejsca, przy którym się siedzi, po to, żeby postawić kropkę.
 
-Dlaczego sześć, a nie jedenaście jak w Notatniku: pasek kartki bywa szeroki na
-dwieście dziesięć pikseli. Menu byłoby w nim szufladą zasłaniającą całą
+Dlaczego siedem, a nie jedenaście jak w Notatniku: pasek kartki bywa szeroki
+na dwieście dziesięć pikseli. Menu byłoby w nim szufladą zasłaniającą całą
 notatkę, a nagłówki i wyrównanie należą do pisania dokumentu, nie do
 dopisywania punktu na wierzchu.
 
@@ -1344,6 +1345,14 @@ Znacznik znika z tekstu: w jego miejsce wchodzi prawdziwa lista, więc w pliku
 zostaje jeden zapis punktu, a nie punkt wpisany w punkt. Tab i ⇧Tab robią
 poziomy, Enter w pustym punkcie kończy listę. Do tego cztery skróty — ⌘⇧8
 punktowana, ⌘⇧7 numerowana, ⌘⇧9 zadania, ⌘⇧' cytat — te same co w Notatniku.
+
+**Ostatni znaczek nie formatuje, tylko wstawia**: datę z godziną w miejscu
+kursora, tak samo jak ⌘T i tak samo jak przycisk w Notatniku. Na kartce
+leżącej przy pracy sięga się po niego równie często co po listę — „13.09.2026,
+14:30 — " przed zdaniem robi z notatki zapis przebiegu dnia, a sięganie po
+zegar i kalendarz rozprasza. Znacznik niesie **datę i godzinę**, nie samą
+godzinę: notatka żyje dłużej niż jeden dzień, a nazajutrz „14:30" nie mówi
+już, którego dnia.
 
 Nic z tego nie jest liczone na kartce po swojemu: **to ten sam edytor**
 ([editor.js](src/renderer/js/editor.js)), ta sama metoda i ten sam zapis
@@ -2043,8 +2052,8 @@ scripts/         testy, zrzuty ekranu, ikona
   list-test.js      listy prawdziwą klawiaturą: znacznik robi listę, Tab robi
                     poziom, Enter w pustym punkcie kończy
   sticky-test.js    kartka na pulpicie w prawdziwym oknie: pasek pisania,
-                    rozpoznawanie wypunktowania, skróty i wyłącznik talii
-                    („Ukryj stickies" chowa, a nie kasuje)
+                    rozpoznawanie wypunktowania, skróty, znacznik daty
+                    i wyłącznik talii („Ukryj stickies" chowa, a nie kasuje)
   owner-test.js     krok „Silniki" należy do właściciela: kto nim jest, co
                     wychodzi mostem, czego nie da się zapisać, co mówi błąd
   blind-test.js     to samo, ale w PRAWDZIWYM oknie: przejście po wszystkich
