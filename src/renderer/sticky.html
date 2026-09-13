@@ -178,7 +178,9 @@
          Wysokość okna zmienia proces główny (deck:roll); tutaj znika to,
          co ma zniknąć, i obraca się strzałka. */
       #card[data-rolled="true"] .body,
+      #card[data-rolled="true"] .tools,
       #card[data-rolled="true"] .foot,
+      #card[data-rolled="true"] .deck-off,
       #card[data-rolled="true"] #grip {
         display: none;
       }
@@ -319,6 +321,79 @@
         height: 17px;
       }
 
+      /* ── Narzędzia pisania ──
+
+         Kartka jest tą samą notatką co w Notatniku, więc ma się w niej dać
+         napisać to samo — a listy to jedyna rzecz z formatowania, po którą
+         na kartce sięga się naprawdę często. Kartka na pulpicie to najczęściej
+         plan dnia albo lista zakupów; bez tego rzędu jedyną drogą do
+         kwadracików było otwarcie notatki w Notatniku, czyli opuszczenie
+         miejsca, po to żeby postawić kropkę.
+
+         SZEŚĆ przycisków, nie jedenaście jak w Notatniku, i ani jednego menu.
+         W pasku szerokim na dwieście dziesięć pikseli menu byłoby szufladą
+         zasłaniającą całą kartkę, a nagłówki i wyrównanie należą do pisania
+         dokumentu, nie do dopisywania punktu na wierzchu. Reszta formatowania
+         zostaje pod ręką skrótem klawiaturowym (patrz js/sticky.js) i przez
+         samo pisanie: „- ", „1. " i „[] " robią listę tak samo jak w każdym
+         edytorze tekstu (patrz #autoList w js/editor.js).
+
+         Przyciski są znaczkami bez podpisów — jako jedyne w tej aplikacji
+         mogą sobie na to pozwolić, bo „B", kropki listy i kwadracik zadań
+         wyglądają tak samo w każdym edytorze od trzydziestu lat. */
+      .tools {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 1px;
+        padding: 3px 6px;
+        border-bottom: 1px solid var(--line-soft);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+      }
+      .tools__sep {
+        flex: none;
+        width: 1px;
+        height: 13px;
+        margin: 0 4px;
+        background: var(--line-strong);
+      }
+      .tool-btn {
+        flex: none;
+        width: 24px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--text-mute);
+        cursor: pointer;
+        transition:
+          background var(--t),
+          color var(--t),
+          border-color var(--t);
+      }
+      /* Rysunki niosą fill i stroke same (patrz ICON_SHAPES w js/notes-core.js),
+         więc arkusz nadaje im WYŁĄCZNIE rozmiar. Wspólne `fill: none` zabrałoby
+         kropki liście punktowanej, a wspólny `stroke` obrysowałby je na grubo. */
+      .tool-btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .tool-btn:hover {
+        background: var(--accent-08);
+        color: var(--accent);
+      }
+      /* Włączone widać obwódką, nie samym tłem — na ciemnej kartce tło
+         w dwunastu procentach akcentu jest nie do odróżnienia od najechania
+         kursorem. To ta sama reguła co w Notatniku (.icon-btn w css/notes.css). */
+      .tool-btn[aria-pressed="true"] {
+        color: var(--accent);
+        background: var(--accent-12);
+        border-color: var(--accent-30);
+      }
+
       /* ── Treść ── */
 
       .body {
@@ -399,8 +474,147 @@
       .foot .dot {
         opacity: 0.4;
       }
+      /* ── LICZNIK SŁÓW SCHODZI PIERWSZY ──
+         Pięć znaczków czynności, stan zapisu i licznik nie mieszczą się
+         w stopce kartki — „25 słów" łamało się na dwa wiersze i rozpychało
+         całą stopkę na podwójną wysokość, zabierając ją notatce. Z tych
+         trzech rzeczy licznik jest najmniej potrzebny: stan zapisu mówi, czy
+         notatka jest bezpieczna, przyciski coś robią, a licznik tylko
+         informuje — i to o tym, co widać.
+
+         Próg jest policzony, nie zgadnięty: pięć znaczków bez podpisów to
+         163 px, „Zapisane" około 52, licznik z kropką i odstępami około 74,
+         wyściółka 26. Razem 315 — stąd 330, z zapasem na dłuższe napisy po
+         przełączeniu języka. Pyta o szerokość STOPKI, nie okna; kontener
+         zakłada css/note-acts.css, tam gdzie znikają podpisy przycisków. */
+      @container (max-width: 330px) {
+        .foot #words,
+        .foot .dot {
+          display: none;
+        }
+      }
+      .foot #state,
+      .foot #words {
+        white-space: nowrap;
+      }
       #state[data-state="saving"] {
         color: var(--accent-55);
+      }
+
+      /* ══ WYŁĄCZNIK TALII ══
+
+         „Ukryj stickies" chowa WSZYSTKIE kartki naraz, nie tę jedną — i to
+         jest cała różnica między nim a krzyżykiem w belce. Krzyżyk zdejmuje
+         notatkę z wierzchu na dobre (przestaje być kartką); wyłącznik gasi
+         całą talię na chwilę i nic o notatkach nie zmienia. Wracają
+         znaczkiem widgetu albo skrótem, w tych samych miejscach.
+
+         DLATEGO STOI W OSOBNYM PASKU, POD STOPKĄ, a nie w rzędzie czynności
+         nad nim. W stopce leżą rzeczy robione TEJ notatce — przypnij,
+         przesiej, usuń — i wyłącznik postawiony między nimi czytałby się
+         jako szósta z nich. Osobny pas mówi: to jest przycisk o wszystkich
+         kartkach, nie o tej.
+
+         WYGLĄDA JAK WYŁĄCZNIK, BO NIM JEST. Płytka wychodzi z kartki cieniem
+         rzuconym w dół i krawędzią rozjaśnioną u góry, a naciśnięta —
+         wchodzi w kartkę: odchyla się w perspektywie, zjeżdża o te dwa
+         piksele, o które przed chwilą wystawała, i gaśnie jej podświetlenie.
+         Dźwignia przeskakuje z prawej (talia leży) na lewą (talia zgaszona)
+         i dopiero potem kartki się składają, więc ruch ręki i ruch kartek
+         są jednym gestem, a nie dwoma. */
+      .deck-off {
+        flex: none;
+        display: flex;
+        justify-content: center;
+        padding: 0 12px 9px;
+        /* Perspektywa jest na pasku, nie na płytce: postawiona na samym
+           elemencie znikałaby przy każdej innej jego transformacji — ten sam
+           powód, dla którego perspektywa kartki siedzi na scenie. */
+        perspective: 320px;
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 100%;
+        padding: 3px 11px 3px 3px;
+        border: 1px solid rgba(0, 0, 0, 0.45);
+        border-top-color: rgba(255, 255, 255, 0.16);
+        border-radius: var(--r-pill);
+        background: linear-gradient(180deg, var(--paper-lift), var(--paper-sink));
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.16),
+          inset 0 -2px 4px rgba(0, 0, 0, 0.32),
+          0 2px 0 rgba(0, 0, 0, 0.5),
+          0 6px 14px -6px rgba(0, 0, 0, 0.8);
+        color: var(--text-2);
+        font-family: var(--font-mono);
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        cursor: pointer;
+        transform-origin: 50% 100%;
+        transition:
+          transform var(--t-fast),
+          box-shadow var(--t-fast),
+          color var(--t-fast);
+      }
+      .switch:hover {
+        color: var(--text);
+      }
+      .switch:focus-visible {
+        outline: 1px solid var(--accent-55);
+        outline-offset: 2px;
+      }
+      .switch:active,
+      .switch[data-off="true"] {
+        transform: translateY(2px) rotateX(14deg);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.06),
+          inset 0 2px 6px rgba(0, 0, 0, 0.5);
+      }
+      /* Rowek dźwigni — wgłębienie, nie przycisk. Świeci akcentem, dopóki
+         talia leży: to jedyne miejsce, w którym widać, że wyłącznik jest
+         w położeniu „włączony", a nie w położeniu „do naciśnięcia". */
+      .switch__well {
+        position: relative;
+        flex: none;
+        width: 28px;
+        height: 15px;
+        border-radius: var(--r-pill);
+        background: linear-gradient(180deg, var(--accent-25), var(--accent-12));
+        box-shadow:
+          inset 0 1px 3px rgba(0, 0, 0, 0.6),
+          0 0 8px -2px var(--accent-30);
+        transition:
+          background var(--t),
+          box-shadow var(--t);
+      }
+      .switch[data-off="true"] .switch__well {
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.22));
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
+      }
+      .switch__lever {
+        position: absolute;
+        top: 1px;
+        left: 1px;
+        width: 13px;
+        height: 13px;
+        border-radius: 50%;
+        background: linear-gradient(180deg, #e6ecf4, #9aa8bb);
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.65),
+          inset 0 1px 0 rgba(255, 255, 255, 0.85);
+        transform: translateX(13px);
+        transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .switch[data-off="true"] .switch__lever {
+        transform: translateX(0);
+      }
+      .switch__cap {
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       /* ── Uchwyt rozmiaru ──
@@ -487,6 +701,38 @@
           </header>
           <div class="palette" id="palette" hidden data-i18n="skip"></div>
 
+          <!-- Narzędzia pisania. Rysunki dokłada ensureIcons z js/notes-core.js
+               — to samo źródło, z którego bierze je pasek czynności, więc „B"
+               na kartce jest tym samym „B", co w Notatniku. -->
+          <div class="tools" id="tools">
+            <button class="tool-btn" data-format="bold" title="Pogrubienie (⌘B)"
+                    aria-label="Pogrubienie" aria-pressed="false">
+              <svg><use href="#i-bold" /></svg>
+            </button>
+            <button class="tool-btn" data-format="italic" title="Kursywa (⌘I)"
+                    aria-label="Kursywa" aria-pressed="false">
+              <svg><use href="#i-italic" /></svg>
+            </button>
+            <span class="tools__sep"></span>
+            <button class="tool-btn" data-format="bullet" title="Lista (⌘⇧8)"
+                    aria-label="Lista" aria-pressed="false">
+              <svg><use href="#i-list" /></svg>
+            </button>
+            <button class="tool-btn" data-format="numbered" title="Lista numerowana (⌘⇧7)"
+                    aria-label="Lista numerowana" aria-pressed="false">
+              <svg><use href="#i-list-num" /></svg>
+            </button>
+            <button class="tool-btn" data-format="todo" title="Lista zadań (⌘⇧9)"
+                    aria-label="Lista zadań" aria-pressed="false">
+              <svg><use href="#i-todo" /></svg>
+            </button>
+            <span class="tools__sep"></span>
+            <button class="tool-btn" data-format="quote" title="Cytat (⌘⇧')"
+                    aria-label="Cytat" aria-pressed="false">
+              <svg><use href="#i-quote" /></svg>
+            </button>
+          </div>
+
           <div class="body">
             <div
               id="text"
@@ -510,6 +756,17 @@
             <span class="foot__spacer"></span>
             <div id="acts"></div>
           </footer>
+
+          <!-- Wyłącznik całej talii. Nie „zamknij tę kartkę" — od tego jest
+               krzyżyk w belce; ten gasi wszystkie naraz i nic o notatkach nie
+               zmienia (patrz hideDeck w main/main.js). -->
+          <div class="deck-off">
+            <button type="button" class="switch" id="hideAll"
+                    title="Chowa wszystkie kartki naraz. Wracają znaczkiem widgetu.">
+              <span class="switch__well" aria-hidden="true"><span class="switch__lever"></span></span>
+              <span class="switch__cap">Ukryj stickies</span>
+            </button>
+          </div>
 
           <button id="grip" title="Zmień rozmiar kartki">
             <svg><use href="#s-grip" /></svg>

@@ -1287,9 +1287,12 @@ ani ściągnąć do nieczytelności, ani rozdmuchać w drugie okno aplikacji.
 najechaniu na kartkę i znika, gdy kursor z niej zejdzie. Kartka nie ma ramki,
 więc nie ma też brzegu, za który dałoby się ją złapać: brzeg okna leży
 w przezroczystej aureoli, poza kartką, czyli tam, gdzie nikt uchwytu nie szuka.
-Granice są te same co u szyby w zamyśle (210×150 do 760×960), a rozmiar zostaje
+Granice są te same co u szyby w zamyśle (210×210 do 760×960), a rozmiar zostaje
 po ponownym uruchomieniu — jedna notatka to numer telefonu, druga plan dnia
-i te dwie nie potrzebują tego samego prostokąta.
+i te dwie nie potrzebują tego samego prostokąta. Podłoga wysokości jest
+policzona, nie zgadnięta: belka, pasek pisania, stopka i wyłącznik zabierają
+kartce sto czterdzieści pięć pikseli, a to, co zostaje, ma być jeszcze
+notatką, a nie szparą między guzikami.
 
 W trakcie ciągnięcia okno **nie kurczy się razem z szybą**, tylko po puszczeniu
 uchwytu. Kurczące się okno ucieka spod kursora: uchwyt jest w rogu, a róg jest
@@ -1312,6 +1315,69 @@ Kolor jedzie do chmury razem z notatką — inaczej niż „na wierzchu", które
 zostaje na tym komputerze. To własność notatki, a nie tego biurka. Na liście
 w widgecie widać go kropką przy tytule, bo to jedyne miejsce, w którym da się
 notatkę rozpoznać, zanim się ją przeczyta.
+
+#### Pasek pisania — i listy, po które sięga się na kartce najczęściej
+
+Kartka ma **własny pasek narzędzi**, pod belką z tytułem: pogrubienie,
+kursywa, trzy rodzaje listy i cytat. Sześć znaczków, ani jednego menu.
+
+Powód jest jeden i widać go po tym, co ludzie na kartkach trzymają: plan dnia,
+listę zakupów, trzy rzeczy do odhaczenia przed wyjściem. Do niedawna jedyną
+drogą do kwadracików było otwarcie notatki w Notatniku — czyli opuszczenie
+miejsca, przy którym się siedzi, po to, żeby postawić kropkę.
+
+Dlaczego sześć, a nie jedenaście jak w Notatniku: pasek kartki bywa szeroki na
+dwieście dziesięć pikseli. Menu byłoby w nim szufladą zasłaniającą całą
+notatkę, a nagłówki i wyrównanie należą do pisania dokumentu, nie do
+dopisywania punktu na wierzchu.
+
+**Wypunktowanie rozpoznaje się też w trakcie pisania**, tak samo jak
+w Notatniku i jak w każdym edytorze tekstu od trzydziestu lat:
+
+| Wpisane na początku linii | Co powstaje |
+| --- | --- |
+| `- `, `* `, `+ ` | lista punktowana — kropka, kółko, kwadrat co poziom |
+| `1. `, `1) `, `a) `, `I. ` | lista numerowana — znak numeru bierze się z poziomu |
+| `[] `, `[x] ` | lista zadań, czyli kwadraciki do odhaczenia |
+
+Znacznik znika z tekstu: w jego miejsce wchodzi prawdziwa lista, więc w pliku
+zostaje jeden zapis punktu, a nie punkt wpisany w punkt. Tab i ⇧Tab robią
+poziomy, Enter w pustym punkcie kończy listę. Do tego cztery skróty — ⌘⇧8
+punktowana, ⌘⇧7 numerowana, ⌘⇧9 zadania, ⌘⇧' cytat — te same co w Notatniku.
+
+Nic z tego nie jest liczone na kartce po swojemu: **to ten sam edytor**
+([editor.js](src/renderer/js/editor.js)), ta sama metoda i ten sam zapis
+w pliku. Formatowanie policzone drugi raz rozjechałoby się z Notatnikiem przy
+pierwszej zmianie w tamtym — a notatka jest jedna, choćby stała w trzech
+oknach naraz.
+
+#### „Ukryj stickies" — wyłącznik pod kartką
+
+Na samym dole każdej kartki stoi **wyłącznik**, wyglądający jak wyłącznik:
+płytka wychodząca z kartki cieniem rzuconym w dół, dźwignia w rowku
+świecącym akcentem, dopóki talia leży. Naciśnięta — wchodzi w kartkę:
+odchyla się w perspektywie, zjeżdża o te dwa piksele, o które wystawała,
+i gaśnie. Dźwignia przeskakuje z prawej na lewą, a dopiero potem kartki się
+składają, więc ruch ręki i ruch kartek są jednym gestem.
+
+**Gasi CAŁĄ talię, nie tę jedną kartkę** — i to jest cała różnica między nim
+a krzyżykiem w belce. Krzyżyk zdejmuje notatkę z wierzchu na dobre: przestaje
+być kartką. Wyłącznik nie zmienia o notatkach niczego — wszystkie wracają
+w te same miejsca znaczkiem widgetu, skrótem albo Escapem, razem
+z przewinięciem i zwinięciem, w jakim je zostawiono.
+
+Dlatego stoi **w osobnym pasie, pod stopką**, a nie w rzędzie czynności nad
+nim. W stopce leżą rzeczy robione TEJ notatce — przypnij, przesiej, usuń —
+i szósty przycisk między nimi czytałby się jako szósta z nich.
+
+Kartka zwinięta do belki chowa i pasek pisania, i wyłącznik: zwinięta jest
+samą belką z tytułem, a nie belką z guzikami.
+
+Jedno i drugie sprawdza `node scripts/sticky-test.js` — w prawdziwym oknie
+kartki, prawdziwym kliknięciem i prawdziwą klawiaturą: czy przycisk robi
+listę, czy „- " robi ją samo, czy pasek podświetla to, co jest naprawdę
+włączone, i czy „Ukryj stickies" chowa talię, zamiast zdejmować albo kasować
+notatkę.
 
 #### Nieprzezroczyste, bo leżą na cudzej pracy
 
@@ -1348,7 +1414,7 @@ Trzy zachowania, które wynikają z tego, po co widget jest:
 | --- | --- | --- |
 | **Fokus** | znaczek go nie bierze; kartka bierze, gdy się w nią kliknie | znaczek, który zabiera kursor z pola, w którym ktoś pisze, jest szkodnikiem |
 | **Nad wszystkim** | znaczek i kartki na pulpicie — zawsze, także po przełączeniu pulpitu | notatkę odkłada się na wierzch po to, żeby była widoczna **przy** pracy w czymś innym; znikająca przy pierwszym przełączeniu okna przestawała być notatką na wierzchu |
-| **Chowanie kartek** | tylko na wyraźny gest: kliknięcie w znaczek albo Escape | talia leży albo jej nie ma — i o tym, które z dwojga, decyduje człowiek, a nie to, w co akurat kliknął |
+| **Chowanie kartek** | tylko na wyraźny gest: wyłącznik „Ukryj stickies" pod kartką, kliknięcie w znaczek albo Escape | talia leży albo jej nie ma — i o tym, które z dwojga, decyduje człowiek, a nie to, w co akurat kliknął |
 | **Lista** | zamyka się, gdy uwaga idzie gdzie indziej | lista jest menu, a menu zamykają się przy kliknięciu obok |
 | **Kartka** | zostaje otwarta, także gdy pracujesz w innej aplikacji | to jest cały jej sens: dopisać zdanie bez opuszczania tego, przy czym się siedzi |
 
@@ -1974,6 +2040,11 @@ scripts/         testy, zrzuty ekranu, ikona
                     wytyczne podsumowania i cztery stany zgody na kalendarz
   toggle-test.js    nagłówek składany w prawdziwym DOM: co należy do czego,
                     ile chowa, co zostaje w pliku i czy wraca zwinięty
+  list-test.js      listy prawdziwą klawiaturą: znacznik robi listę, Tab robi
+                    poziom, Enter w pustym punkcie kończy
+  sticky-test.js    kartka na pulpicie w prawdziwym oknie: pasek pisania,
+                    rozpoznawanie wypunktowania, skróty i wyłącznik talii
+                    („Ukryj stickies" chowa, a nie kasuje)
   owner-test.js     krok „Silniki" należy do właściciela: kto nim jest, co
                     wychodzi mostem, czego nie da się zapisać, co mówi błąd
   blind-test.js     to samo, ale w PRAWDZIWYM oknie: przejście po wszystkich

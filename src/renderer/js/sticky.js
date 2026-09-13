@@ -55,13 +55,61 @@
   let saveTimer = null;
   let runtime = "idle";
 
-  const editor = window.CribroEditor.create($("#text"), { onInput: () => scheduleSave() });
+  const editor = window.CribroEditor.create($("#text"), {
+    onInput: () => {
+      scheduleSave();
+      /* Pisanie zmienia to, co pasek ma podświetlone: „- " zamienione przez
+         edytor w listę (patrz #autoList w js/editor.js) ma zapalić kropki
+         w tej samej chwili, w której punkt pojawia się w tekście. */
+      refreshTools();
+    },
+  });
 
   /* Pasek czynności — ten sam, co pod notatką w Notatniku. Bez „Na pulpit":
      kartka już na nim leży, a zdejmuje ją krzyżyk w nagłówku, więc drugi
      przycisk od tego samego byłby pytaniem, czym się różnią. */
   ensureIcons(document);
   $("#acts").outerHTML = actionBar({ skip: ["desktop"] });
+
+  /* ── Narzędzia pisania ──────────────────────────────────────────
+     Cała robota siedzi w js/editor.js — tak samo jak w Notatniku (patrz
+     applyFormat w js/notes.js). Tutaj zostaje jedno wywołanie i odświeżenie
+     paska, żeby przyciski pokazywały, co jest włączone tam, gdzie stoi
+     kursor. Sześć znaczków w pasku i cztery skróty niżej to są DWIE DROGI
+     DO TEGO SAMEGO, a nie dwie funkcje: ta sama metoda edytora, ten sam
+     zapis w pliku.
+
+     Trzeciej drogi — samego pisania — nie ma tu w ogóle i to jest w tym
+     najważniejsze. „- ", „1. " i „[] " na początku linii robią listę same,
+     bo robi to edytor, ten sam w każdym oknie. Kartka nie ma z tego powodu
+     ani jednej linijki kodu i nie ma jej mieć: wypunktowanie liczone drugi
+     raz, po swojemu, rozjechałoby się z Notatnikiem przy pierwszej zmianie
+     w tamtym. */
+
+  function applyFormat(kind) {
+    editor.format(kind);
+    refreshTools();
+  }
+
+  /** Podświetlenie paska: co jest włączone tam, gdzie stoi kursor. */
+  function refreshTools() {
+    const active = editor.activeFormats();
+    for (const button of document.querySelectorAll("[data-format]")) {
+      button.setAttribute("aria-pressed", String(!!active[button.dataset.format]));
+    }
+  }
+
+  /* Naciśnięcie przycisku paska nie ma zabierać zaznaczenia z tekstu —
+     inaczej „B" pogrubiałoby to, co przed chwilą było zaznaczone, albo nic.
+     Osobny nasłuch, bo ten wyżej melduje kliknięcie procesowi głównemu
+     i ma dochodzić zawsze. */
+  document.addEventListener("mousedown", (event) => {
+    if (event.target.closest("[data-format]")) event.preventDefault();
+  });
+
+  document.addEventListener("selectionchange", () => {
+    if (document.activeElement === $("#text")) refreshTools();
+  });
 
   /* ── Skala ekranu ───────────────────────────────────────────── */
 
@@ -86,6 +134,12 @@
     void card.offsetWidth;
     card.dataset.fold = dir;
 
+    /* Wyłącznik talii wraca w położenie „włączony" razem z kartką. Okno nie
+       jest zamykane, tylko chowane (patrz hideDeck w main/main.js), więc bez
+       tego kartka wracałaby na pulpit z dźwignią przełożoną na „zgaszone" —
+       czyli z wyłącznikiem mówiącym coś przeciwnego niż to, co widać. */
+    if (dir === "out") delete $("#hideAll").dataset.off;
+
     if (dir !== "in") return;
     const done = () => {
       card.removeEventListener("animationend", done);
@@ -108,6 +162,7 @@
     editor.setMarkdown(note.text);
     paint();
     setWords();
+    refreshTools();
   }
 
   /* ── Kolor ──────────────────────────────────────────────────────
@@ -335,6 +390,10 @@
     // Klik gdziekolwiek indziej zamyka paletę — tak jak każde menu.
     showPalette(false);
 
+    const tool = event.target.closest("[data-format]");
+    if (tool) return applyFormat(tool.dataset.format);
+    if (event.target.closest("#hideAll")) return void hideDeck();
+
     /* Zwinięcie do nagłówka. Stan trzyma proces główny razem z resztą
        geometrii kartki — bo to on zmienia wysokość okna, a kartka ma
        wracać zwinięta także po ponownym wyłożeniu talii. */
@@ -407,6 +466,26 @@
     if (menu) menu.hidden = true;
   }
 
+  /* ── „Ukryj stickies" ───────────────────────────────────────────
+     Gaśnie CAŁA talia, nie ta jedna kartka — i nic o notatkach się przy tym
+     nie zmienia: żadna nie schodzi z wierzchu, wszystkie wracają w te same
+     miejsca znaczkiem widgetu albo skrótem. Od zdejmowania pojedynczej
+     notatki jest krzyżyk w belce i to jest cała różnica między nimi.
+
+     Zapis idzie przed schowaniem z tego samego powodu, co przy czynnościach
+     w stopce: kartka zapisuje się z opóźnieniem (SAVE_DELAY), a zgaszona
+     talia wygląda dokładnie tak, jakby wszystko było już na dysku.
+
+     Dźwignia przekłada się PRZED wywołaniem, a nie po nim: proces główny
+     odpowiada dopiero po złożeniu kartek, więc czekanie na odpowiedź
+     zostawiłoby wyłącznik nieruszony przez cały ruch — czyli przez jedyny
+     moment, w którym ktokolwiek na niego patrzy. */
+  async function hideDeck() {
+    $("#hideAll").dataset.off = "true";
+    await flushSave();
+    await api.deck.show(false);
+  }
+
   /* Escape zdejmuje po jednej warstwie, od wierzchu — tak samo jak
      w Notatniku i w widgecie: najpierw trwające nagranie, potem cała
      talia. Pojedynczej kartki Escape nie zamyka: zamknięcie zdejmuje
@@ -416,7 +495,34 @@
     event.preventDefault();
     if (runtime === "listening") return void api.system.cancelCapture?.();
     if (!$("#palette").hidden) return showPalette(false);
-    void api.deck.show(false);
+    // Ta sama droga co przycisk — razem z przełożeniem dźwigni, bo talia
+    // gaśnie tak samo i wyłącznik ma to pokazać tak samo.
+    void hideDeck();
+  });
+
+  /* ── Skróty formatowania ────────────────────────────────────────
+     Te same cztery co w Notatniku (patrz keydown w js/notes.js), bo notatka
+     jest jedna i ma się w niej pisać tak samo, w którymkolwiek oknie akurat
+     stoi kursor. ⌘B i ⌘I obsługuje sam edytor, więc ich tu nie ma —
+     powtórzone byłyby drugim przełączeniem tego samego. */
+
+  const FORMAT_KEYS = {
+    7: "numbered",
+    "&": "numbered",
+    8: "bullet",
+    "*": "bullet",
+    9: "todo",
+    "(": "todo",
+    "'": "quote",
+    '"': "quote",
+  };
+
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || !event.metaKey || !event.shiftKey) return;
+    const kind = FORMAT_KEYS[event.key];
+    if (!kind) return;
+    event.preventDefault();
+    applyFormat(kind);
   });
 
   /* Notatka bywa otwarta w kilku miejscach naraz — kartka, Notatnik,

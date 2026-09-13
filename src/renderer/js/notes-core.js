@@ -489,6 +489,22 @@
       '<path d="M4.5 7h15M9.5 7V5.4a1.4 1.4 0 0 1 1.4-1.4h2.2a1.4 1.4 0 0 1 1.4 1.4V7M6.6 7l.8 12a1.6 1.6 0 0 0 1.6 1.5h6a1.6 1.6 0 0 0 1.6-1.5l.8-12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />',
     "i-omega":
       '<path d="M7 20h3.2v-1.6a6.4 6.4 0 1 1 3.6 0V20H17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />',
+    /* ── Narzędzia pisania ──
+       Te pięć rysunków stało dotąd wyłącznie w arkuszu symboli Notatnika,
+       bo tylko Notatnik miał pasek formatowania. Kartka na pulpicie też
+       go ma (patrz .tools w sticky.html), a jest oknem o zupełnie innym
+       szkielecie — więc idą tą samą drogą, co ikony paska czynności:
+       dokłada je ensureIcons temu oknu, które ich u siebie nie zastało. */
+    "i-bold":
+      '<path d="M7.5 5.5h5.6a3.6 3.6 0 0 1 0 7.2H7.5V5.5Zm0 7.2h6.4a3.9 3.9 0 0 1 0 7.8H7.5v-7.8Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" />',
+    "i-italic":
+      '<path d="M9.6 5.5h6M8 18.5h6M13.6 5.5 10 18.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />',
+    "i-list":
+      '<path d="M9 6.5h11M9 12h11M9 17.5h11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><circle cx="4.6" cy="6.5" r="1.4" fill="currentColor" /><circle cx="4.6" cy="12" r="1.4" fill="currentColor" /><circle cx="4.6" cy="17.5" r="1.4" fill="currentColor" />',
+    "i-todo":
+      '<path d="M11 6.5h9M11 12h9M11 17.5h9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" /><rect x="2.6" y="4.5" width="4.8" height="4.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M3.2 12.4 4.7 14l2.6-2.9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /><rect x="2.6" y="15.4" width="4.8" height="4.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5" />',
+    "i-quote":
+      '<path d="M5 5.5v13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /><path d="M9.5 8h10M9.5 12h10M9.5 16h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".75" />',
     /* Lista numerowana: „1" i „2" zamiast kropek. Ikona żyje tutaj,
        a nie w arkuszu symboli okna, bo pasek notatki rysują trzy okna
        (patrz ensureIcons niżej) i wszystkie mają ją mieć. */

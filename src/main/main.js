@@ -1447,7 +1447,12 @@ function resetWidget() {
    przewinięciem, a odtwarzanie okna od zera zaczyna zawsze od góry. */
 
 /** Kartka przy skali 1. Skalę liczy deckScale z rozmiaru ekranu. */
-const STICKY_CARD = { width: 268, height: 296 };
+/* Wysokość urosła o czterdzieści cztery piksele wraz z paskiem narzędzi
+   pisania i wyłącznikiem talii (patrz .tools i .deck-off w sticky.html).
+   To nie jest zaokrąglenie w górę „na zapas": oba pasy zabierają kartce
+   dokładnie tyle wysokości, ile same mają, a kartka ma zostać kartką —
+   miejscem na kilka linijek, a nie ramką z guzikami i szparą na tekst. */
+const STICKY_CARD = { width: 268, height: 340 };
 /* Granice ręcznej zmiany rozmiaru, PRZY SKALI 1. Skala z ekranu daje kartce
    rozmiar startowy, ale ostatnie słowo ma człowiek: jedna notatka to numer
    telefonu, druga to plan dnia i te dwie nie potrzebują tego samego
@@ -1467,7 +1472,11 @@ const STICKY_CARD = { width: 268, height: 296 };
    Klamra mierzy WNĘTRZE kartki, bez aureoli: aureola jest stała w pikselach
    (cień nie rośnie z ekranem), więc skalowanie jej razem z kartką zawyżałoby
    granicę o te trzydzieści dwa piksele na każdym ekranie. */
-const STICKY_MIN = { width: 210, height: 150 };
+/* Podłoga wysokości liczona, nie zgadnięta: belka 43 + narzędzia 29 +
+   stopka 41 + wyłącznik 32 to 145 pikseli, których z kartki zabrać nie
+   można. Zostawione przy dawnych stu pięćdziesięciu dałoby kartkę,
+   w której na notatkę zostaje pięć pikseli — czyli samą oprawę. */
+const STICKY_MIN = { width: 210, height: 210 };
 const STICKY_MAX = { width: 760, height: 960 };
 /** Aureola — miejsce w oknie na cień i na wyskok animacji poza kartkę. */
 const STICKY_HALO = 16;
@@ -1608,10 +1617,10 @@ const rolledHeight = (scale) => Math.round(STICKY_HEAD * scale) + STICKY_HALO * 
  * Dolna klamra okna kartki.
  *
  * TU SIEDZIAŁA CAŁA USTERKA „zwinięta kartka jest za duża". Okno ma
- * `minHeight: STICKY_MIN.height` (150) — sensowną podłogę dla kartki, którą
+ * `minHeight: STICKY_MIN.height` (210) — sensowną podłogę dla kartki, którą
  * ktoś ściąga ręką za róg. Zwinięcie do belki prosi jednak o siedemdziesiąt
  * kilka pikseli, czyli MNIEJ niż ta podłoga, a `setBounds` klamry nie pyta
- * o zdanie: system podnosił wysokość z powrotem do 150 i pod belką zostawał
+ * o zdanie: system podnosił wysokość z powrotem do podłogi i pod belką zostawał
  * pasek pustego papieru. Wyglądało to jak kartka „prawie zwinięta".
  *
  * Zwinięcie jest stanem, a nie rozmiarem, więc na jego czas podłoga schodzi
