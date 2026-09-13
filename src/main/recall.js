@@ -137,7 +137,15 @@ async function send({ settings = {}, meeting, studentEmail, topic } = {}) {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${token}`,
+        /* Token w WŁASNYM nagłówku, nie w `Authorization`.
+
+           Funkcje Firebase drugiej generacji stoją na Cloud Run, a ten sam
+           przechwytuje nagłówek `Authorization: Bearer …` i próbuje
+           zweryfikować go jako token Google. Nasz token nim nie jest, więc
+           brama odpowiada stroną HTML „401 Unauthorized", a do funkcji nie
+           dochodzi nic — sprawdzone na wdrożonej funkcji 2026-09-13. Ta sama
+           wysyłka bez tego nagłówka dochodzi bez problemu. */
+        "x-sift-token": token,
       },
       body: JSON.stringify(body),
       signal: stop.signal,

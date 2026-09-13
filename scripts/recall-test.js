@@ -117,7 +117,10 @@ const real = global.fetch;
     assert.strictEqual(result.action, "created");
     assert.strictEqual(result.lessonId, "sift-1789");
     assert.strictEqual(seen.options.method, "POST");
-    assert.strictEqual(seen.options.headers.authorization, "Bearer sekret");
+    /* Token we własnym nagłówku — `Authorization` przechwytuje brama Cloud
+       Run i żądanie nie dochodzi do funkcji (patrz main/recall.js). */
+    assert.strictEqual(seen.options.headers["x-sift-token"], "sekret");
+    assert.strictEqual(seen.options.headers.authorization, undefined);
     assert.strictEqual(seen.body.siftSessionId, "spotkanie-1789");
     assert.strictEqual(seen.body.studentEmail, "Ala@Example.com");
     assert.strictEqual(seen.body.topic, "Lekcja z Alą");
