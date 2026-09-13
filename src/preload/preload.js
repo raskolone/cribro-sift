@@ -219,6 +219,13 @@ contextBridge.exposeInMainWorld("cribro", {
     // ma dwie strony zamiast jednej.
     polish: (id) => ipcRenderer.invoke("meetings:polish", id),
     rename: (id, title) => ipcRenderer.invoke("meetings:rename", { id, title }),
+    /* Nazwanie mówiącego z diaryzacji: „Rozmówca 2" → „Anna". Osobno od
+       rename, bo tamto nazywa SPOTKANIE, a to — człowieka w nim. */
+    speakers: (id, speakers) => ipcRenderer.invoke("meetings:speakers", { id, speakers }),
+    /* Weryfikacja zapisu nagraniem: przepisuje plik od zera i porównuje
+       wynik ze szkicem z biegu. Po spotkaniu idzie sama (patrz verify
+       w main/meeting.js); tędy da się ją powtórzyć ręką. */
+    verify: (id) => ipcRenderer.invoke("meetings:verify", id),
     /* Jedno spotkanie we własnym oknie — do postawienia obok rozmowy,
        tak samo jak notatka (notes.openWindow). */
     openWindow: (id) => ipcRenderer.invoke("meetings:openWindow", id),

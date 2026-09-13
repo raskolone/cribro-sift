@@ -161,7 +161,15 @@ const audio = Buffer.from("RIFFfake");
 
     const zapetlone = ("No, yyy, wiesz, " + "no, ".repeat(32760)).trim();
     assert.ok(loopedTranscript(zapetlone), "powtórzone no ma zostać wyłapane");
-    assert.match(loopedTranscript(zapetlone), /zaciął się na słowie/);
+    /* Powód bywa dziś inny niż wtedy, a wpis i tak nie wchodzi do historii:
+       do dwóch dawnych progów (udział w całości) doszedł trzeci, liczący
+       POWTÓRZENIA POD RZĄD. Ten sam przypadek łapie się o niego wcześniej,
+       bo „no, no, no…" jest ciągiem, zanim zdąży być większością tekstu.
+
+       Próg pod rząd powstał po zapisie zajęć, w którym dziewięciokrotne
+       „KONTEKST" przechodziło przez oba dawne sita — dziewięć słów to mniej
+       niż wymagane dwieście (patrz LOOP_RUN w src/main/stt.js). */
+    assert.match(loopedTranscript(zapetlone), /zaciął się na słowie|powtórzył słowo/);
 
     assert.ok(loopedTranscript("no, yyy, ".repeat(200)), "krążenie po dwóch słowach to też zapętlenie");
 

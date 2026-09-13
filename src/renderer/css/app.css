@@ -3193,16 +3193,118 @@ input.tag-input:focus {
   line-height: 1.7;
 }
 .meet__who { font-size: var(--fs-label); color: var(--accent); font-weight: 500; }
-/* „Rozmówcy" innym kolorem niż „Ty" — po jednym spojrzeniu ma być widać,
-   czyja to była wypowiedź, bez czytania podpisu przy każdej. */
-.meet__line[data-speaker="Rozmówcy"] .meet__who,
-.meet__line[data-speaker="Others"] .meet__who { color: var(--info); }
+/* ══ TWOJE ZDANIA INNYM KOLOREM NIŻ CUDZE ══
+
+   Po jednym spojrzeniu ma być widać, czyja to była wypowiedź, bez czytania
+   podpisu przy każdej.
+
+   Kolor idzie po TORZE, nie po napisie — i to jest poprawka, nie kosmetyka.
+   Wcześniej regułą był dosłowny napis „Rozmówcy", więc w chwili, w której
+   rozmówcy dostali własne numery z diaryzacji („Rozmówca 1", „Rozmówca 2")
+   albo imiona wpisane ręką, wszyscy robili się wizualnie tobą. A to jest
+   dokładnie to jedno rozróżnienie, które w tym zapisie musi być pewne:
+   tor mikrofonu to ty i wiadomo to z kabla, a nie z podpisu, który ktoś
+   mógł zmienić. */
+.meet__line[data-lane="system"] .meet__who { color: var(--info); }
+.meet__line[data-lane="mic"] .meet__who { color: var(--accent); }
+/* Zapisy sprzed podziału na tory nie mają czym się wylegitymować —
+   dla nich zostaje dawna reguła po napisie. */
+.meet__line:not([data-lane]) [data-speaker="Rozmówcy"] .meet__who,
+.meet__line[data-lane=""][data-speaker="Rozmówcy"] .meet__who,
+.meet__line[data-lane=""][data-speaker="Others"] .meet__who { color: var(--info); }
 .meet__at {
   font: 400 var(--fs-label) / 1.7 var(--font-mono);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
 .meet__said { color: var(--text); }
+
+/* ══ PASEK STANU ZAPISU ══
+
+   Stoi NAD zapisem, bo odpowiada na pytanie zadawane przed czytaniem:
+   czy temu, co niżej, można ufać. Wygląda jak metryczka, a nie jak
+   ostrzeżenie — zweryfikowany zapis jest stanem normalnym, nie sukcesem,
+   o którym trzeba trąbić. */
+.meet__verdict {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-bottom: var(--s-3);
+}
+.meet__badge {
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  font: 400 var(--fs-label) / 1.6 var(--font-mono);
+  letter-spacing: var(--track-label);
+  color: var(--text-mute);
+}
+.meet__badge--soft { opacity: 0.7; }
+.meet__badge--work { color: var(--accent); border-color: var(--accent-30); }
+/* Ostrzegawczy tylko tam, gdzie WARTO POSŁUCHAĆ nagrania — niska zgodność
+   znaczy „szkic dużo przegapił", a nie „zapis jest zły". */
+.meet__badge--warn { color: var(--warn); border-color: rgb(224 168 58 / 0.35); }
+
+/* Przełącznik postaci zapisu. Zakładki wewnątrz zakładki — więc lżejsze
+   od tamtych, żeby nie konkurowały z nimi o to samo spojrzenie. */
+.meet__forms {
+  display: flex;
+  gap: 2px;
+  margin-bottom: var(--s-3);
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  width: fit-content;
+}
+.meet__form {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: calc(var(--r-sm) - 2px);
+  background: none;
+  color: var(--text-mute);
+  font: 400 var(--fs-label) / 1.6 var(--font-mono);
+  letter-spacing: var(--track-label);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.meet__form:hover { color: var(--text); }
+.meet__form.is-chosen { background: var(--accent-12); color: var(--accent); }
+
+/* Zdanie odrzucone jako przesłuch z głośników. Widoczne wyłącznie na
+   żądanie i widocznie słabsze od reszty: to jest materiał do sprawdzenia,
+   a nie część zapisu. */
+.meet__line--echo { opacity: 0.45; }
+.meet__line--echo .meet__said { font-style: italic; }
+.meet__echo {
+  margin-top: var(--s-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font: 400 var(--fs-label) / 1.6 var(--font-mono);
+  letter-spacing: var(--track-label);
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.meet__echo:hover { color: var(--text-mute); }
+
+/* Etykieta mówiącego, którego da się nazwać. „Rozmówca 2" to numer
+   z diaryzacji — imię wie tylko człowiek, więc etykieta zaprasza
+   kliknięciem, zamiast udawać, że wie. */
+.meet__who--name {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+  transition: border-color var(--t-fast), color var(--t-fast);
+}
+.meet__who--name:hover {
+  color: var(--accent-soft);
+  border-bottom-color: var(--accent-55);
+}
 
 /* Znacznik czasu jako przycisk — o ile jest czego słuchać. Wygląda jak
    znacznik, dopóki się w niego nie celuje: zapis czyta się wzrokiem,

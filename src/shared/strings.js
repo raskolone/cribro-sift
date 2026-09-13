@@ -824,6 +824,43 @@ const EN = {
   "Konto odłączone.": "Account disconnected.",
   "Czekam na przeglądarkę…": "Waiting for the browser…",
   "Skasuj spotkanie": "Delete meeting",
+  /* ── Zapis spotkania: postacie, weryfikacja, mówcy ── */
+  "Nagranie po rozmowie": "The recording afterwards",
+  Zostaje: "Kept",
+  "Nagranie leży na dysku, ściśnięte — jakieś 14 MB na godzinę toru. Tylko z niego da się sprawdzić, czy zapis mówi prawdę.":
+    "The recording stays on disk, compressed — about 14 MB per hour per track. It is the only way to check whether the record tells the truth.",
+  "Do weryfikacji": "Until verified",
+  "Ginie, gdy przebieg z pliku potwierdzi zapis.":
+    "Deleted once the pass from the file confirms the record.",
+  "Ginie od razu": "Deleted right away",
+  "Jak przy dyktowaniu. Zapisu nie będzie już czym sprawdzić.":
+    "As with dictation. There will be nothing left to check the record against.",
+  "Sprawdź zapis nagraniem": "Check the record against the recording",
+  "Po rozmowie to samo nagranie idzie do przepisania jeszcze raz — z pliku, bez pośpiechu i z podziałem na mówców. To ono zostaje zapisem; ten z biegu zostaje obok jako szkic, razem z liczbą mówiącą, na ile się zgadzają.":
+    "After the conversation the same recording is transcribed again — from the file, unhurried and split by speaker. That one becomes the record; the live one stays beside it as a draft, with a number saying how far they agree.",
+  "Rozdzielaj rozmówców": "Separate the speakers",
+  "Tor systemu miesza wszystkich zdalnych uczestników w jedno wejście — bez tego trzy osoby zapisują się jako jedna. Twojego głosu to nie dotyczy: mikrofon jest osobnym wejściem i to z niego wiadomo, że mówisz ty.":
+    "The system track mixes every remote participant into one input — without this, three people are recorded as one. Your own voice is unaffected: the microphone is a separate input, and that is how it is known that you are speaking.",
+  Zajęcia: "A class",
+  "Powtórzeń prowadzącego sito nie wycina: powtórzona definicja jest tam sposobem tłumaczenia, a nie szumem. Terminy, liczby i tytuły zostają dokładnie takie, jakie padły.":
+    "The sieve keeps the teacher's repetitions: a definition said twice is a way of explaining, not noise. Terms, numbers and titles stay exactly as spoken.",
+  Zapis: "Record",
+  Oczyszczona: "Cleaned up",
+  Szkic: "Draft",
+  "Oczyść rozmowę": "Clean up the conversation",
+  "Oczyść jeszcze raz": "Clean up again",
+  "Zweryfikuj nagraniem": "Verify against the recording",
+  "weryfikuję nagraniem…": "verifying against the recording…",
+  "weryfikacja nie doszła do skutku": "verification did not go through",
+  zweryfikowany: "verified",
+  "zgodność szkicu": "draft agreement",
+  "szkic z przepisywania w biegu": "draft from live transcription",
+  "nagranie zachowane": "recording kept",
+  "{n} wypowiedzi spoza szkicu": "{n} utterances the draft missed",
+  "pokaż przesłuch ({n})": "show bleed-through ({n})",
+  "ukryj przesłuch": "hide bleed-through",
+  "Nazwij tego mówiącego": "Name this speaker",
+  "Kto to jest?": "Who is this?",
   "Zwiń listę notatek": "Collapse the note list",
   "Szybkie notatki": "Quick notes",
   "Notatki ze spotkań": "Meeting notes",

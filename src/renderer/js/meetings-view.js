@@ -44,6 +44,21 @@
        między trzema postaciami jednej rozmowy kosztował więcej niż był
        wart. Zostaje to, co padło, i to, co z tego wynika. */
     tab: "summary",
+    /* Którą POSTAĆ zapisu pokazujemy: zapis właściwy, rozmowę przesianą
+       z szumu albo szkic z przepisywania w biegu.
+
+       Zakładka „Rozmowa" była kiedyś czwartą zakładką obok trzech i wyleciała
+       z dobrego powodu: te same zdania stały w niej trzeci raz, a wybór między
+       nimi kosztował więcej, niż był wart. Wraca tu jako PRZEŁĄCZNIK WEWNĄTRZ
+       zapisu, a nie jako osobne miejsce — bo to jest jedna rzecz w trzech
+       postaciach, a nie trzy rzeczy.
+
+       Szkic ma tu sens dopiero teraz, odkąd zapis właściwy powstaje z pliku
+       po spotkaniu (patrz verify w main/meeting.js): dopiero wtedy jest co
+       z czym porównać. */
+    form: "final", // final | talk | draft
+    // Czy pokazujemy zdania odrzucone jako przesłuch z głośników.
+    showEcho: false,
     recording: false,
     seconds: 0,
     settings: null,
@@ -166,6 +181,63 @@
         // rozmowy przeszedł do notatnika, ma w nim zostać.
         state.tabByHand = true;
         paint();
+        return;
+      }
+
+      const verifyBtn = event.target.closest("[data-meet-verify]");
+      if (verifyBtn) {
+        try {
+          await api.meetings.verify(verifyBtn.dataset.meetVerify);
+        } catch {
+          /* Wpis sam zapisze, co poszło nie tak — patrz meetings:verify. */
+        }
+        return;
+      }
+
+      const polishBtn = event.target.closest("[data-meet-polish]");
+      if (polishBtn) {
+        /* Oczyszczona rozmowa istniała dotąd tylko w kodzie: polish() siedzi
+           w main/digest.js, most ją wystawia, a w oknie nie było czym jej
+           poprosić. Teraz jest — i od razu przełączamy widok na nią, bo po
+           to się w to klika. */
+        state.form = "talk";
+        await api.meetings.polish(polishBtn.dataset.meetPolish);
+        return;
+      }
+
+      /* Postać zapisu: właściwy, oczyszczony albo szkic. To jest wybór
+         WIDOKU, nie treści — nic nie zapisujemy, więc nie ma tu czego
+         potwierdzać ani cofać. */
+      const form = event.target.closest("[data-meet-form]");
+      if (form) {
+        state.form = form.dataset.meetForm;
+        paint();
+        return;
+      }
+
+      if (event.target.closest("[data-meet-echo]")) {
+        state.showEcho = !state.showEcho;
+        paint();
+        return;
+      }
+
+      /* Nazwanie mówiącego. Numer z diaryzacji („Rozmówca 2") zamienia się
+         na imię — raz, dla CAŁEGO zapisu, bo to jest ta sama osoba w każdym
+         wierszu. Zapisujemy w spotkaniu, nie w wierszach: przy następnym
+         przepisaniu nagrania numery są te same, a imiona mają zostać. */
+      const naming = event.target.closest("[data-meet-name]");
+      if (naming) {
+        const meeting = current();
+        if (!meeting) return;
+        const key = `system:${naming.dataset.meetName}`;
+        const now = meeting.speakers?.[key] ?? naming.textContent.trim();
+        const given = window.prompt(t("Kto to jest?"), now);
+        if (given === null) return;
+        const speakers = { ...(meeting.speakers ?? {}) };
+        const clean = given.trim();
+        if (clean) speakers[key] = clean;
+        else delete speakers[key];
+        await api.meetings.speakers(meeting.id, speakers);
         return;
       }
 
@@ -942,11 +1014,24 @@
         </div>
 
         <div class="meet__group">
+          <p class="meet__legend">${t("Nagranie po rozmowie")}</p>
+          ${pick("meetArchive", "archive", "always", "Zostaje", "Nagranie leży na dysku, ściśnięte — jakieś 14 MB na godzinę toru. Tylko z niego da się sprawdzić, czy zapis mówi prawdę.")}
+          ${pick("meetArchive", "archive", "until-verified", "Do weryfikacji", "Ginie, gdy przebieg z pliku potwierdzi zapis.")}
+          ${pick("meetArchive", "archive", "never", "Ginie od razu", "Jak przy dyktowaniu. Zapisu nie będzie już czym sprawdzić.")}
+        </div>
+
+        <div class="meet__group">
           ${flip(
-            "keepAudio",
-            "Zachowaj nagranie",
-            "Domyślnie nagranie ginie po transkrypcji — tak samo jak przy dyktowaniu. Zapis rozmowy i podsumowanie zostają w notatce, więc nie ma czego stracić.",
-            !!meet.keepAudio,
+            "verify",
+            "Sprawdź zapis nagraniem",
+            "Po rozmowie to samo nagranie idzie do przepisania jeszcze raz — z pliku, bez pośpiechu i z podziałem na mówców. To ono zostaje zapisem; ten z biegu zostaje obok jako szkic, razem z liczbą mówiącą, na ile się zgadzają.",
+            meet.verify !== false,
+          )}
+          ${flip(
+            "diarize",
+            "Rozdzielaj rozmówców",
+            "Tor systemu miesza wszystkich zdalnych uczestników w jedno wejście — bez tego trzy osoby zapisują się jako jedna. Twojego głosu to nie dotyczy: mikrofon jest osobnym wejściem i to z niego wiadomo, że mówisz ty.",
+            meet.diarize !== false,
           )}
         </div>
 
@@ -970,6 +1055,7 @@
         <div class="meet__group">
           <p class="meet__legend">${t("Jakie podsumowanie")}</p>
           ${shape("generic", "W punktach", "Najważniejsze na górze, reszta punktami. Zadania jako lista do odhaczenia.")}
+          ${shape("class", "Zajęcia", "Powtórzeń prowadzącego sito nie wycina: powtórzona definicja jest tam sposobem tłumaczenia, a nie szumem. Terminy, liczby i tytuły zostają dokładnie takie, jakie padły.")}
           ${shape("custom", "Własne wytyczne", "Piszesz sam, czego oczekujesz — razem z tym, jak wynik ma wyglądać.")}
           <label class="meet__field${meet.template === "custom" ? "" : " is-off"}">
             <textarea rows="6" data-meet-set="instructions"
@@ -1135,6 +1221,20 @@
              <button class="btn btn--sm" data-meet-again="${meeting.id}">
                ${t(meeting.transcript?.length ? "Przepisz jeszcze raz" : "Przepisz nagranie")}
              </button>
+             ${
+               meeting.transcript?.length && !meeting.verification
+                 ? `<button class="btn btn--ghost btn--sm" data-meet-verify="${meeting.id}">
+                      ${t("Zweryfikuj nagraniem")}
+                    </button>`
+                 : ""
+             }
+             ${
+               meeting.transcript?.length
+                 ? `<button class="btn btn--ghost btn--sm" data-meet-polish="${meeting.id}">
+                      ${t(meeting.talk?.length ? "Oczyść jeszcze raz" : "Oczyść rozmowę")}
+                    </button>`
+                 : ""
+             }
            </div>`
         : "";
 
@@ -1285,6 +1385,78 @@
   }
 
   /** Zapis rozmowy: kto, kiedy, co. */
+  /**
+   * Pasek stanu zapisu — pierwsza rzecz, którą trzeba wiedzieć o zapisie
+   * z zajęć, i to PRZED jego treścią.
+   *
+   * Odpowiada na jedno pytanie: czy temu, co niżej, można ufać. Zapis
+   * powstaje dziś dwa razy — raz w biegu (szkic) i raz z pliku po
+   * spotkaniu (zapis właściwy) — a różnica między nimi jest liczbą,
+   * którą da się podać. Podanie jej jest uczciwsze niż pokazanie samego
+   * tekstu tak, jakby był jedną wersją prawdy.
+   */
+  function verdict(meeting, live) {
+    if (live) return "";
+    const bits = [];
+
+    if (meeting.transcribing) {
+      bits.push(`<span class="meet__badge meet__badge--work">${t("weryfikuję nagraniem…")}</span>`);
+    } else if (meeting.verification?.error) {
+      bits.push(`<span class="meet__badge meet__badge--warn">${t("weryfikacja nie doszła do skutku")}</span>`);
+    } else if (Number.isFinite(meeting.verification?.agreement)) {
+      const pct = Math.round(meeting.verification.agreement * 100);
+      /* Zgodność jest INFORMACJĄ, nie oceną — dopóki zapis właściwy jest
+         tym z pliku, niska zgodność znaczy „przepisywanie w biegu dużo
+         przegapiło", a nie „zapis jest zły". Kolor ostrzegawczy pojawia się
+         dopiero tam, gdzie warto posłuchać nagrania. */
+      const tone = pct >= 85 ? "" : " meet__badge--warn";
+      bits.push(
+        `<span class="meet__badge${tone}">${t("zweryfikowany")} · ${t("zgodność szkicu")} ${pct}%</span>`,
+      );
+      const missed = meeting.verification.drift?.length ?? 0;
+      if (missed) {
+        bits.push(
+          `<span class="meet__badge">${t("{n} wypowiedzi spoza szkicu", { n: missed })}</span>`,
+        );
+      }
+    } else if (meeting.draft?.length) {
+      bits.push(`<span class="meet__badge">${t("szkic z przepisywania w biegu")}</span>`);
+    }
+
+    if (meeting.tracks?.mic) {
+      bits.push(`<span class="meet__badge meet__badge--soft">${t("nagranie zachowane")}</span>`);
+    }
+    return bits.length ? `<div class="meet__verdict">${bits.join("")}</div>` : "";
+  }
+
+  /** Która postać zapisu jest w tej chwili do pokazania — i czy w ogóle jest. */
+  function linesOf(meeting) {
+    if (state.form === "talk" && meeting.talk?.length) return meeting.talk;
+    if (state.form === "draft" && meeting.draft?.length) return meeting.draft;
+    return meeting.transcript ?? [];
+  }
+
+  /**
+   * Przełącznik postaci zapisu. Pokazuje się dopiero wtedy, gdy jest z czego
+   * wybierać — jeden przycisk obok samego siebie nie jest wyborem.
+   */
+  function forms(meeting, live) {
+    if (live) return "";
+    const choices = [["final", "Zapis"]];
+    if (meeting.talk?.length) choices.push(["talk", "Oczyszczona"]);
+    if (meeting.draft?.length && meeting.verification) choices.push(["draft", "Szkic"]);
+    if (choices.length < 2) return "";
+    const buttons = choices
+      .map(
+        ([key, label]) => `
+          <button class="meet__form${state.form === key ? " is-chosen" : ""}" data-meet-form="${key}">
+            ${t(label)}
+          </button>`,
+      )
+      .join("");
+    return `<div class="meet__forms">${buttons}</div>`;
+  }
+
   function transcript(meeting, live) {
     /* ZNACZNIK CZASU JEST PRZYCISKIEM, o ile nagranie jeszcze leży na
        dysku. Zapis bywa niedokładny i wtedy jedyną odpowiedzią na pytanie
@@ -1292,7 +1464,16 @@
        do którego należy wypowiedź: dwóch naraz i tak nie dałoby się
        zsynchronizować, a każda wypowiedź ma swoją stronę rozmowy. */
     const tracks = meeting.tracks ?? null;
-    const lines = meeting.transcript
+    const all = linesOf(meeting);
+    /* Przesłuch z głośników zostaje w danych, ale nie na wierzchu.
+       Filtr bywa w tym niedokładny — na zajęciach mówi się RÓWNOLEGLE
+       z dźwiękiem z komputera i komentarz prowadzącego wygląda wtedy jak
+       echo tego, co właśnie leci. Odkąd zdanie jest znaczone zamiast
+       kasowane (patrz splice w main/merge.js), pomyłka filtra przestała
+       być stratą — pod warunkiem, że da się ją odsłonić. */
+    const bounced = all.filter((line) => line.echo).length;
+    const lines = all
+      .filter((line) => state.showEcho || !line.echo)
       .map((line) => {
         const track = tracks?.[line.lane ?? ""] ?? null;
         const at = duration(line.at ?? 0);
@@ -1301,9 +1482,19 @@
                      data-meet-from="${Math.round(line.at ?? 0)}"
                      title="${t("Posłuchaj tego fragmentu")}">${at}</button>`
           : `<span class="meet__at">${at}</span>`;
+        /* ETYKIETA MÓWIĄCEGO JEST PRZYCISKIEM, gdy mówi o osobie z toru
+           systemu. „Rozmówca 2" to jest numer, a nie człowiek — a nazwać
+           go da się tylko ręką, bo tylko człowiek wie, kto to był.
+           Toru mikrofonu to nie dotyczy: „Ty" jest wiadome z kabla. */
+        const who =
+          line.who === undefined
+            ? `<span class="meet__who">${escape(line.speaker ?? t("Nieznany"))}</span>`
+            : `<button class="meet__who meet__who--name" data-meet-name="${line.who}"
+                       title="${t("Nazwij tego mówiącego")}">${escape(line.speaker ?? "")}</button>`;
         return `
-        <p class="meet__line" data-speaker="${escape(line.speaker ?? "")}">
-          <span class="meet__who">${escape(line.speaker ?? t("Nieznany"))}</span>
+        <p class="meet__line${line.echo ? " meet__line--echo" : ""}"
+           data-speaker="${escape(line.speaker ?? "")}" data-lane="${escape(line.lane ?? "")}">
+          ${who}
           ${stamp}
           <span class="meet__said">${escape(line.text ?? "")}</span>
         </p>`;
@@ -1314,7 +1505,14 @@
     const tail = live
       ? `<p class="meet__more">${t("zapis rośnie w trakcie rozmowy")}</p>`
       : "";
-    return `<div class="meet__transcript">${lines}${tail}</div>`;
+    /* Przełącznik przesłuchu stoi POD zapisem, nie nad nim: to jest rzecz,
+       po którą sięga się dopiero wtedy, gdy czegoś w zapisie brakuje. */
+    const echoSwitch = bounced
+      ? `<button class="meet__echo" data-meet-echo="1">
+           ${state.showEcho ? t("ukryj przesłuch") : t("pokaż przesłuch ({n})", { n: bounced })}
+         </button>`
+      : "";
+    return `${verdict(meeting, live)}${forms(meeting, live)}<div class="meet__transcript">${lines}${tail}</div>${echoSwitch}`;
   }
 
   /**

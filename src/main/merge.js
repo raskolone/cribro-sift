@@ -176,6 +176,123 @@ function echoRatio(quiet, loud) {
 
 const overlaps = (a, b, slack) => a.from < b.to + slack && b.from < a.to + slack;
 
+/* ══ TRZY OSOBY W JEDNYM KABLU ══
+
+   Tor systemu to jedno wejście, w którym siedzą WSZYSCY zdalni rozmówcy.
+   Bez rozbicia zajęcia w cztery osoby zapisują się dwiema etykietami: „Ty"
+   i „Rozmówcy" — czyli trzy czwarte sali mówi jednym głosem.
+
+   Deepgram umie podzielić to na mówców (`diarize`, patrz main/stt.js)
+   i oddaje numer przy każdym słowie. Problem jest jeden i trzeba go
+   rozwiązać tutaj: NUMER JEST LOKALNY DLA JEDNEGO ODCINKA. Ta sama osoba
+   bywa „0" w pierwszej minucie i „2" w trzeciej, bo model liczy od nowa
+   przy każdym żądaniu. Zostawione tak, jak przyszły, numery dawałyby
+   dwudziestu „rozmówców" na godzinnych zajęciach czterech osób.
+
+   Zszywa je ZAKŁADKA. Odcinki zachodzą na siebie o trzy sekundy
+   (OVERLAP w main/segments.js), więc koniec jednego i początek następnego
+   to ten sam dźwięk — a skoro ten sam dźwięk, to i ten sam człowiek.
+   Dopasowujemy więc pierwsze tury nowego odcinka do ostatnich tur
+   poprzedniego po TREŚCI, i przenosimy numer z tamtej strony.
+
+   Czego to nie zrobi: nie rozpozna, że osoba milcząca przez dziesięć minut
+   wraca jako ta sama. Po dłuższej ciszy numer bywa nowy — i to jest
+   uczciwsza odpowiedź niż sklejenie dwóch osób w jedną na podstawie
+   niczego. Nazwać mówców można ręką, raz, w zakładce spotkania. */
+
+/** Ile słów z brzegu odcinka bierzemy pod uwagę przy zszywaniu numerów. */
+const SEAM_WORDS = 12;
+
+/** Ostatnie / pierwsze `count` słów tekstu, znormalizowane do porównania. */
+const edgeWords = (text, count, fromEnd) => {
+  const all = words(text);
+  return fromEnd ? all.slice(-count) : all.slice(0, count);
+};
+
+/** Ile słów wspólnych mają dwa brzegi — prosta miara „to ten sam dźwięk". */
+function seamScore(before, after) {
+  const tail = new Set(edgeWords(before, SEAM_WORDS, true));
+  if (!tail.size) return 0;
+  const head = edgeWords(after, SEAM_WORDS, false);
+  if (!head.length) return 0;
+  let hits = 0;
+  for (const word of head) if (tail.has(word)) hits += 1;
+  return hits / head.length;
+}
+
+/**
+ * Odcinki z turami diaryzacji → odcinki z globalnym numerem mówiącego.
+ *
+ * Tor mikrofonu przechodzi nietknięty: tam mówi jedna osoba i wiadomo która,
+ * bo to wynika z kabla, a nie z modelu. Rozbijamy WYŁĄCZNIE tor systemu.
+ *
+ * @param {Array} pieces  odcinki, część z polem `turns`
+ * @param {object} [options]
+ * @param {number} [options.seam]  od jakiego podobieństwa brzegów uznajemy
+ *   turę za ciąg dalszy tej samej osoby
+ * @returns {Array} odcinki, gdzie tor systemu ma dodatkowo `who` (0,1,2…)
+ */
+function expandTurns(pieces, { seam = 0.34 } = {}) {
+  const out = [];
+  /* Ostatnia znana tura każdego GLOBALNEGO mówiącego — po niej rozpoznajemy
+     go w następnym odcinku. */
+  let lastByGlobal = [];
+  let nextGlobal = 0;
+
+  for (const piece of pieces ?? []) {
+    if (piece.lane !== "system" || !Array.isArray(piece.turns) || !piece.turns.length) {
+      out.push(piece);
+      continue;
+    }
+
+    const localToGlobal = new Map();
+    const fresh = [];
+
+    for (const turn of piece.turns) {
+      const text = String(turn.text ?? "").trim();
+      if (!text) continue;
+
+      let global = localToGlobal.get(turn.speaker);
+      if (global === undefined) {
+        /* Numer lokalny widziany w tym odcinku pierwszy raz. Szukamy, czy
+           to ktoś, kto mówił na końcu poprzedniego odcinka — po zakładce. */
+        let best = -1;
+        let bestScore = seam;
+        for (let id = 0; id < lastByGlobal.length; id += 1) {
+          const score = seamScore(lastByGlobal[id] ?? "", text);
+          if (score > bestScore) {
+            bestScore = score;
+            best = id;
+          }
+        }
+        global = best >= 0 ? best : nextGlobal++;
+        localToGlobal.set(turn.speaker, global);
+      }
+
+      fresh.push({
+        ...piece,
+        turns: undefined,
+        who: global,
+        /* Czas tury jest liczony od początku ODCINKA, a odcinek ma swoje
+           miejsce w spotkaniu — bez tego dodania wszystkie tury każdego
+           odcinka lądowałyby na jego początku. */
+        from: piece.from + Number(turn.from ?? 0),
+        to: piece.from + Number(turn.to ?? 0),
+        text,
+      });
+    }
+
+    for (const item of fresh) lastByGlobal[item.who] = item.text;
+    out.push(...fresh);
+  }
+
+  return out;
+}
+
+/** Jak podpisać mówiącego numer `n` z toru systemu. */
+const speakerName = (who, speakers) =>
+  speakers?.[`system:${who}`] ?? (who === undefined ? SPEAKER.system : `Rozmówca ${who + 1}`);
+
 /**
  * Podział na zdania — do OCENY echa, nie do zapisu.
  *
@@ -219,22 +336,30 @@ const MAX_SPAN = 240;
  * @param {number} [options.maxSpan] jak długa może być jedna wypowiedź w zapisie
  * @returns {Array<{speaker, lane, at, text}>}
  */
-function splice(pieces, { echo = 0.6, slack = 2, gap = 12, maxSpan = MAX_SPAN, speakers } = {}) {
+function splice(pieces, { echo = 0.6, slack = 2, gap = 12, maxSpan = MAX_SPAN, speakers, keepEcho = false } = {}) {
   // Podpisy mówiących wchodzą z zewnątrz, o ile ktoś je zna — patrz
   // speakerFor wyżej i main/meeting.js.
   const who = { ...SPEAKER, ...(speakers ?? {}) };
-  const usable = (pieces ?? [])
+  /* Tor systemu rozbity na osoby, o ile diaryzacja coś powiedziała.
+     Bez niej wszystko idzie dalej tak, jak szło — jedną etykietą. */
+  const split = expandTurns(pieces);
+  const usable = (split ?? [])
     .filter((piece) => piece && String(piece.text ?? "").trim())
     .map((piece) => ({ ...piece, text: String(piece.text).trim() }))
     .sort((a, b) => a.from - b.from || (a.lane === "system" ? -1 : 1));
 
   /* 1. Zakładka — osobno w każdym torze, bo powtórzenie bierze się
-        z cięcia tego samego toru, a nie ze zderzenia dwóch. */
+        z cięcia tego samego toru, a nie ze zderzenia dwóch.
+
+        Po rozbiciu na mówców klucz jest parą TOR + OSOBA: powtórzenie
+        z zakładki wraca w ustach tej samej osoby, a porównywanie jej
+        z poprzednikiem, który mówił co innego, nie zdjęłoby niczego. */
+  const key = (piece) => (piece.who === undefined ? piece.lane : `${piece.lane}:${piece.who}`);
   const last = {};
   const trimmed = [];
   for (const piece of usable) {
-    const text = trimRepeat(last[piece.lane] ?? "", piece.text);
-    last[piece.lane] = piece.text;
+    const text = trimRepeat(last[key(piece)] ?? "", piece.text);
+    last[key(piece)] = piece.text;
     if (text) trimmed.push({ ...piece, text });
   }
 
@@ -257,12 +382,26 @@ function splice(pieces, { echo = 0.6, slack = 2, gap = 12, maxSpan = MAX_SPAN, s
       kept.push(piece);
       continue;
     }
-    const mine = sentences(piece.text).filter((line) => {
-      if (words(line).length < MIN_ECHO_WORDS) return true;
-      return echoRatio(line, around) < echo;
-    });
-    const text = mine.join(" ").trim();
-    if (text) kept.push({ ...piece, text });
+    /* ══ ECHO JEST ZNACZONE, A NIE KASOWANE ══
+
+       Wcześniej zdanie uznane za przesłuch po prostu znikało. Przy rozmowie
+       to jest rachunek do przyjęcia; przy ZAJĘCIACH już nie, bo mówienie
+       równolegle z dźwiękiem z komputera jest tam normalną sytuacją —
+       prowadzący komentuje to, co właśnie leci — a filtr nie odróżnia
+       komentarza od echa tego samego zdania.
+
+       Skoro nagranie zostaje na dysku (patrz archive w main/meeting.js),
+       pomyłka filtra przestaje być stratą — ale tylko wtedy, gdy dane
+       przeżyły. Zdanie zostaje więc w zapisie z chorągiewką `echo`, a widok
+       domyślnie je chowa. Kto szuka swojego zdania, ma je gdzie znaleźć. */
+    const lines = sentences(piece.text).map((line) => ({
+      line,
+      echo: words(line).length >= MIN_ECHO_WORDS && echoRatio(line, around) >= echo,
+    }));
+    const clean = lines.filter((item) => !item.echo).map((item) => item.line).join(" ").trim();
+    const bounced = lines.filter((item) => item.echo).map((item) => item.line).join(" ").trim();
+    if (clean) kept.push({ ...piece, text: clean });
+    if (bounced && keepEcho) kept.push({ ...piece, text: bounced, echo: true });
   }
 
   /* 3. Sklejanie w wypowiedzi. Ten sam tor bez długiej przerwy to dalej
@@ -289,6 +428,10 @@ function splice(pieces, { echo = 0.6, slack = 2, gap = 12, maxSpan = MAX_SPAN, s
     if (
       previous &&
       previous.lane === piece.lane &&
+      // Zmiana osoby kończy wypowiedź tak samo jak zmiana toru — inaczej
+      // zdanie jednego rozmówcy dokleiłoby się do zdania drugiego.
+      previous.who === piece.who &&
+      !previous.echo === !piece.echo &&
       piece.from - previous.to <= gap &&
       piece.to - previous.at <= maxSpan
     ) {
@@ -297,19 +440,32 @@ function splice(pieces, { echo = 0.6, slack = 2, gap = 12, maxSpan = MAX_SPAN, s
       continue;
     }
     lines.push({
-      speaker: who[piece.lane] ?? piece.lane,
+      speaker:
+        piece.lane === "system" && piece.who !== undefined
+          ? speakerName(piece.who, speakers)
+          : (who[piece.lane] ?? piece.lane),
       lane: piece.lane,
+      who: piece.who,
+      echo: !!piece.echo,
       at: piece.from,
       to: piece.to,
       text: piece.text,
     });
   }
 
-  return lines.map(({ speaker, lane, at, text }) => ({ speaker, lane, at, text }));
+  return lines.map(({ speaker, lane, who: person, echo: bounced, at, text }) => {
+    const line = { speaker, lane, at, text };
+    if (person !== undefined) line.who = person;
+    if (bounced) line.echo = true;
+    return line;
+  });
 }
 
 module.exports = {
   splice,
+  expandTurns,
+  speakerName,
+  seamScore,
   trimRepeat,
   echoRatio,
   repeatLength,

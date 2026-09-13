@@ -240,11 +240,44 @@ const DEFAULTS = {
 
      `keepAudio` wyłączone: nagranie ginie po transkrypcji, tak samo jak
      nagranie dyktowania. Obietnica z NSMicrophoneUsageDescription obowiązuje
-     tu tak samo, choć głosów jest więcej niż jeden. */
+     tu tak samo, choć głosów jest więcej niż jeden.
+
+     ══ ARCHIWUM — I DLACZEGO JEST DOMYŚLNIE WŁĄCZONE ══
+
+     `archive` stoi OBOK `keepAudio` i rozstrzyga co innego. `keepAudio`
+     odpowiadało na pytanie „czy chcesz mieć nagranie", czyli na życzenie.
+     `archive` odpowiada na pytanie „czym zweryfikować zapis, gdy okaże się
+     wątpliwy" — i to nie jest życzenie, tylko warunek ufania temu, co
+     w zapisie stoi.
+
+     Przepisywanie w biegu jest z natury szkicem: leci odcinkami, pod presją
+     czasu, na najszybszym modelu, i potyka się o rzeczy, o które przebieg
+     z pliku by się nie potknął. Dopóki nagranie ginęło razem z końcem
+     spotkania, ten szkic był JEDYNĄ wersją — a `retranscribe()` (jedyny krok
+     w tym module, który da się powtórzyć) nie miał na czym pracować
+     i kończył zdaniem „nie ma już z czego przepisywać".
+
+     Koszt przestał być argumentem, odkąd nagranie jest ściskane: godzina
+     toru schodzi ze 115 MB surowego WAV do jakichś 14 MB w AAC (patrz
+     shrink w main/audio.js). Semestr zajęć to rząd jednego giga.
+
+       "always"          nagranie zostaje, dopóki ktoś go nie skasuje ręką
+       "until-verified"  zostaje do czasu, aż przebieg z pliku potwierdzi zapis
+       "never"           dawne zachowanie: ginie, gdy tylko zapis jest pełny
+
+     `verify` mówi, czy po spotkaniu ma iść drugi przebieg — ten z pliku,
+     bez presji czasu, z diaryzacją. To on daje zapis właściwy; przepisywanie
+     w biegu zostaje obok jako szkic, do porównania. */
   meetings: {
     enabled: false,
     detect: "ask", // off | ask | auto
     keepAudio: false,
+    archive: "always", // always | until-verified | never
+    verify: true,
+    /* Rozbicie toru systemu na osoby. Toru mikrofonu NIE DOTYCZY i nie ma
+       takiej opcji: tam mówi właściciel komputera i wiadomo to z kabla,
+       a nie z modelu. Patrz expandTurns w main/merge.js. */
+    diarize: true,
     minSeconds: 90,
     // Dźwięk systemu to dźwięk wszystkich aplikacji z oknami, więc muzyka
     // z tła weszłaby do transkrypcji jako czyjaś wypowiedź.
@@ -257,7 +290,14 @@ const DEFAULTS = {
        sama, bo nazwa wzięta z okna przeglądarki to zwykle kod pokoju
        („jxg-hfsa-qvb"), po którym za tydzień nikt niczego nie znajdzie. */
     summarize: true,
-    template: "generic", // generic | custom
+    /* generic | class | custom.
+
+       „class" różni się od „generic" dwiema linijkami w kontrakcie sita
+       (patrz CLASS_RULES w main/digest.js) i obie biorą się z tego, że
+       zajęcia to nie rozmowa robocza: powtórzona definicja jest tam
+       sposobem tłumaczenia, a nie szumem do wycięcia, a termin fachowy
+       jest treścią, a nie ozdobą do uproszczenia. */
+    template: "generic",
     instructions: "",
     rename: true,
 
@@ -613,6 +653,21 @@ class Store {
       /* Rozmowa przesiana: ten sam zapis bez szumu, wciąż jako rozmowa.
          Trzecia postać obok zapisu i podsumowania — patrz main/digest.js. */
       talk: [],
+      /* ── TRZY POSTACIE JEDNEGO SPOTKANIA ──
+
+         `draft`        zapis z przepisywania w biegu. Powstaje pod presją
+                        czasu i wolno mu być niedokładny — służy temu, co
+                        dzieje się W TRAKCIE rozmowy.
+         `transcript`   zapis właściwy. Po spotkaniu przebieg z pliku
+                        nadpisuje nim szkic (patrz verify w ustawieniach).
+         `talk`         to samo, przesiane z szumu mowy.
+
+         Wcześniej pierwsze dwa były jednym polem i stąd brała się większość
+         kłopotów: szkic był ostateczny, bo nie było czym go zastąpić. */
+      draft: [],
+      /* Wynik porównania szkicu z zapisem właściwym: na ile się zgadzają
+         i które wiersze się rozjechały. Null znaczy „nie weryfikowano". */
+      verification: null,
       summary: null,
       /* Notatki pisane RĘKĄ w trakcie rozmowy. Osobno od transkrypcji
          i od podsumowania, bo to jedyna z tych trzech rzeczy, której nie

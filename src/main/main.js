@@ -5635,6 +5635,56 @@ function registerIpc() {
     return true;
   });
 
+  /**
+   * Nazwanie mówiącego z toru systemu.
+   *
+   * Diaryzacja oddaje NUMER („Rozmówca 2"), bo tyle da się usłyszeć
+   * z dźwięku. Imię wie tylko człowiek i wpisuje je raz — a wtedy
+   * przepisujemy je we WSZYSTKICH postaciach zapisu naraz.
+   *
+   * Przepisujemy po `who`, nie po dotychczasowym napisie: napis bywa już
+   * raz zmieniony, a numer jest tym, co zszywa te same usta przez całe
+   * spotkanie (patrz expandTurns w main/merge.js). Zapisujemy też samo
+   * przypisanie, żeby przebieg z pliku nie zaczynał od numerów od nowa.
+   */
+  /* Weryfikacja ręką. Po spotkaniu idzie sama, ale bywa, że nie poszła:
+     nie było klucza, nie było sieci albo ustawienie ją wyłącza. Wtedy jest
+     to jedyna droga do zapisu właściwego — i musi być dostępna z okna. */
+  ipcMain.handle("meetings:verify", async (_e, id) => {
+    try {
+      return await meetings.verify(id);
+    } catch (problem) {
+      store.updateMeeting(id, { verification: { error: String(problem?.message || problem) } });
+      broadcast("meeting:changed", meetingState());
+      throw problem;
+    }
+  });
+
+  ipcMain.handle("meetings:speakers", (_e, { id, speakers } = {}) => {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting) return false;
+    const named = { ...(meeting.speakers ?? {}), ...(speakers ?? {}) };
+    for (const [key, value] of Object.entries(speakers ?? {})) {
+      if (!value) delete named[key];
+    }
+
+    const rename = (lines) =>
+      (lines ?? []).map((line) =>
+        line?.who === undefined
+          ? line
+          : { ...line, speaker: named[`system:${line.who}`] ?? `Rozmówca ${line.who + 1}` },
+      );
+
+    store.updateMeeting(id, {
+      speakers: named,
+      transcript: rename(meeting.transcript),
+      draft: rename(meeting.draft),
+      talk: meeting.talk,
+    });
+    broadcast("meeting:changed", meetingState());
+    return true;
+  });
+
   ipcMain.handle("history:get", () => store.getHistory());
   ipcMain.handle("history:update", (_e, { id, patch }) => store.updateEntry(id, patch));
   ipcMain.handle("history:delete", (_e, id) => (store.deleteEntry(id), true));

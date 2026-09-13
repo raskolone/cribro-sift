@@ -1549,6 +1549,141 @@ zakończeniu ekran wraca do **Podsumowania**, bo to ono jest powodem, dla
 którego się nagrywało. Zakładka wybrana ręką zostaje tam, gdzie ją
 postawiono, do końca tej rozmowy.
 
+#### Zapis powstaje dwa razy: szkic w biegu, właściwy z nagrania
+
+Przepisywanie w trakcie rozmowy i przepisywanie po niej to **dwa różne
+zadania**, choć dotyczą tego samego dźwięku. Pierwsze leci odcinkami, pod
+presją czasu, na najszybszym modelu i nie wie, co będzie dalej. Drugie ma
+cały plik, tyle czasu, ile trzeba, i rozbicie na mówców.
+
+Dlatego spotkanie ma dziś **trzy postacie zapisu**, przełączane nad tekstem:
+
+| Postać | Skąd | Po co |
+| --- | --- | --- |
+| **Zapis** | przebieg z pliku po rozmowie | to jest wersja właściwa |
+| **Oczyszczona** | sito na zapisie | do czytania, bez „yyy" i spraw technicznych |
+| **Szkic** | przepisywanie w biegu | do porównania — widać, co tamto przegapiło |
+
+Po zakończeniu rozmowy drugi przebieg rusza **sam** i w tle: „koniec
+spotkania" ma być końcem spotkania, a nie początkiem czekania na drugie
+przepisywanie godziny dźwięku. Wpis ma już wtedy treść szkicu, więc jest co
+czytać; zapis właściwy dopisuje się, gdy skończy.
+
+**Nad zapisem stoi jedno zdanie o tym, czy można mu ufać**: stan weryfikacji,
+zgodność szkicu z zapisem w procentach i informacja, czy nagranie leży na
+dysku. Niska zgodność nie znaczy „zapis jest zły" — znaczy „przepisywanie
+w biegu dużo przegapiło", a to jest co innego i dlatego nie świeci na
+czerwono.
+
+Weryfikacja idzie sama **wyłącznie po udanym przepisywaniu**. Gdy zapis jest
+niepełny — bo nie było sieci albo klucza — drugi przebieg poleciałby w to
+samo i przegrał tak samo, a po drodze zamazałby zdanie mówiące, co się stało.
+Wtedy zostaje przycisk **„Przepisz jeszcze raz"**, którym sięga się po to
+wtedy, gdy sieć wróci.
+
+#### Nagranie zostaje, bo bez niego nie ma czym sprawdzić zapisu
+
+Domyślnie **nagranie spotkania nie jest już kasowane po przepisaniu**
+(ustawienie `archive`, domyślnie „always"). To jest zmiana wobec dyktowania
+i ma jeden powód: zapisu z zajęć bez nagrania nie da się z niczym zestawić,
+a `retranscribe` — jedyny krok w tym module, który wolno powtórzyć — traci
+wtedy materiał i kończy zdaniem „nie ma już z czego przepisywać".
+
+Koszt przestał być argumentem, odkąd nagranie jest ściskane: godzina toru
+schodzi ze **115 MB** surowego WAV do jakichś **14 MB** w AAC. Semestr zajęć
+to rząd jednego giga.
+
+Ściskamy je jednak **dopiero po udanym przepisaniu**. Nagranie zachowane
+dlatego, że przepisywanie zawiodło, zostaje surowe: trzymamy je po to, żeby
+przepisać je jeszcze raz, a ten jeden raz zasługuje na materiał bez strat.
+
+Dawne zachowanie nie zniknęło — zostało wyborem (`never`).
+
+#### Trzy osoby to trzy osoby
+
+Podział na mówiących stoi na **dwóch poziomach i to nie są dwa warianty tego
+samego**.
+
+**Poziom pierwszy — kabel.** Tor mikrofonu to ty, tor systemu to oni. Wynika
+to z dwóch fizycznie osobnych wejść dźwięku, a nie z modelu, i **żadna
+diaryzacja tego nie rusza**. To jest jedyna rzecz w tym module, która jest
+pewna, i nie ma powodu zamieniać pewności sprzętowej na zgadywanie. Kolor
+podpisu w zapisie idzie odtąd po torze, a nie po napisie — inaczej rozmówca
+nazwany imieniem robił się wizualnie tobą.
+
+**Poziom drugi — diaryzacja, i tylko w torze systemu.** Tam siedzą wszyscy
+zdalni rozmówcy zmieszani w jedno wejście, więc bez rozbicia zajęcia
+w cztery osoby zapisują się dwiema etykietami. Deepgram (`diarize`) oddaje
+numer mówiącego przy każdym słowie; z numerów robią się **„Rozmówca 1",
+„Rozmówca 2", „Rozmówca 3"**.
+
+Numer jest **lokalny dla odcinka** — ta sama osoba bywa „0" w pierwszej
+minucie i „2" w trzeciej, bo model liczy od nowa przy każdym żądaniu.
+Zszywa je **zakładka dźwiękowa**: odcinki zachodzą na siebie o trzy sekundy,
+więc koniec jednego i początek następnego to ten sam dźwięk — a skoro ten
+sam dźwięk, to i ten sam człowiek. Po dłuższej ciszy numer bywa nowy i to
+jest uczciwsza odpowiedź niż sklejenie dwóch osób na podstawie niczego.
+
+**Nazwać mówiącego można ręką**: kliknięcie w „Rozmówca 2" pyta, kto to jest,
+i przepisuje imię w całym zapisie naraz — po numerze, nie po napisie.
+
+#### Przesłuch jest znaczony, a nie kasowany
+
+Przy głośnikach cudza mowa wchodzi także twoim mikrofonem, więc każde zdanie
+drugiej strony padałoby w zapisie dwa razy. Filtr przesłuchu wycina je z toru
+mikrofonu — ale filtr bywa w tym niedokładny, a na **zajęciach mówi się
+równolegle** z dźwiękiem z komputera i komentarz prowadzącego wygląda wtedy
+dokładnie jak echo tego, co właśnie leci.
+
+Zdanie uznane za przesłuch **zostaje więc w danych** z chorągiewką, a widok
+domyślnie je chowa. Pod zapisem stoi „pokaż przesłuch (3)". Odkąd nagranie
+zostaje na dysku, pomyłka filtra przestała być stratą — ale tylko pod
+warunkiem, że dane przeżyły.
+
+#### Prompt zajęć, i dlaczego nie ma w nim kontekstu
+
+Transkrypcja spotkania idzie **innym promptem niż dyktowanie**. Dyktowanie to
+jedna osoba przez kilkanaście sekund; zajęcia to godzina, terminologia,
+liczby i zdania urywane w pół. Model dostaje to powiedziane wprost: termin
+zostaje terminem (nie podmieniaj nieznanego słowa na podobnie brzmiące),
+liczba zostaje liczbą, a zdanie urwane zostaje urwane.
+
+**Ogona poprzedniego odcinka w tym prompcie nie ma** i jest to poprawka po
+awarii, którą widać było w zapisie zajęć. Stało tam kiedyś zdanie:
+
+> Poprzedni fragment tej samej wypowiedzi kończył się tak: „…". To jest
+> KONTEKST, nie treść — nie przepisuj go ponownie.
+
+Model **przepisywał tę instrukcję jako wypowiedź**. W zapisie stanęło zdanie
+„To jest KONTEKST, nie przepisuj go ponownie" podpisane rozmówcą, a obok
+dziewięć razy pod rząd samo słowo „KONTEKST" podpisane właścicielem konta —
+czyli zdania, których nikt nie powiedział, przypisane ludziom z imienia.
+
+**Nakręcało się to samo**: ogon następnego odcinka bierze się z tekstu
+poprzedniego, więc raz przepisana instrukcja wracała do modelu jako kontekst
+i przepisywała się znowu. Jedno potknięcie zostawało do końca spotkania.
+
+Ciągłość między odcinkami stoi dziś na czymś pewniejszym niż zdanie
+w prompcie: na zakładce dźwiękowej i na zdjęciu powtórzenia przy splocie.
+Nazwy własne trzyma lista imion z kalendarza — a lista słów nie ma jak wrócić
+jako czyjaś wypowiedź.
+
+Sito rozmowy (**„Oczyszczona"**) ma osobny wariant **„Zajęcia"**, wybierany
+w ustawieniach pod kołem zębatym. Różni się dwiema linijkami i obie biorą się
+z tego samego: **powtórzeń prowadzącego nie wycina**, bo powtórzona definicja
+jest sposobem tłumaczenia, a nie szumem — a terminy, liczby i tytuły zostają
+dokładnie takie, jakie padły.
+
+Zostały do tego **dwa sita**, oba sprawdzane testem:
+
+- **przepisana instrukcja** nie wchodzi do zapisu (wzorce są całymi frazami
+  z naszego promptu, nie ich kawałkami — pierwsza wersja miała `nie
+  przepisuj` i wycinała zdanie „Nie przepisujcie tego do zeszytu");
+- **powtórzenie pod rząd**: pięć razy to samo słowo to zapętlenie, niezależnie
+  od długości tekstu. Dwa dawne progi budziły się dopiero przy dwustu
+  słowach, więc dziewięciokrotny „KONTEKST" przechodził przez nie bez
+  zatrzymania.
+
 #### Kalendarz i zgoda na niego
 
 Kalendarz ma **dwie drogi** i wyraźne pierwszeństwo.
@@ -1981,7 +2116,11 @@ src/main/
   meetnote.js    notatka ze spotkania: kiedy powstaje, a kiedy jej nie tykać
   digest.js      KROK 3 — wniosek z rozmowy, rozmowa bez szumu, nazwa notatki
   detect.js      czy na ekranie stoi rozmowa — po tytułach okien
-  merge.js       splot dwóch torów w jeden zapis, przesłuch, kto mówił
+  merge.js       splot dwóch torów w jeden zapis, przesłuch, kto mówił —
+                 razem z rozbiciem toru systemu na osoby i zszyciem
+                 numerów mówców między odcinkami
+  verify.js      szkic z biegu kontra przebieg z pliku: na ile się zgadzają
+                 i których wypowiedzi szkic nie miał
   segments.js    krajalnica: tor na odcinki, cisza nie jedzie do modelu
   agenda.js      kalendarz systemowy: co trwa, co się zaczyna, kto zaproszony
   calendar-osa.js  druga droga do kalendarza — pytanie do Kalendarza.app,
@@ -2051,6 +2190,10 @@ scripts/         testy, zrzuty ekranu, ikona
                     ile chowa, co zostaje w pliku i czy wraca zwinięty
   list-test.js      listy prawdziwą klawiaturą: znacznik robi listę, Tab robi
                     poziom, Enter w pustym punkcie kończy
+  meeting-guard-test.js  zapis spotkania: przepisana instrukcja nie wchodzi
+                    do zapisu, trzy osoby dostają trzy etykiety, tor mikrofonu
+                    zostaje jedną osobą, przesłuch jest znaczony a nie
+                    kasowany, walidacja pokazuje, co szkic przegapił
   sticky-test.js    kartka na pulpicie w prawdziwym oknie: pasek pisania,
                     rozpoznawanie wypunktowania, skróty, znacznik daty
                     i wyłącznik talii („Ukryj stickies" chowa, a nie kasuje)

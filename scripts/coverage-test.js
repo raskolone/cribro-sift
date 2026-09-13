@@ -47,13 +47,13 @@ function speechWav(file) {
 }
 
 /** Sklep tylko z tym, czego dotyka retranscribe. */
-function fakeStore(dir, meeting) {
+function fakeStore(dir, meeting, archive = "always") {
   const state = { ...meeting };
   return {
     now: () => state,
     getSettings: () => ({
       stt: { provider: "mock", model: "mock" },
-      meetings: { keepAudio: false },
+      meetings: { keepAudio: false, archive },
     }),
     getMeetings: () => [state],
     updateMeeting: (_id, patch) => Object.assign(state, patch),
@@ -72,9 +72,9 @@ function setup() {
   return { dir, files };
 }
 
-const run = async (label, transcribe) => {
+const run = async (label, transcribe, archive = "always") => {
   const { dir, files } = setup();
-  const store = fakeStore(dir, { id: "m1", tracks: { ...files }, people: [] });
+  const store = fakeStore(dir, { id: "m1", tracks: { ...files }, people: [] }, archive);
   const meetings = new Meetings(store, {
     transcribe,
     slice: { span: SPAN, overlap: 1 },
@@ -105,7 +105,32 @@ const run = async (label, transcribe) => {
       "Zapisanych minut tyle, ile mówionych",
       out.state.coverage.writtenSeconds === out.state.coverage.spokenSeconds,
     );
-    check("Nagranie skasowane, bo jest czym je zastąpić", out.state.tracks === null);
+    /* ══ NAGRANIE ZOSTAJE, I TO JEST ZMIANA ══
+
+       Do niedawna nagranie ginęło w tej chwili: skoro zapis jest pełny, to
+       jest czym dźwięk zastąpić. Przy zajęciach ten rachunek się nie zgadza
+       — zapis bez nagrania nie ma z czym być zestawiony, a `retranscribe`
+       (jedyny krok w tym module, który wolno powtórzyć) traci materiał,
+       na którym pracuje. Domyślną polityką jest więc „always".
+
+       Dawne zachowanie nie zniknęło: zostało wyborem („never") i jest
+       sprawdzone niżej. */
+    check("Nagranie zostaje w archiwum, choć zapis jest pełny", out.state.tracks !== null);
+  }
+
+  /* ── 1b. Polityka „never" — dawne zachowanie nadal działa ── */
+  {
+    let calls = 0;
+    const out = await run(
+      "kasowanie na życzenie",
+      async () => {
+        calls += 1;
+        return { text: `zdanie numer ${calls}` };
+      },
+      "never",
+    );
+    check("Pokrycie jest pełne także przy kasowaniu", out.state.coverage.complete === true);
+    check("Przy polityce „never” nagranie znika po przepisaniu", out.state.tracks === null);
     check("…i plików naprawdę nie ma", !fs.existsSync(out.files.mic));
   }
 
@@ -122,7 +147,11 @@ const run = async (label, transcribe) => {
     check("Mrugnięcie sieci nie gubi odcinka — jest powtarzany", out.thrown === null);
     check("…i zapis mimo to jest pełny", out.state.coverage.complete === true);
     check("…za trzecim podejściem", [...tries.values()].every((n) => n === 3));
-    check("Nagranie wolno skasować", out.state.tracks === null);
+    /* Powtórki nie zmieniają polityki archiwum: zapis jest pełny, więc
+       nagranie ZOSTAJE — tak samo jak w przebiegu czystym wyżej. Pytanie
+       „czy jest czym zastąpić dźwięk" przestało być jedynym; drugie brzmi
+       „czy dźwięk ma po co zostać", a na zajęciach ma. */
+    check("Nagranie zostaje także po powtórkach", out.state.tracks !== null);
   }
 
   /* ── 3. Dostawca oddaje PUSTY tekst mimo mowy ── */

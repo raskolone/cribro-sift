@@ -392,6 +392,25 @@ CZEGO NIE ROBISZ:
 FORMAT — dokładnie taki, wiersz po wierszu, bez niczego poza nim:
 [mm:ss] Mówiący: oczyszczona wypowiedź`;
 
+/* ══ NA ZAJĘCIACH POWTÓRZENIE BYWA METODĄ ══
+
+   Kontrakt wyżej każe usuwać „powtórzenia tej samej myśli tą samą osobą"
+   i przy rozmowie dwóch stron jest to słuszne: powiedziane dwa razy znaczy
+   tyle samo co powiedziane raz.
+
+   Na zajęciach znaczy co innego. Prowadzący powtarza definicję, bo sala ma
+   ją zapisać; wraca do tej samej myśli po przykładzie, bo to jest sposób
+   tłumaczenia. Wycięte zostawia zapis, w którym każda rzecz padła raz —
+   czyli zapis czegoś, co się nie odbyło.
+
+   Różnica jest krótka, więc nie ma tu drugiego kontraktu: są dwie linijki
+   dopisane do tamtego, w miejscu, w którym tamten by zaszkodził. */
+const CLASS_RULES = `
+
+TO SĄ ZAJĘCIA, NIE ROZMOWA ROBOCZA. Zmienia to dwie rzeczy:
+- Powtórzeń NIE USUWASZ, gdy prowadzący powtarza definicję, termin albo wniosek. Powtórzenie jest tam sposobem tłumaczenia, a nie szumem. Usuwasz wyłącznie zacięcia i powtórzone przez pomyłkę słowa.
+- Terminy fachowe, liczby, daty, numery stron i tytuły przepisujesz dokładnie tak, jak padły. Nigdy ich nie upraszczasz ani nie tłumaczysz.`;
+
 /** Wiersz rozmowy: „[12:34] Ania: treść". */
 const DIALOGUE = /^\s*\[(\d{1,2}):(\d{2})(?::(\d{2}))?\]\s*([^:]{1,40}?)\s*:\s*(.+?)\s*$/;
 
@@ -432,9 +451,13 @@ async function polish(meeting, settings, { ask } = {}) {
   }
 
   const people = (meeting?.people ?? []).filter(Boolean);
+  /* Wariant dla zajęć wybiera ustawienie, a nie zgadywanie z treści:
+     „czy to były zajęcia" jest pytaniem o to, po co się nagrywało, i tylko
+     człowiek zna na nie odpowiedź. */
+  const base = settings?.meetings?.template === "class" ? TALK_CONTRACT + CLASS_RULES : TALK_CONTRACT;
   const system = people.length
-    ? `${TALK_CONTRACT}\n\nW rozmowie brali udział: ${people.join(", ")}. Imiona zapisuj dokładnie tak.`
-    : TALK_CONTRACT;
+    ? `${base}\n\nW rozmowie brali udział: ${people.join(", ")}. Imiona zapisuj dokładnie tak.`
+    : base;
 
   const raw = await (ask ?? send)({
     provider,
@@ -780,6 +803,7 @@ function stripTasks(summary) {
 }
 
 module.exports = {
+  CLASS_RULES,
   digest,
   polish,
   /* Samo wywołanie modelu, bez niczego dookoła. Wychodzi stąd, bo poranne

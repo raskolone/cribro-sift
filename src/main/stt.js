@@ -126,6 +126,21 @@ const LOOP_MIN_WORDS = 200;
 const LOOP_TOP_SHARE = 0.5;
 const LOOP_VOCABULARY = 0.05;
 
+/* ══ TRZECIE SITO: TO SAMO SŁOWO POD RZĄD ══
+
+   Dwa progi wyżej liczą UDZIAŁ w całości, więc obudzą się dopiero przy
+   dwustu słowach. Nastrojone są pod awarię z 7 września (32 765 słów) i pod
+   nią działają — ale krótkiego zatrucia nie widzą wcale.
+
+   Zmierzone na zajęciach: dziewięć razy pod rząd słowo „KONTEKST", czyli
+   dziewięć słów. Przez oba progi przeszło to bez zatrzymania, bo dziewięć
+   to mniej niż dwieście — i wylądowało w zapisie jako czyjaś wypowiedź.
+
+   Pięć powtórzeń pod rząd wystarczy za dowód, niezależnie od długości
+   tekstu. Nikt nie mówi tego samego słowa pięć razy z rzędu; „tak, tak, tak"
+   to trzy i dlatego próg jest wyżej niż trzy. */
+const LOOP_RUN = 5;
+
 /**
  * Czy transkrypcja wygląda na zapętloną. Zwraca powód albo null.
  *
@@ -137,6 +152,21 @@ function loopedTranscript(text) {
     .trim()
     .split(/\s+/)
     .filter(Boolean);
+  if (!words.length) return null;
+
+  /* Ciąg pod rząd sprawdzamy ZAWSZE, także w krótkim tekście — po to on
+     tu jest. Porównanie bez interpunkcji i wielkości liter, bo model sypie
+     powtórzenie raz z przecinkiem, raz bez. */
+  const bare = (word) => word.toLowerCase().replace(/[.,;:!?…„”"'()\[\]—–-]/g, "");
+  let run = 1;
+  for (let at = 1; at < words.length; at += 1) {
+    const same = bare(words[at]) && bare(words[at]) === bare(words[at - 1]);
+    run = same ? run + 1 : 1;
+    if (run >= LOOP_RUN) {
+      return `dostawca powtórzył słowo „${bare(words[at])}" ${run} razy pod rząd`;
+    }
+  }
+
   if (words.length < LOOP_MIN_WORDS) return null;
 
   const counts = new Map();
@@ -217,6 +247,45 @@ Zasady:
 
 Zwróć wyłącznie treść wypowiedzi.`;
 
+/* ══ ZAJĘCIA TO NIE DYKTOWANIE ══
+
+   Prompt wyżej powstał pod dyktowanie: jedna osoba, kilkanaście sekund,
+   zdanie do wklejenia gdzie indziej. Zapis zajęć jest czym innym w każdym
+   z tych trzech wymiarów i trzy rzeczy trzeba modelowi powiedzieć wprost,
+   bo inaczej „poprawia" je z własnej inicjatywy:
+
+     TERMIN ZOSTAJE TERMINEM   model, który nie zna słowa, podmienia je na
+                               podobnie brzmiące i znane. Na zajęciach to
+                               jest różnica między zapisem a bełkotem —
+                               fachowe słowo jest tam treścią, nie ozdobą.
+     LICZBA ZOSTAJE LICZBĄ     numer strony, rok, wzór, numer ćwiczenia.
+                               Zaokrąglone albo zapisane słownie przestają
+                               się do czegokolwiek odnosić.
+     ZDANIE URWANE ZOSTAJE     na wykładzie zdania urywają się w pół i tak
+                               ma zostać. Domknięte przez model wygląda jak
+                               coś, co ktoś powiedział, a nie powiedział.
+
+   Nie ma tu za to nic o wielu mówiących i to jest celowe: odcinek jedzie do
+   modelu JEDNYM TOREM naraz (patrz main/meeting.js), więc pytanie „kto
+   mówi" nie jest tu zadawane. Odpowiada na nie kabel i diaryzacja. */
+const LECTURE_PROMPT = `Zapisz dokładnie to, co słychać w nagraniu zajęć.
+
+Zasady:
+- Przepisz mowę wiernie, słowo w słowo, razem z wahaniami, powtórzeniami i urwanymi zdaniami.
+- Terminy fachowe, nazwy własne, tytuły i skróty zapisuj dokładnie tak, jak padły. Nie podmieniaj słowa, którego nie znasz, na podobnie brzmiące.
+- Liczby, daty, numery stron, lata i wzory zapisuj dokładnie. Nie zaokrąglaj i nie przeliczaj.
+- Zdania urwane w pół zostaw urwane. Nie domykaj ich za mówiącego.
+- Nie poprawiaj, nie skracaj, nie porządkuj, nie streszczaj. Od tego jest następny krok.
+- Nie dodawaj nic od siebie: żadnych nagłówków, komentarzy, cudzysłowów ani znaczników czasu.
+- Zachowaj język, w którym mówiono. Wtrącenia z innego języka zostaw w oryginale.
+- Jeśli w nagraniu nie ma mowy, zwróć pusty tekst.
+- Kategorycznie nie zapętlaj ani nie powtarzaj w nieskończoność tych samych słów. Gdy mowa ustała, zakończ odpowiedź.
+
+Zwróć wyłącznie treść wypowiedzi.`;
+
+/** Który prompt dla tego materiału. Spotkanie ma swój, reszta dyktuje. */
+const promptFor = (about) => (about?.kind === "meeting" ? LECTURE_PROMPT : VERBATIM_PROMPT);
+
 const MOCK_TRANSCRIPTS = [
   "yyy dobra to znaczy chciałem powiedzieć że eee ta funkcja z sitem no wiesz ona powinna działać tak że użytkownik trzyma dwa klawisze i mówi i potem yyy to znaczy jak puści to się kończy nagranie i tekst leci do schowka automatycznie",
   "hej Aniu eee chciałem zapytać czy dasz radę przesłać mi ten raport do piątku no to znaczy do czwartku bo w piątek mam już spotkanie z klientem i yyy potrzebuję to wcześniej przejrzeć dzięki wielkie",
@@ -244,13 +313,85 @@ function hintFor(about) {
   if (names.length) {
     parts.push(`Nazwy własne, które mogą paść: ${names.join(", ")}. Zapisuj je dokładnie tak.`);
   }
-  const before = String(about?.context ?? "").trim();
-  if (before) {
-    parts.push(
-      `Poprzedni fragment tej samej wypowiedzi kończył się tak: „…${before}". To jest KONTEKST, nie treść — nie przepisuj go ponownie.`,
-    );
-  }
+  /* ══ OGONA POPRZEDNIEGO ODCINKA TU NIE MA — I TO JEST POPRAWKA PO AWARII ══
+
+     Stał tu kiedyś taki akapit:
+
+       „Poprzedni fragment tej samej wypowiedzi kończył się tak: «…{ogon}».
+        To jest KONTEKST, nie treść — nie przepisuj go ponownie."
+
+     Miał trzymać ciągłość imion między odcinkami. Robił co innego: model
+     PRZEPISYWAŁ tę instrukcję jako wypowiedź. W zapisie zajęć stało zdanie
+     „To jest KONTEKST, nie przepisuj go ponownie" podpisane rozmówcą, a obok
+     dziewięć razy pod rząd samo słowo „KONTEKST" podpisane właścicielem
+     konta — czyli zdania, których nikt nie powiedział, przypisane ludziom
+     z imienia.
+
+     NAKRĘCAŁO SIĘ TO SAMO. Ogon następnego odcinka bierze się z tekstu
+     poprzedniego (patrz session.tails w main/meeting.js), więc raz przepisana
+     instrukcja wracała do modelu jako kontekst i przepisywała się znowu.
+     Jedno potknięcie zostawało do końca spotkania.
+
+     Ciągłość między odcinkami i tak stoi na czymś pewniejszym niż zdanie
+     w prompcie: na ZAKŁADCE DŹWIĘKOWEJ (OVERLAP w main/segments.js — każdy
+     odcinek zaczyna się trzy sekundy przed końcem poprzedniego) i na zdjęciu
+     powtórzenia przy splocie (trimRepeat w main/merge.js). Nazwy własne
+     trzyma lista imion wyżej, która jest listą SŁÓW — a lista słów nie ma
+     jak wrócić jako czyjaś wypowiedź.
+
+     Gdyby kiedyś wracać do kontekstu tekstowego: nie tędy. Musiałby jechać
+     osobnym polem protokołu (Deepgram ma `keywords`, Whisper ma `prompt`),
+     a nie akapitem doklejonym do tego, co model ma przepisać. */
   return parts.length ? `\n\n${parts.join("\n")}` : "";
+}
+
+/* ══ ZDANIA, KTÓRYCH NIKT NIE POWIEDZIAŁ ══
+
+   Druga linia obrony po zdjęciu ogona wyżej. Model potrafi przepisać własną
+   instrukcję także bez naszej pomocy — wystarczy, że „usłyszy" ciszę i sięgnie
+   po to, co ma przed oczami. Zdanie z promptu w zapisie rozmowy jest gorsze
+   niż dziura: dziurę widać, a zmyślone zdanie podpisane czyimś imieniem
+   wygląda dokładnie jak reszta zapisu.
+
+   Szukamy fragmentów WŁASNEGO promptu, nie „podejrzanych sformułowań" —
+   to jest zamknięta lista tego, co sami wysłaliśmy, więc nie ma jak trafić
+   w prawdziwą wypowiedź. Jedyne ryzyko to ktoś czytający ten prompt na głos,
+   a to nie jest sytuacja, którą trzeba obsłużyć.
+
+   ══ WZORCE SĄ DOSŁOWNE, I TO NIE JEST PEDANTERIA ══
+
+   Pierwsza wersja miała tu `/nie przepisuj/i` — krótko i, jak się wydawało,
+   celnie. Test złapał na tym zdanie „Nie przepisujcie tego do zeszytu, to
+   będzie na slajdach", czyli najzwyklejsze zdanie z zajęć. Sito, które
+   wycina wypowiedzi prowadzącego, jest gorsze od usterki, którą naprawia:
+   tamta zostawia w zapisie zdanie za dużo, to zabiera zdanie, które padło.
+
+   Każdy wzorzec niżej jest więc CAŁĄ frazą z naszego promptu, a nie jej
+   kawałkiem. Trafienie znaczy wtedy jedno: model oddał to, co dostał. */
+const PROMPT_ECHO = [
+  /\bKONTEKST\b/,
+  /nie przepisuj go ponownie/i,
+  /poprzedni fragment tej samej wypowiedzi/i,
+  /zwróć wyłącznie treść wypowiedzi/i,
+  /zapisz dokładnie to, co słychać w nagraniu/i,
+  /nazwy własne, które mogą paść/i,
+  /jeśli w nagraniu nie ma mowy, zwróć pusty tekst/i,
+  /nie zapętlaj ani nie powtarzaj w nieskończoność/i,
+];
+
+/**
+ * Czy model oddał kawałek instrukcji zamiast transkrypcji.
+ *
+ * @param {string} text
+ * @returns {string|null}  powód albo null
+ */
+function echoedPrompt(text) {
+  const clean = String(text ?? "").trim();
+  if (!clean) return null;
+  for (const pattern of PROMPT_ECHO) {
+    if (pattern.test(clean)) return `model przepisał instrukcję („${clean.slice(0, 60)}…")`;
+  }
+  return null;
 }
 
 async function dispatchWithProtection(dispatchFn) {
@@ -258,6 +399,25 @@ async function dispatchWithProtection(dispatchFn) {
   return withRetry(async (attempt = 1) => {
     const temperature = attempt > 1 ? 0.4 : 0.1;
     const out = await dispatchFn({ temperature, attempt });
+
+    /* Instrukcja przepisana zamiast dźwięku. Sprawdzane PRZED pętlą, bo to
+       jest inna usterka i inaczej się ją naprawia: pętlę da się zwinąć
+       (collapseLoops), przepisanej instrukcji nie da się uratować — nie ma
+       pod nią żadnej prawdziwej wypowiedzi. Odcinek wraca pusty, czyli
+       „nic nie padło", zamiast wnosić do zapisu cudze zdanie.
+
+       Drugie podejście dostaje szansę, bo model generuje za każdym razem
+       od nowa i ta sama próbka zwykle wraca normalnie. */
+    const echo = echoedPrompt(out.text);
+    if (echo) {
+      if (attempt === 1) {
+        const error = new Error(`Transkrypcja oddała instrukcję — ${echo}.`);
+        error.kind = "zapętlenie";
+        throw error;
+      }
+      return { ...out, text: "", promptEcho: echo };
+    }
+
     const looped = loopedTranscript(out.text);
     if (looped) {
       if (attempt === 1) {
@@ -463,7 +623,7 @@ async function geminiTranscribe(audio, model, apiKey, language, about, options =
       contents: [
         {
           parts: [
-            { text: VERBATIM_PROMPT + hint },
+            { text: promptFor(about) + hint },
             { inlineData: { mimeType: "audio/wav", data: audio.toString("base64") } },
           ],
         },
@@ -552,6 +712,42 @@ async function groqTranscribe(audio, model, apiKey, language, about, options = {
   return { text: (data.text ?? "").trim(), provider: "groq", model: model || "whisper-large-v3-turbo" };
 }
 
+/**
+ * Rozbicie słów z diaryzacji na tury mówców.
+ *
+ * Deepgram oddaje przy `diarize=true` numer mówiącego PRZY KAŻDYM SŁOWIE.
+ * Nam potrzebna jest tura — ciąg słów jednej osoby — bo zapis rozmowy składa
+ * się z wypowiedzi, nie ze słów.
+ *
+ * Numer jest lokalny dla jednego żądania i to jest ważne przy czytaniu tego,
+ * co z tego wychodzi: „mówca 0" w jednym odcinku nie musi być „mówcą 0"
+ * w następnym. Zszywaniem numerów między odcinkami zajmuje się main/merge.js,
+ * bo dopiero tam widać całe spotkanie.
+ *
+ * @returns {Array<{speaker:number, from:number, to:number, text:string}>}
+ */
+function turnsFrom(words) {
+  const turns = [];
+  for (const word of words ?? []) {
+    const said = String(word?.punctuated_word ?? word?.word ?? "").trim();
+    if (!said) continue;
+    const who = Number.isFinite(word?.speaker) ? word.speaker : 0;
+    const last = turns[turns.length - 1];
+    if (last && last.speaker === who) {
+      last.text = `${last.text} ${said}`;
+      last.to = Number(word?.end ?? last.to);
+      continue;
+    }
+    turns.push({
+      speaker: who,
+      from: Number(word?.start ?? 0),
+      to: Number(word?.end ?? 0),
+      text: said,
+    });
+  }
+  return turns;
+}
+
 async function deepgramTranscribe(audio, model, apiKey, language, about, options = {}) {
   const modelName = model || "nova-3";
   const code = fixedCode(language) || "pl";
@@ -559,6 +755,20 @@ async function deepgramTranscribe(audio, model, apiKey, language, about, options
   urlObj.searchParams.set("model", modelName);
   urlObj.searchParams.set("smart_format", "true");
   urlObj.searchParams.set("punctuate", "true");
+
+  /* ══ DIARYZACJA — TYLKO TAM, GDZIE JEST CO DZIELIĆ ══
+
+     Tor mikrofonu ma jedną osobę i ta osoba jest znana z okablowania:
+     to właściciel komputera. Puszczanie po nim diaryzacji nie tylko nic nie
+     wnosi — MOŻE ZASZKODZIĆ, bo model, który dostał pytanie „ilu tu mówi",
+     czasem odpowiada „dwóch" na jednym człowieku i pogłosie w pokoju.
+     A „kto jest mną" to jedyna rzecz w tym module, która dziś jest pewna,
+     i nie ma powodu zamieniać pewności sprzętowej na zgadywanie modelu.
+
+     Tor systemu to co innego: tam siedzą wszyscy zdalni rozmówcy zmieszani
+     w jedno wejście i bez diaryzacji trzy osoby na zajęciach zostają jedną
+     etykietą „Rozmówcy". Dopiero tu numer mówiącego coś wnosi. */
+  if (about?.diarize) urlObj.searchParams.set("diarize", "true");
 
   if (language?.mode === "bilingual") {
     urlObj.searchParams.set("detect_language", "true");
@@ -583,16 +793,22 @@ async function deepgramTranscribe(audio, model, apiKey, language, about, options
   if (!response.ok) throw new Error(await describeError(response, "Deepgram"));
 
   const data = await response.json();
-  const transcript =
-    data.results?.channels?.[0]?.alternatives?.[0]?.transcript ??
-    data.results?.channels?.[0]?.alternatives?.[0]?.words?.map((w) => w.word).join(" ") ??
-    "";
+  const best = data.results?.channels?.[0]?.alternatives?.[0] ?? {};
+  const transcript = best.transcript ?? best.words?.map((w) => w.word).join(" ") ?? "";
 
-  return {
+  const out = {
     text: transcript.trim(),
     provider: "deepgram",
     model: modelName,
   };
+  /* Tury jadą OBOK tekstu, a nie zamiast niego. Zapis ma powstać także
+     wtedy, gdy diaryzacja nic nie zwróci — jedna etykieta na tor jest
+     gorsza od trzech, ale nieporównanie lepsza od pustego odcinka. */
+  if (about?.diarize) {
+    const turns = turnsFrom(best.words);
+    if (turns.length) out.turns = turns;
+  }
+  return out;
 }
 
 /** Komunikat, z którym da się cokolwiek zrobić, zamiast samego kodu HTTP. */
@@ -632,5 +848,9 @@ module.exports = {
   withRetry,
   loopedTranscript,
   collapseLoops,
+  echoedPrompt,
+  turnsFrom,
+  promptFor,
+  LECTURE_PROMPT,
 };
 

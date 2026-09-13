@@ -142,6 +142,15 @@ app.whenReady().then(async () => {
      sekundach w ogóle powstały odcinki, a nie jeden ogryzek). Reszta drogi
      jest ta sama — prawdziwy dźwięk, prawdziwa krajalnica, prawdziwy splot. */
   if (problem) return finish(problem);
+  /* Polityka archiwum na czas TEGO fragmentu: sprawdzamy tu drogę, po której
+     dźwięku naprawdę nie ma. Domyślną jest dziś „always" (nagranie zostaje,
+     żeby dało się nim sprawdzić zapis), więc „never" trzeba wybrać wprost —
+     tak samo, jak wybiera je człowiek w ustawieniach.
+
+     Weryfikację wyłączamy razem z nim: uruchomiona w tle przepisywałaby
+     nagranie drugi raz w trakcie dalszych sprawdzeń i zmieniała wpis pod
+     ręką testu. */
+  store.saveSettings({ meetings: { archive: "never", verify: false } });
   const said = [];
   const scribe = new Meetings(store, {
     // Tor mikrofonu i tor systemu mówią co innego — inaczej splot uznałby
@@ -177,14 +186,20 @@ app.whenReady().then(async () => {
   say("zapis ma treść", lines.every((line) => !!line.text));
   say("znaczniki czasu rosną", lines.every((line, at) => at === 0 || line.at >= lines[at - 1].at));
 
-  /* Ustawienie mówi „nagranie ginie po transkrypcji" i ma to robić naprawdę.
-     Wyżej (bez klucza API) nic się nie przepisało i pliki ZOSTAŁY — bo nie
-     ma czym ich zastąpić. Tutaj przepisanie się udało, więc mają zniknąć. */
+  /* Ustawienie „archive: never" mówi „nagranie ginie po transkrypcji" i ma
+     to robić naprawdę. Wyżej (bez klucza API) nic się nie przepisało i pliki
+     ZOSTAŁY — bo nie ma czym ich zastąpić. Tutaj przepisanie się udało,
+     więc mają zniknąć.
+
+     POLITYKĘ USTAWIAMY WPROST, bo domyślną jest dziś „always": nagranie
+     zostaje, żeby dało się nim sprawdzić zapis (patrz archive w store.js).
+     Ten fragment sprawdza drogę przeciwną — tę, którą wybiera się świadomie
+     i po której dźwięku naprawdę nie ma. */
   /* ── Przepisanie jeszcze raz, z plików ──
      Osobne nagranie z zachowanym dźwiękiem: to jedyny krok w tym module,
      który wolno powtórzyć — i jedyny ratunek dla rozmowy nagranej bez
      klucza API. Sprawdzamy, że naprawdę czyta z DYSKU, a nie z pamięci. */
-  store.saveSettings({ meetings: { keepAudio: true } });
+  store.saveSettings({ meetings: { keepAudio: true, archive: "always" } });
   const kept = [];
   const again = new Meetings(store, {
     transcribe: async (wav, _s, about) => {
@@ -208,8 +223,12 @@ app.whenReady().then(async () => {
     const znowu = await again.retranscribe(zapis.meeting.id);
     say("przepisanie z plików wywołało model jeszcze raz", kept.length > przed);
     say("i dało zapis", znowu.length);
-    say("odcinki z pliku niosą kontekst poprzedniego",
-      kept.slice(przed).some((item) => item.context.length > 0));
+    /* Kontekstu odcinki już NIE NIOSĄ i to jest zamierzone: ogon poprzedniego
+       odcinka jechał do modelu jako zdanie, a model przepisywał to zdanie
+       jako czyjąś wypowiedź (patrz hintFor w main/stt.js). Pytamy więc
+       o rzecz odwrotną niż kiedyś — czy na pewno nic takiego nie jedzie. */
+    say("odcinki z pliku nie niosą kontekstu tekstowego",
+      kept.slice(przed).every((item) => !item.context));
     const po = store.getMeetings().find((item) => item.id === zapis.meeting.id);
     say("zapis wylądował we wpisie", po?.transcript?.length ?? 0);
     say("po przepisaniu nic już nie chodzi", !!po && po.transcribing !== true);
@@ -343,7 +362,7 @@ if (out.skip) {
   check("Każda wypowiedź ma treść", step("zapis ma treść") === true);
   check("Znaczniki czasu idą do przodu", step("znaczniki czasu rosną") === true);
   check(
-    "Po udanym przepisaniu nagranie znika z dysku — tak, jak mówi ustawienie",
+    "Przy polityce „never” udane przepisanie kasuje nagranie",
     step("po przepisaniu nagranie znika z dysku") === true,
   );
   check("…i w katalogu nie ma już żadnego pliku dźwiękowego", step("…i naprawdę nie ma go w katalogu") === 0);
@@ -365,9 +384,21 @@ if (out.skip) {
       step("przepisanie z plików wywołało model jeszcze raz") === true,
     );
     check("…i daje zapis rozmowy", step("i dało zapis") >= 1);
+    /* ══ CIĄGŁOŚĆ STOI NA DŹWIĘKU, NIE NA ZDANIU W PROMPCIE ══
+
+       Ten krok sprawdzał kiedyś, czy odcinki niosą do modelu ogon
+       poprzedniego. Dziś sprawdza rzecz odwrotną — i jest to poprawka po
+       awarii, którą widać było w zapisie zajęć: model PRZEPISYWAŁ tę
+       podpowiedź jako wypowiedź („To jest KONTEKST, nie przepisuj go
+       ponownie" podpisane rozmówcą), a ogon następnego odcinka bierze się
+       z tekstu poprzedniego, więc zatrucie wracało w kółko.
+
+       Ciągłość między odcinkami zapewnia dziś zakładka dźwiękowa i zdjęcie
+       powtórzenia przy splocie — czyli materiał, a nie zdanie, które ma jak
+       wrócić jako czyjaś wypowiedź. */
     check(
-      "…z ciągłością między odcinkami",
-      step("odcinki z pliku niosą kontekst poprzedniego") === true,
+      "…bez kontekstu tekstowego, który model mógłby przepisać",
+      step("odcinki z pliku nie niosą kontekstu tekstowego") === true,
     );
     check("…który ląduje we wpisie", step("zapis wylądował we wpisie") >= 1);
     check("…i nie zostawia stanu „przepisuję”", step("po przepisaniu nic już nie chodzi") === true);

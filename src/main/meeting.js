@@ -7,8 +7,22 @@ const { cutter, FLOOR } = require("./segments");
 const { splice } = require("./merge");
 const { shrink, expand } = require("./audio");
 const { transcribe: defaultTranscribe, isRateLimit } = require("./stt");
+const { compare } = require("./verify");
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Czy ten odcinek ma iść z rozbiciem na mówców.
+ *
+ * TYLKO TOR SYSTEMU. Tor mikrofonu ma jedną osobę i wiadomo, którą — to
+ * wynika z osobnego wejścia dźwięku, a nie z modelu. Puszczanie po nim
+ * diaryzacji nie wniosłoby nic, a mogłoby zaszkodzić: model zapytany „ilu
+ * tu mówi" odpowiada czasem „dwóch" na jednym człowieku i pogłosie w pokoju.
+ * „Kto jest mną" jest w tym module jedyną rzeczą pewną i nie ma powodu
+ * zamieniać pewności sprzętowej na zgadywanie.
+ */
+const diarizeFor = (lane, settings) =>
+  lane === "system" && settings?.meetings?.diarize !== false;
 
 /**
  * Przebieg spotkania — start, koniec i to, co zostaje.
@@ -166,9 +180,20 @@ class Meetings {
       prober: null,
       probing: false,
       drainingQueue: false,
-      /* Ogon ostatniego odcinka każdego toru i słowniczek nazw własnych —
-         jedno i drugie idzie do modelu razem z następnym odcinkiem. */
-      tails: { mic: "", system: "" },
+      /* Słowniczek nazw własnych — jedyne, co jedzie do modelu razem
+         z odcinkiem.
+
+         OGONA POPRZEDNIEGO ODCINKA TU NIE MA i to jest poprawka, nie
+         uproszczenie. Ogon szedł do modelu jako kontekst („poprzedni
+         fragment kończył się tak…") i model PRZEPISYWAŁ tę instrukcję jako
+         wypowiedź — a że ogon następnego odcinka bierze się z tekstu
+         poprzedniego, przepisana instrukcja wracała w kółko i zostawała
+         do końca spotkania. Szczegóły przy hintFor w main/stt.js.
+
+         Ciągłość między odcinkami stoi na zakładce dźwiękowej (OVERLAP
+         w main/segments.js) i na zdjęciu powtórzenia przy splocie
+         (trimRepeat w main/merge.js) — a to jest materiał, nie zdanie
+         w prompcie, więc nie ma jak wrócić jako czyjaś wypowiedź. */
       glossary: [],
       speakers: null,
       /* Ile ciszy z rzędu w każdym torze — liczone odcinkami, nie sekundami. */
@@ -580,8 +605,9 @@ class Meetings {
           lane: piece.lane,
           from: piece.from,
           to: piece.to,
-          context: session.tails?.[piece.lane] ?? "",
           glossary: session.glossary ?? [],
+          diarize: diarizeFor(piece.lane, this.store.getSettings()),
+          kind: "meeting",
         }, piece.voiced);
 
         session.misses = 0;
@@ -598,9 +624,6 @@ class Meetings {
            który w tej chwili może właśnie przepisywać tę samą rozmowę. */
         if (session.closed) return;
         session.pieces.push({ lane: piece.lane, from: piece.from, to: piece.to, text: said });
-        // Ogon dla następnego odcinka tego toru — tyle, ile wystarczy na
-        // kontekst, a nie tyle, żeby model zaczął go przepisywać.
-        session.tails[piece.lane] = said.slice(-320);
         this.#stitch(session);
       } catch (problem) {
         session.misses += 1;
@@ -1006,8 +1029,9 @@ class Meetings {
             lane: item.piece.lane,
             from: item.piece.from,
             to: item.piece.to,
-            context: session.tails?.[item.piece.lane] ?? "",
             glossary: session.glossary ?? [],
+            diarize: diarizeFor(item.piece.lane, this.store.getSettings()),
+            kind: "meeting",
           },
           item.piece.voiced,
         );
@@ -1032,8 +1056,7 @@ class Meetings {
               to: item.piece.to,
               text: said,
             });
-            session.tails[item.piece.lane] = said.slice(-320);
-            this.#stitch(session);
+                this.#stitch(session);
           }
         }
         this.#tell(
@@ -1068,8 +1091,9 @@ class Meetings {
               lane: item.piece.lane,
               from: item.piece.from,
               to: item.piece.to,
-              context: session.tails?.[item.piece.lane] ?? "",
               glossary: session.glossary ?? [],
+              diarize: diarizeFor(item.piece.lane, this.store.getSettings()),
+              kind: "meeting",
             },
             item.piece.voiced,
           );
@@ -1092,7 +1116,6 @@ class Meetings {
           to: item.piece.to,
           text: said,
         });
-        session.tails[item.piece.lane] = said.slice(-320);
         this.#stitch(session);
       }
     } finally {
@@ -1196,7 +1219,27 @@ class Meetings {
 
        Dziś decyduje POKRYCIE, a nie długość: nagranie zostaje, dopóki
        istnieje choć jeden odcinek, w którym coś mówiono, a nie wiadomo co. */
-    const keepAudio = settings.meetings?.keepAudio === true || !coverage.complete;
+    /* ══ NAGRANIE ZOSTAJE ══
+
+       Trzy powody, każdy wystarczający sam z siebie:
+
+         ARCHIWUM       ustawienie `archive` (domyślnie „always"). Zapis
+                        z zajęć bez nagrania jest zapisem, którego nie da
+                        się z niczym zestawić.
+         WALIDACJA      przebieg z pliku ma jeszcze przed sobą (verify
+                        niżej) i to on da zapis właściwy.
+         NIEPEŁNOŚĆ     dawny warunek: pokrycie nie sięgnęło końca, więc
+                        jest jeszcze co przepisywać.
+
+       Dawne domyślne zachowanie („never") zostało tam, gdzie było —
+       wyborem, a nie stanem, w którym człowiek się budzi. */
+    const mode = settings.meetings?.archive ?? "always";
+    const willVerify = settings.meetings?.verify !== false;
+    const keepAudio =
+      mode === "always" ||
+      (mode === "until-verified" && willVerify) ||
+      settings.meetings?.keepAudio === true ||
+      !coverage.complete;
     let tracks = null;
     if (keepAudio) {
       /* ══ CO ŚCISKAMY, A CZEGO NIE ══
@@ -1211,7 +1254,20 @@ class Meetings {
          surowe. Trzymamy je po to, żeby przepisać je jeszcze raz — i ten
          jeden raz zasługuje na materiał bez strat. Ściśniemy je, kiedy
          przepisywanie się uda. */
-      const forKeeps = settings.meetings?.keepAudio === true;
+      /* ══ ŚCISKAMY DOPIERO PO UDANYM PRZEPISANIU ══
+
+         Archiwum nie zmienia tej jednej zasady i nie wolno mu jej zmienić.
+         Nagranie, przy którym przepisywanie ZAWIODŁO, zostaje SUROWE —
+         trzymamy je po to, żeby przepisać je jeszcze raz, a ten jeden raz
+         zasługuje na materiał bez strat. Ściśniemy je, kiedy przepisywanie
+         się uda (patrz koniec retranscribe).
+
+         Pierwsza wersja archiwum ściskała wszystko jak leci i wyszło to
+         w teście: tor mikrofonu przestawał być WAV-em dokładnie tam, gdzie
+         zapis był niepełny — czyli w jedynym przypadku, w którym plik jest
+         jeszcze do czegoś potrzebny. */
+      const forKeeps =
+        coverage.complete && (mode === "always" || settings.meetings?.keepAudio === true);
       tracks = forKeeps
         ? { mic: await shrink(result.files.mic), system: await shrink(result.files.system) }
         : result.files;
@@ -1225,6 +1281,13 @@ class Meetings {
       state: "done",
       tracks,
       transcript,
+      /* Szkic — ten sam zapis, ale zapamiętany jako to, czym jest:
+         wynik przepisywania POD PRESJĄ CZASU. Przebieg z pliku (verify
+         niżej) nadpisze `transcript`, a to zostanie do porównania.
+         Bez tej kopii „co się zmieniło po weryfikacji" nie miałoby
+         odpowiedzi — a to jest pytanie, które pada jako pierwsze. */
+      draft: transcript,
+      verification: null,
       coverage,
       /* Zdanie dla człowieka, nie liczba dla programu. Stoi we wpisie, bo
          to jest pierwsza rzecz, którą trzeba wiedzieć o zapisie rozmowy —
@@ -1242,7 +1305,71 @@ class Meetings {
     });
     this.#flushStoreNow();
     this.#tell(this.onChange);
+
+    /* ══ DRUGI PRZEBIEG — TEN, KTÓRY DAJE ZAPIS WŁAŚCIWY ══
+
+       Przepisywanie w biegu skończyło się przed chwilą i jest szkicem:
+       leciało odcinkami, pod presją czasu, bez wiedzy o tym, co będzie
+       dalej. Teraz jest cały plik i nie ma się dokąd spieszyć — więc ten
+       sam dźwięk idzie jeszcze raz, z diaryzacją, i to on zostaje zapisem.
+
+       IDZIE W TLE i celowo nie jest czekane. „Koniec spotkania" ma być
+       końcem spotkania, a nie początkiem czekania na drugie przepisywanie
+       godziny dźwięku. Wpis ma już stan „done" i treść szkicu, więc
+       w oknie jest co pokazać; weryfikacja dopisze się, gdy skończy.
+
+       Błąd tu nie jest awarią spotkania: zapis ze szkicu został, nagranie
+       też, a „Przepisz jeszcze raz" stoi w zakładce i działa ręką. */
+    /* ══ TYLKO PO UDANYM PRZEPISYWANIU ══
+
+       Weryfikacja idzie sama WYŁĄCZNIE wtedy, gdy przepisywanie w biegu
+       doszło do końca. Przy zapisie niepełnym — bo nie było sieci, bo
+       zabrakło klucza, bo odcinki nie wróciły — drugi przebieg poleciałby
+       w to samo i przegrał tak samo, a po drodze zamazałby zdanie mówiące,
+       CO SIĘ STAŁO, wynikiem drugiej porażki. Zapis niepełny ma swój własny
+       komunikat i swój własny przycisk („Przepisz jeszcze raz"), którym
+       człowiek sięgnie po to wtedy, gdy sieć wróci.
+
+       To jest zarazem różnica między dwiema drogami do tego samego kodu:
+       weryfikacja POPRAWIA zapis, który jest; retranscribe RATUJE zapis,
+       którego nie ma. Pierwsza dzieje się sama, druga na żądanie. */
+    if (settings.meetings?.verify !== false && tracks?.mic && coverage.complete && !session.fatal) {
+      void this.verify(id).catch((problem) => {
+        this.store.updateMeeting(id, {
+          verification: { error: String(problem?.message || problem) },
+        });
+        this.#tell(this.onChange);
+      });
+    }
+
     return { discarded: false, meeting, coverage };
+  }
+
+  /**
+   * Weryfikacja zapisu nagraniem.
+   *
+   * Przepisuje plik od zera (retranscribe) i porównuje wynik ze szkicem
+   * z biegu. Zapisem właściwym zostaje ten z pliku — nie dlatego, że jest
+   * nowszy, tylko dlatego, że powstał w lepszych warunkach: z całego
+   * materiału, bez presji czasu i z rozbiciem na mówców.
+   *
+   * Szkic zostaje obok, razem z liczbą mówiącą, na ile te dwa zapisy się
+   * zgadzają, i listą wierszy, których w szkicu nie było. To jest cała
+   * odpowiedź na pytanie „czy temu zapisowi można ufać" — i jedyna, jaką
+   * da się dać uczciwie.
+   */
+  async verify(id) {
+    const before = this.store.getMeetings().find((item) => item.id === id);
+    if (!before) throw new Error("Nie ma takiego spotkania.");
+    const draft = before.draft?.length ? before.draft : (before.transcript ?? []);
+
+    const transcript = await this.retranscribe(id);
+
+    const verification = compare(draft, transcript);
+    this.store.updateMeeting(id, { verification, verifiedAt: new Date().toISOString() });
+    this.#flushStoreNow();
+    this.#tell(this.onChange);
+    return verification;
   }
 
   /**
@@ -1404,7 +1531,6 @@ class Meetings {
     this.#tell(this.onChange);
 
     const pieces = [];
-    const tails = { mic: "", system: "" };
     const glossary = meeting.people ?? [];
     const settings = this.store.getSettings();
     /* Przebieg z pliku prowadzi własny rejestr — z tego samego powodu,
@@ -1447,7 +1573,7 @@ class Meetings {
             try {
               said = await this.#say(
                 wav,
-                { lane, from: piece.from, to: piece.to, context: tails[lane], glossary },
+                { lane, from: piece.from, to: piece.to, glossary, diarize: diarizeFor(lane, settings), kind: "meeting" },
                 piece.voiced,
               );
             } catch (problem) {
@@ -1462,7 +1588,6 @@ class Meetings {
               continue;
             }
             note({ ...piece, lane }, "done");
-            tails[lane] = said.slice(-320);
             pieces.push({ lane, from: piece.from, to: piece.to, text: said });
             /* Zapisujemy po każdym odcinku. Przepisanie godziny trwa
                kilka minut i przez ten czas ma być WIDAĆ, że coś rośnie —
@@ -1516,7 +1641,13 @@ class Meetings {
          przepisaną rozmową i nie wolno jej kupić za nagranie. */
       let tracks = meeting.tracks;
       if (coverage.complete) {
-        if (settings.meetings?.keepAudio === true) {
+        /* Ta sama klamra co przy stop(): archiwum wygrywa z kasowaniem.
+           Przebieg z pliku jest ostatnią drogą do tekstu, ale nie ostatnim
+           powodem, żeby trzymać dźwięk — „until-verified" właśnie tutaj
+           przestaje obowiązywać, bo weryfikacja przed chwilą się odbyła. */
+        const mode = settings.meetings?.archive ?? "always";
+        const keep = mode === "always" || settings.meetings?.keepAudio === true;
+        if (keep) {
           tracks = { mic: await shrink(files.mic), system: await shrink(files.system) };
         } else {
           for (const file of Object.values(files)) fs.rmSync(file, { force: true });
