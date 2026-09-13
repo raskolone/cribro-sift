@@ -38,6 +38,7 @@ const { deliver, frontmostApp } = require("./paste");
 const { toAppleNotes, toMarkdown } = require("./share");
 const { noteToPdf, folderToPdf } = require("./pdf");
 const { sendNote: sendToNotion, check: checkNotion } = require("./notion");
+const recall = require("./recall");
 const { detectConflicts } = require("./shortcuts");
 const { grabRegion, readText, compose, stampName, imageLink } = require("./shot");
 const { Meetings } = require("./meeting");
@@ -5403,6 +5404,56 @@ function registerIpc() {
     const note = keepMeetingNote(id);
     broadcast("meeting:changed", meetingState());
     return note;
+  });
+
+  /* Zapis rozmowy → lekcja w Cribro Recall (patrz main/recall.js).
+
+     Wysyłka jest kliknięciem, nie automatem: zapis rozmowy z lekcji jest
+     nagraniem drugiego człowieka i decyzja, że TA rozmowa ma trafić do
+     jego historii lekcji, zapada za każdym razem osobno.
+
+     Funkcja jest własnością lektora — `recall` nie wychodzi do okna
+     zwykłemu użytkownikowi (main/owner.js), więc most jest tu domknięty
+     po raz drugi, po stronie wywołania. */
+  ipcMain.handle("recall:send", async (_e, { id, email, topic } = {}) => {
+    if (!ownerHere()) return { ok: false, error: "Funkcja dostępna tylko dla właściciela." };
+
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting) return { ok: false, error: "Nie ma takiego spotkania." };
+
+    store.updateMeeting(id, { sending: true, sendError: null });
+    broadcast("meeting:changed", meetingState());
+    try {
+      const settings = store.getSettings();
+      const result = await recall.send({ settings, meeting, studentEmail: email, topic });
+
+      /* Adres zapamiętujemy dopiero po udanej wysyłce — lista ma być
+         spisem kursantów, którzy naprawdę są w Recall, a nie historią
+         literówek. */
+      const known = settings.recall?.students ?? [];
+      const address = String(email).trim();
+      if (!known.includes(address)) {
+        store.saveSettings({ recall: { students: [...known, address].slice(-40) } });
+      }
+
+      store.updateMeeting(id, {
+        sending: false,
+        sendError: null,
+        recall: {
+          sentAt: new Date().toISOString(),
+          lessonId: result.lessonId,
+          studentEmail: address,
+          action: result.action,
+        },
+      });
+      return { ok: true, ...result };
+    } catch (problem) {
+      store.updateMeeting(id, { sending: false, sendError: problem.message });
+      tellError("Recall", problem.message);
+      return { ok: false, error: problem.message };
+    } finally {
+      broadcast("meeting:changed", meetingState());
+    }
   });
 
   /* Rozmowa przesiana przez sito — trzecia postać tej samej rozmowy.

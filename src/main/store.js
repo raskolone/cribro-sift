@@ -160,6 +160,21 @@ const DEFAULTS = {
      main/supabase.js. */
   cloud: { enabled: false, url: "", anonKey: "", autoSync: true },
 
+  /* Most do Cribro Recall — zapis rozmowy z lekcji staje się lekcją
+     w historii kursanta (patrz main/recall.js).
+
+     Puste i bez przełącznika „włączone": most działa wtedy, gdy ma adres
+     i token, a nie wtedy, gdy ktoś odhaczył pole. Jedno mniej do
+     rozjechania się z drugim.
+
+     `students` to lista adresów użytych wcześniej — zakładka tego
+     komputera, żeby nie przepisywać adresu przy każdej lekcji. Nie jest
+     spisem kursantów; spis mieszka w Recall.
+
+     Token jest widoczny i zapisywalny wyłącznie dla właściciela
+     (main/owner.js): pozwala dopisywać lekcje do cudzej bazy. */
+  recall: { url: "", token: "", students: [] },
+
   /* Tekst z ekranu — trzecia droga, którą tekst wchodzi do Cribro
      (patrz main/shot.js). Zaznaczasz kawałek ekranu, a to, co na nim widać,
      staje się notatką: tekstem, obrazkiem albo jednym i drugim.

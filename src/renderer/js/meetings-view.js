@@ -314,6 +314,20 @@
         return;
       }
 
+      const toRecallBtn = event.target.closest("[data-meet-recall]");
+      if (toRecallBtn) {
+        const field = root.querySelector("[data-meet-recall-email]");
+        const email = String(field?.value ?? "").trim();
+        if (!email) {
+          field?.focus();
+          return;
+        }
+        /* Temat lekcji bierzemy z tytułu spotkania — ten sam, który widać
+           w spisie. Recall nada własny, jeśli tytułu nie ma. */
+        await api.meetings.toRecall(toRecallBtn.dataset.meetRecall, email);
+        return;
+      }
+
       const again = event.target.closest("[data-meet-again]");
       if (again) {
         await api.meetings.retranscribe(again.dataset.meetAgain);
@@ -1129,7 +1143,9 @@
             ${t("Przepisywanie się nie udało")}: ${escape(meeting.transcriptError)}
           </p>${again}`;
       }
-      if (meeting.transcript?.length) return `${transcript(meeting, live)}${live ? "" : again}`;
+      if (meeting.transcript?.length) {
+        return `${transcript(meeting, live)}${live ? "" : again}${live ? "" : toRecall(meeting)}`;
+      }
       return `<p class="meet__blank">
           ${
             live
@@ -1211,6 +1227,61 @@
             : t("Podsumowanie powstaje z zapisu rozmowy i z notatek, według wybranych wytycznych.")
         }
       </p>${button}`;
+  }
+
+  /**
+   * Wysyłka zapisu rozmowy do Cribro Recall.
+   *
+   * ══ DLACZEGO TU, A NIE PRZY PODSUMOWANIU ══
+   *
+   * Bo to zapis rozmowy jedzie do Recall, nie podsumowanie — bloki lekcji
+   * układa tam model z surowego tekstu. Przycisk stoi obok tego, co wysyła.
+   *
+   * ══ DLACZEGO ADRES, A NIE LISTA KURSANTÓW ══
+   *
+   * Spis kursantów mieszka w Recall i Sift nie ma prawa go znać: to dane
+   * cudzej aplikacji, a pobieranie ich tutaj oznaczałoby drugi endpoint,
+   * drugi zakres uprawnień tokena i kopię listy uczniów na tym dysku.
+   * Adres wpisuje się raz — potem jest w podpowiedziach.
+   *
+   * Widoczne wyłącznie dla właściciela i tylko wtedy, gdy most jest
+   * skonfigurowany: dla kogoś, kto nie prowadzi lekcji, ten przycisk jest
+   * przyciskiem do nikąd.
+   */
+  function toRecall(meeting) {
+    const cfg = state.settings?.recall;
+    if (!state.settings?.owner || !cfg?.url || !cfg?.token) return "";
+
+    const sent = meeting.recall;
+    const known = Array.isArray(cfg.students) ? cfg.students : [];
+    const chosen = sent?.studentEmail ?? known[known.length - 1] ?? "";
+
+    const status = meeting.sending
+      ? `<span class="meet__sent meet__sent--work">${t("Wysyłam do Recall…")}</span>`
+      : meeting.sendError
+        ? `<span class="meet__sent meet__sent--bad">${escape(meeting.sendError)}</span>`
+        : sent
+          ? `<span class="meet__sent">${t("W Recall jako lekcja")} · ${escape(sent.studentEmail)} · ${when(sent.sentAt)}</span>`
+          : "";
+
+    /* Lista podpowiedzi, a nie zamknięty wybór: nowy kursant ma dać się
+       wpisać bez chodzenia do ustawień. */
+    const options = known
+      .map((address) => `<option value="${escape(address)}"></option>`)
+      .join("");
+
+    return `
+      <div class="meet__act meet__act--recall">
+        <input type="email" list="meetRecallStudents" data-meet-recall-email
+               value="${escape(chosen)}" placeholder="${t("adres kursanta")}"
+               autocomplete="off" spellcheck="false" />
+        <datalist id="meetRecallStudents">${options}</datalist>
+        <button class="btn btn--sm" data-meet-recall="${meeting.id}"
+                ${meeting.sending ? "disabled" : ""}>
+          ${t(sent ? "Wyślij ponownie" : "Wyślij do Recall")}
+        </button>
+        ${status}
+      </div>`;
   }
 
   /** Zapis rozmowy: kto, kiedy, co. */

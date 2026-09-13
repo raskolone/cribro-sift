@@ -1346,6 +1346,8 @@ function renderSettings() {
 
     ${renderNotion()}
 
+    ${renderRecall()}
+
     <div class="card">
       <h2>Prywatność</h2>
       <p class="sub">
@@ -1970,6 +1972,75 @@ function renderNotion() {
         </div>
       </div>
       ${message}
+    </div>`;
+}
+
+/**
+ * Most do Cribro Recall.
+ *
+ * ══ CZYM TO NIE JEST ══
+ *
+ * Nie jest kopią w chmurze i nie jest synchronizacją. Zapis rozmowy z lekcji
+ * jedzie w jedną stronę i staje się tam lekcją w historii kursanta — tak samo
+ * jednokierunkowo, jak notatka jedzie do Notion. Z Recall nic tu nie wraca.
+ *
+ * ══ DLACZEGO KARTA JEST TYLKO DLA WŁAŚCICIELA ══
+ *
+ * Token pozwala dopisywać lekcje do cudzej bazy, a prowadzenie lekcji nie
+ * jest funkcją tej aplikacji — to prywatny potok jednej osoby. Ustawienia
+ * `recall` nie wychodzą do okna zwykłemu użytkownikowi (main/owner.js),
+ * więc bez tego warunku karta stałaby tu pusta i nie dałaby się wypełnić.
+ */
+function renderRecall() {
+  if (!state.settings?.owner) return "";
+  const cfg = state.settings.recall ?? {};
+  const known = Array.isArray(cfg.students) ? cfg.students : [];
+
+  return `
+    <div class="card">
+      <h2>Cribro Recall</h2>
+      <p class="sub">
+        Zapis rozmowy z lekcji jako lekcja w historii kursanta. Wysyłasz go
+        ręcznie, z zakładki „Transkrypcja" przy spotkaniu — nic nie wychodzi
+        samo. Nagranie nie wychodzi nigdy, tylko tekst.
+      </p>
+
+      <div class="field">
+        <div class="field__label">
+          <strong>Adres punktu odbioru</strong>
+          <span>
+            Adres funkcji <code>ingestTranscript</code> z projektu Recall.
+            Wyłącznie po https — token jedzie w nagłówku.
+          </span>
+        </div>
+        <div class="field__control">
+          <input type="text" data-setting="recall.url" value="${escape(cfg.url ?? "")}"
+                 placeholder="https://us-central1-….cloudfunctions.net/ingestTranscript" />
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field__label">
+          <strong>Token wysyłki</strong>
+          <span>
+            Ten sam, który stoi w Recall jako sekret <code>SIFT_INGEST_TOKEN</code>.
+            Nie jest hasłem do konta i nie daje wglądu w dane kursantów — pozwala
+            wyłącznie dopisać transkrypcję.
+          </span>
+        </div>
+        <div class="field__control">
+          <input type="password" data-setting="recall.token" value="${escape(cfg.token ?? "")}"
+                 placeholder="—" />
+        </div>
+      </div>
+
+      <p class="hintline">
+        ${
+          known.length
+            ? `Kursanci użyci wcześniej: ${escape(known.slice(-6).join(", "))}.`
+            : "Adres kursanta wpisuje się przy pierwszej wysyłce — potem jest w podpowiedziach."
+        }
+      </p>
     </div>`;
 }
 

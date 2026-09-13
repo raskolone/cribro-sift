@@ -3154,6 +3154,26 @@ input.tag-input:focus {
   padding-top: var(--s-4);
   border-top: 1px solid var(--line);
 }
+/* Wysyłka zapisu do Cribro Recall: adres kursanta i przycisk w jednym
+   rzędzie, stan wysyłki obok nich. Pole rośnie, przycisk nie — adres bywa
+   długi, a „Wyślij" ma zawsze tyle samo liter. */
+.meet__act--recall {
+  align-items: center;
+}
+.meet__act--recall input[type="email"] {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+.meet__sent {
+  flex: 1 1 100%;
+  font-size: var(--fs-1);
+  color: var(--text-mute);
+}
+.meet__sent--work { color: var(--text); }
+/* Kolor jako sygnał stanu, nie jako ozdoba — nieudana wysyłka jest jedyną
+   rzeczą w tym rzędzie, która wymaga reakcji. */
+.meet__sent--bad { color: var(--danger); }
+
 /* Rząd przycisków, który nie kończy sekcji, tylko do niej należy. */
 .meet__act--tight {
   margin-top: var(--s-2);

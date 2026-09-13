@@ -118,8 +118,13 @@ function publicSettings(settings, owner, ready = () => true) {
     return rest;
   };
 
+  /* Most do Cribro Recall to prywatny potok lektora, nie funkcja aplikacji:
+     jego token pozwala dopisywać lekcje do cudzej bazy. Zwykły użytkownik
+     nie ma go ani widzieć w ustawieniach, ani dostać do okna. */
+  const { recall: _recall, ...withoutRecall } = settings ?? {};
+
   return {
-    ...settings,
+    ...withoutRecall,
     owner: false,
     stt: strip("stt"),
     sieve: strip("sieve"),
@@ -141,6 +146,9 @@ const SEALED = ["provider", "model", "apiKey", "fallbackProvider", "fallbackMode
 function sealPatch(patch, owner) {
   if (owner || !patch || typeof patch !== "object") return patch;
   const out = { ...patch };
+  // Most do Recall — patrz publicSettings. Most jest mostem i przez most
+  // da się wysłać cokolwiek, więc zapis odrzucamy tak samo jak odczyt.
+  delete out.recall;
   for (const stage of ["stt", "sieve", "shot"]) {
     if (!out[stage] || typeof out[stage] !== "object") continue;
     const step = { ...out[stage] };

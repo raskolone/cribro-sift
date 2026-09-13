@@ -211,6 +211,10 @@ contextBridge.exposeInMainWorld("cribro", {
        „pokaż mi ją" — a nie „zrób ją". Drugiej kopii nie zakłada. */
     toNote: (id) => ipcRenderer.invoke("meetings:toNote", { id }),
     copy: (id) => ipcRenderer.invoke("meetings:copy", id),
+    /* Zapis rozmowy → lekcja w Cribro Recall. Wychodzi wyłącznie tekst
+       zapisu i to, komu go przypisać — nagranie nie wychodzi nigdy.
+       Dostępne tylko właścicielowi; patrz main/recall.js. */
+    toRecall: (id, email, topic) => ipcRenderer.invoke("recall:send", { id, email, topic }),
     // Rozmowa bez szumu — to samo sito, co przy dyktowaniu, tylko materiał
     // ma dwie strony zamiast jednej.
     polish: (id) => ipcRenderer.invoke("meetings:polish", id),
