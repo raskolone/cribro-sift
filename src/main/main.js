@@ -2334,6 +2334,9 @@ function meetingMenuItem(t) {
   return {
     label: live ? t("Zakończ spotkanie") : t("Nagraj spotkanie"),
     click: () => toggleMeeting(),
+    /* Pozycja w menu znika, gdy admin wyłączy spotkania. Trwające nagranie
+       kończy się normalnie — blokujemy tylko nowe. */
+    visible: live || admin.allowed(myFeatures, "meetings"),
   };
 }
 
@@ -2344,6 +2347,12 @@ function meetingMenuItem(t) {
  */
 async function toggleMeeting(about = null) {
   try {
+    /* Trwające nagranie kończy się normalnie — blokujemy tylko nowe.
+       Wyłączenie funkcji to decyzja admina, nie awaria, więc leci cicho. */
+    if (!meetings.recording && !admin.allowed(myFeatures, "meetings")) {
+      logger.logTask("SPOTKANIE", "Odrzucono — funkcja wyłączona przez admina");
+      return;
+    }
     if (meetings.recording) {
       // Cokolwiek kończy to nagranie, po jego końcu nie ma już czego
       // kończyć razem ze zniknięciem okna rozmowy.
@@ -2778,6 +2787,9 @@ async function meetingSpotted(meeting) {
     return; // nagrywamy już — nie ma o co pytać
   }
 
+  /* Admin wyłączył spotkania — wykrywanie nie proponuje nagrywania. */
+  if (!admin.allowed(myFeatures, "meetings")) return;
+
   const how = store.getSettings().meetings?.detect ?? "ask";
   if (how === "auto" && refusedRoom) return; // odmowa wiąże także tryb bez pytania
   if (how === "auto") {
@@ -2965,6 +2977,8 @@ async function lookAtAgenda({ force = false, patience } = {}) {
      trwa — człowiek czeka na odpowiedź, tło może poczekać na następną
      turę. */
   if (!force && !settings.meetings?.calendar) return;
+  /* Kalendarz nie proponuje nagrywania, gdy admin wyłączył spotkania. */
+  if (!force && !admin.allowed(myFeatures, "meetings")) return;
   if (!force && agendaBusy) return;
 
   agendaBusy = true;
@@ -3982,8 +3996,17 @@ function tellSettings(settings = store.getSettings()) {
  * raz padnie „Brak klucza API dla dostawcy «gemini»". Patrz scrub
  * w main/owner.js.
  */
-function tellError(stage, message) {
-  broadcast("pipeline:error", { stage, message: ownership.scrub(message, ownerHere()) });
+function tellError(stage, message, originalError) {
+  broadcast("pipeline:error", {
+    stage,
+    message: ownership.scrub(message, ownerHere()),
+    /* Przyczyna, nie komunikat: „brak klucza", „429", „zapętlenie" —
+       bez tego użytkownik widzi tylko „spróbuj za chwilę" i nie wie,
+       czy problem jest w kluczu, w sieci, czy w modelu. */
+    originalError: originalError
+      ? ownership.scrub(String(originalError), ownerHere())
+      : undefined,
+  });
 }
 
 /* Ta sama notatka bywa otwarta w kilku oknach naraz. Okno, które właśnie
@@ -4027,7 +4050,10 @@ function setState(next, detail = {}) {
     tray.setImage(trayIcon(TRAY_ICON[next] ? next : "idle"));
     tray.setToolTip(TRAY_TOOLTIP[next] ?? TRAY_TOOLTIP.idle);
   }
-  broadcast("state", { state: next, ...detail });
+  const cleanDetail = detail.originalError
+    ? { ...detail, originalError: ownership.scrub(String(detail.originalError), ownerHere()) }
+    : detail;
+  broadcast("state", { state: next, ...cleanDetail });
 
   if (next === "idle") {
     hotkeys?.release();
@@ -4339,7 +4365,7 @@ async function runPipeline(audioBuffer, durationMs) {
         `Zapętlenie transkrypcji: ${message}${rescueId ? ` (zapisano w ratunku: ${rescueId})` : ""}`,
         { stage, error: message, rescueId },
       );
-      tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
+      tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.", message);
       setState("idle", {
         error: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.",
         stage,
@@ -4361,7 +4387,7 @@ async function runPipeline(audioBuffer, durationMs) {
         raw: raw ?? null,
       });
       logger.logError("DYKTOWANIE", `Błąd na etapie ${stage}: ${message}. Zapisano nagranie do ratunku (id: ${rescueId})`, { stage, error: message });
-      tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
+      tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.", message);
       setState("idle", {
         error: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.",
         rescued: true,
@@ -4373,7 +4399,7 @@ async function runPipeline(audioBuffer, durationMs) {
     }
 
     logger.logError("DYKTOWANIE", `Błąd na etapie ${stage}: ${message}`, { stage, error: message });
-    tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
+    tellError(stage, "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.", message);
     setState("idle", { error: "Nie udało się przetworzyć tekstu. Spróbuj za chwilę.", stage, originalError: message });
   } finally {
     activePipeline = null;
@@ -5501,6 +5527,11 @@ function registerIpc() {
       tellError("transkrypcja", problem.message);
       return false;
     }
+  });
+
+  /* Quick Feedback na żywo — snapshot ostatnich 10 minut wypowiedzi kursanta */
+  ipcMain.handle("meetings:feedback", (_e, id) => {
+    return meetings.quickFeedback(id);
   });
   /* „Notuj to spotkanie" przy wpisie z kalendarza. Zgoda zapada RAZ,
      przed spotkaniem — a nie w chwili, w której trzeba już słuchać. */

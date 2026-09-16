@@ -1196,9 +1196,24 @@
    * a notatnik obok jest pusty i czeka. Po to się tu wchodzi w trakcie.
    */
   function body(meeting) {
-    const live = meeting.state === "recording";
+    const live = meeting.state === "recording" || meeting.state === "recording_live_degraded";
 
     if (state.tab === "notes") return notepad(meeting);
+
+    if (meeting.state === "finalizing") {
+      return `<p class="meet__blank meet__blank--work">${t("Trwa finalizacja transkrypcji z pełnego nagrania audio…")}</p>`;
+    }
+
+    if (meeting.state === "audio_saved_transcript_failed") {
+      return `<p class="meet__blank meet__blank--warn">
+        ${t("Audio zostało bezpiecznie zapisane na dysku. Transkrypcja nie powiodła się")}${meeting.transcriptError ? `: ${escape(meeting.transcriptError)}` : "."}
+      </p>
+      <div class="meet__act">
+        <button class="btn btn--sm" data-meet-again="${meeting.id}">
+          ${t("Ponów transkrypcję")}
+        </button>
+      </div>`;
+    }
 
     if (meeting.state === "failed") {
       return `<p class="meet__blank meet__blank--warn">
@@ -1243,13 +1258,14 @@
             ${t("Przepisywanie się nie udało")}: ${escape(meeting.transcriptError)}
           </p>${again}`;
       }
-      if (meeting.transcript?.length) {
+      const hasLines = (meeting.transcript && meeting.transcript.length > 0) || (live && meeting.draft && meeting.draft.length > 0);
+      if (hasLines) {
         return `${transcript(meeting, live)}${live ? "" : again}${live ? "" : toRecall(meeting)}`;
       }
       return `<p class="meet__blank">
           ${
             live
-              ? t("Pierwsze zdania pojawią się tu za chwilę — zapis powstaje odcinkami.")
+              ? t("Pierwsze zdania pojawią się tu za chwilę — trwa nasłuchiwanie kursanta.")
               : meeting.tracks?.mic
                 ? t("Nagranie leży na dysku, ale nie zostało jeszcze przepisane.")
                 : t("Nagranie zostało skasowane, a tekstu z niego nie ma — nie ma już czego pokazać.")
@@ -1396,7 +1412,13 @@
    * tekstu tak, jakby był jedną wersją prawdy.
    */
   function verdict(meeting, live) {
-    if (live) return "";
+    if (live) {
+      const isDegraded = meeting.state === "recording_live_degraded";
+      return `<div class="meet__verdict">
+        <span class="meet__badge meet__badge--soft">${t("Szkic na żywo — nie jest transkrypcją końcową")}</span>
+        ${isDegraded ? `<span class="meet__badge meet__badge--warn">${t("Szkic niepełny (degraded)")}</span>` : ""}
+      </div>`;
+    }
     const bits = [];
 
     if (meeting.transcribing) {
@@ -1431,6 +1453,10 @@
 
   /** Która postać zapisu jest w tej chwili do pokazania — i czy w ogóle jest. */
   function linesOf(meeting) {
+    const live = meeting.state === "recording" || meeting.state === "recording_live_degraded";
+    if (live) {
+      return (meeting.draft && meeting.draft.length > 0) ? meeting.draft : (meeting.transcript ?? []);
+    }
     if (state.form === "talk" && meeting.talk?.length) return meeting.talk;
     if (state.form === "draft" && meeting.draft?.length) return meeting.draft;
     return meeting.transcript ?? [];

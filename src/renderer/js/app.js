@@ -2559,7 +2559,7 @@ function renderErrorBar() {
          <div class="banner__icon"><svg><use href="#i-alert" /></svg></div>
          <div class="banner__body">
            <h3>Nie udało się przetworzyć tekstu. Spróbuj za chwilę.</h3>
-           <p>${escape(error.message)}</p>
+           <p>${escape(error.originalError || error.message)}</p>
          </div>
          <div style="display: flex; gap: var(--s-2); align-items: center;">
            <button class="btn btn--primary btn--sm" data-act="recover-last">Odzyskaj ostatnie nagranie</button>
@@ -3811,8 +3811,8 @@ api.onGoToView?.((view) => {
   }
 });
 
-api.onError(({ message, stage, empty }) => {
-  state.error = { message, stage, empty };
+api.onError(({ message, stage, empty, originalError }) => {
+  state.error = { message, stage, empty, originalError };
   render();
 });
 

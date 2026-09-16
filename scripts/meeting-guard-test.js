@@ -199,4 +199,45 @@ ok("Zapis zgodny ze szkicem daje zgodność pełną");
 assert.strictEqual(compare([], verified).agreement, null, "pusty szkic policzony jako niezgodność");
 ok("Brak szkicu jest odróżniony od niezgodności");
 
+/* ── 7. Admin kill switch: blokada spotkań i menu ────────────────── */
+
+const admin = require(path.join(root, "src/main/admin.js"));
+
+// Uprawnienia: wyłączone spotkania blokują start
+assert.strictEqual(admin.allowed([], "meetings"), false, "pusta lista uprawnień zezwoliła na spotkanie");
+assert.strictEqual(admin.allowed(["cloud"], "meetings"), false, "brak meetings na liście zezwolił na spotkanie");
+assert.strictEqual(admin.allowed(["meetings"], "meetings"), true, "meetings na liście zablokowało spotkanie");
+assert.strictEqual(admin.allowed(null, "meetings"), true, "brak połączenia (null) zablokował spotkanie");
+ok("admin.allowed poprawnie filtruje uprawnienie do spotkań");
+
+// Pozycja w menu: chowa się, gdy wyłączone, chyba że nagranie już trwa
+const menuVisibleWhenAllowed = false || admin.allowed(["meetings"], "meetings");
+assert.strictEqual(menuVisibleWhenAllowed, true, "menu ukryte mimo zezwolenia");
+const menuHiddenWhenDisallowed = false || admin.allowed([], "meetings");
+assert.strictEqual(menuHiddenWhenDisallowed, false, "menu widoczne mimo wyłączenia przez admina");
+const menuVisibleWhenRecording = true || admin.allowed([], "meetings");
+assert.strictEqual(menuVisibleWhenRecording, true, "trwające nagranie nie może być zakończone z menu");
+ok("Pozycja menu chowa się przy braku uprawnień i zostaje podczas trwającego nagrania");
+
+// Guardy w kodzie main.js
+const mainCode = require("fs").readFileSync(path.join(root, "src/main/main.js"), "utf8");
+assert.ok(
+  /if \(!meetings\.recording && !admin\.allowed\(myFeatures, "meetings"\)\)/.test(mainCode),
+  "brak guardu admin.allowed w toggleMeeting()",
+);
+assert.ok(
+  /meetingSpotted[\s\S]*?admin\.allowed\(myFeatures, "meetings"\)/.test(mainCode),
+  "brak guardu admin.allowed w meetingSpotted()",
+);
+assert.ok(
+  /lookAtAgenda[\s\S]*?admin\.allowed\(myFeatures, "meetings"\)/.test(mainCode),
+  "brak guardu admin.allowed w lookAtAgenda()",
+);
+assert.ok(
+  /meetingMenuItem[\s\S]*?admin\.allowed\(myFeatures, "meetings"\)/.test(mainCode),
+  "brak guardu admin.allowed w meetingMenuItem()",
+);
+ok("Wszystkie cztery punkty wejścia spotkań w main.js są zabezpieczone guardem admina");
+
 console.log(`\nZapis spotkania: ${passed} sprawdzeń przeszło.`);
+

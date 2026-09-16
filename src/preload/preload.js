@@ -206,6 +206,8 @@ contextBridge.exposeInMainWorld("cribro", {
     summarize: (id) => ipcRenderer.invoke("meetings:summarize", id),
     // Przepisanie nagrania jeszcze raz, z plików na dysku.
     retranscribe: (id) => ipcRenderer.invoke("meetings:retranscribe", id),
+    // Quick Feedback z ostatnich 10 minut wypowiedzi kursanta.
+    feedback: (id) => ipcRenderer.invoke("meetings:feedback", id),
     /* Droga wyjścia: spotkanie jako notatka. Notatka powstaje sama po każdej
        rozmowie (patrz keepMeetingNote w main/main.js), więc to jest prośba
        „pokaż mi ją" — a nie „zrób ją". Drugiej kopii nie zakłada. */

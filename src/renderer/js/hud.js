@@ -504,7 +504,7 @@ function sendLevel(now) {
   window.cribro.hud.sendLevel?.(Number(level.toFixed(3)));
 }
 
-function showErrorState() {
+function showErrorState(detail = {}) {
   clearTimeout(emptyTimer);
   clearTimeout(miniTimer);
   state = "error";
@@ -517,7 +517,12 @@ function showErrorState() {
   if (faceEl) faceEl.textContent = "⚠️";
   statusEl.textContent = t("Nie udało się przetworzyć tekstu. Spróbuj za chwilę.");
   waveEl.hidden = true;
-  hintEl.hidden = true;
+  if (detail?.originalError) {
+    hintEl.hidden = false;
+    hintEl.textContent = t(detail.originalError).slice(0, 120);
+  } else {
+    hintEl.hidden = true;
+  }
   timerEl.style.opacity = "0";
   if (retryBtn) {
     retryBtn.hidden = false;
@@ -561,12 +566,12 @@ window.cribro.hud.onCancel(() => {
   setState("idle");
 });
 
-window.cribro.onState(({ state: next, entry, error, empty, command }) => {
+window.cribro.onState(({ state: next, entry, error, empty, command, stage, originalError }) => {
   if (next === "listening") return; // ten stan ustawia sam recorder
   if (empty) {
     showNothingHeard();
   } else if (error) {
-    showErrorState();
+    showErrorState({ error, stage, originalError });
   } else if (next === "sifting" && command) {
     /* Polecenie trafiło. Nazwa musi być widoczna TERAZ — zanim tekst wpadnie
        pod kursor — bo to jedyny moment, w którym można jeszcze przerwać.
