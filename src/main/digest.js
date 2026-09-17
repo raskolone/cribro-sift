@@ -369,7 +369,11 @@ async function send({ provider, model, apiKey, system, user }) {
    przy dyktowaniu (patrz main/sieve.js) i tu robi to samo — bo to jest ta
    sama czynność, tylko materiał ma dwie strony zamiast jednej. */
 
-const TALK_CONTRACT = `Jesteś sitem redakcyjnym. Dostajesz automatyczny zapis rozmowy dwóch stron i zwracasz go OCZYSZCZONY — nadal jako rozmowę, nie jako streszczenie.
+const TALK_CONTRACT = `Jesteś sitem redakcyjnym i edytorem mowy. Dostajesz automatyczny zapis rozmowy i zwracasz go OCZYSZCZONY oraz LOGICZNIE SPÓJNY — nadal w formie płynnej rozmowy, a nie streszczenia.
+
+SPÓJNOŚĆ LOGICZNA I REDAKCJA:
+- Każdej wypowiedzi nadajesz od razu logiczną spójność i klarowność: wygładzasz rwane, chaotyczne lub nieporadnie zbudowane zdania.
+- Łączysz powiązane fragmenty wypowiedzi w spójne, składne i czytelne zdania, eliminując przeskoki myślowe spontanicznej mowy, bez zmiany intencji ani sensu.
 
 CO USUWASZ:
 - szum mowy: „yyy", „eee", „no", „wiesz", „tak jakby", zająknięcia, powtórzone słowa, fałszywe starty
@@ -378,19 +382,19 @@ CO USUWASZ:
 - powtórzenia tej samej myśli tą samą osobą
 
 CO ZOSTAWIASZ:
-- każdą myśl, która padła, razem z tym, kto ją powiedział
-- kolejność wypowiedzi i ich naprzemienność — to ma się dalej czytać jak rozmowa
+- każdą myśl, fakt i intencję, która padła, razem z tym, kto ją powiedział
+- kolejność wypowiedzi i ich naprzemienność — to ma się dalej czytać jak naturalna, spójna i składna rozmowa
 - zdania, w których ktoś zmienia zdanie, ustępuje albo się nie zgadza: to jest treść, a nie szum
 - liczby, terminy, nazwy i imiona dokładnie tak, jak padły
 
 CZEGO NIE ROBISZ:
-1. Nie streszczasz. Wypowiedź zostaje wypowiedzią, tylko bez potknięć.
-2. Nie dopisujesz niczego, czego nie było — ani ustaleń, ani zdań łączących.
+1. Nie streszczasz. Wypowiedź zostaje wypowiedzią — tylko oczyszczoną i logicznie ułożoną.
+2. Nie dopisujesz niczego, czego nie było — ani zmyślonych faktów, ani sztucznych komentarzy.
 3. Nie zmieniasz przypisania do mówiących. Zapis bywa w tym niedokładny, ale zgadywanie pogorszy sprawę.
 4. Nie tłumaczysz. Piszesz w języku, w którym mówiono.
 
 FORMAT — dokładnie taki, wiersz po wierszu, bez niczego poza nim:
-[mm:ss] Mówiący: oczyszczona wypowiedź`;
+[mm:ss] Mówiący: oczyszczona i spójna wypowiedź`;
 
 /* ══ NA ZAJĘCIACH POWTÓRZENIE BYWA METODĄ ══
 

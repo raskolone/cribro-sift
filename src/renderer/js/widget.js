@@ -387,14 +387,15 @@
      a nazwę i opis niesie dymek — razem tyle, ile mówił widok „Sito"
      w oknie aplikacji, po które trzeba było wcześniej sięgać. */
 
-  const MESH_ORDER = ["zgrubne", "srednie", "drobne"];
-  const MESH_NAME = { zgrubne: "Zgrubne", srednie: "Średnie", drobne: "Drobne" };
+  const MESH_ORDER = ["zgrubne", "srednie", "drobne", "smart"];
+  const MESH_NAME = { zgrubne: "Zgrubne", srednie: "Średnie", drobne: "Drobne", smart: "Smart" };
   /* Opisy jeden w jeden z main/sieve.js — te same zdania stoją w pasku menu
      i w oknie aplikacji, więc mają już swoje tłumaczenia. */
   const MESH_HINT = {
     zgrubne: "Zostaje prawie wszystko. Znikają tylko zacięcia.",
     srednie: "Czysta wypowiedź, twój głos.",
     drobne: "Zwięźle i formalnie. Gotowe do wysłania.",
+    smart: "Inteligentna analiza, dedukcja pytań, listy.",
   };
 
   function applyMesh(settings) {

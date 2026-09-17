@@ -7,8 +7,9 @@ const api = window.cribro;
 
 const MESH = {
   zgrubne: { name: "Zgrubne", hint: "Zostaje prawie wszystko. Znikają tylko zacięcia.", density: 5 },
-  srednie: { name: "Średnie", hint: "Czysta wypowiedź, twój głos.", density: 8 },
-  drobne: { name: "Drobne", hint: "Zwięźle i formalnie. Gotowe do wysłania.", density: 13 },
+  srednie: { name: "Średnie", hint: "Czysta wypowiedź, twój głos.", density: 10 },
+  drobne: { name: "Drobne", hint: "Zwięźle i formalnie. Gotowe do wysłania.", density: 15 },
+  smart: { name: "Smart", hint: "Inteligentna analiza, dedukcja słów i pytań, listy.", density: 20 },
 };
 
 const VIEWS = {
@@ -3289,7 +3290,7 @@ document.addEventListener("click", async (event) => {
       break;
     }
     case "resift": {
-      const order = ["zgrubne", "srednie", "drobne"];
+      const order = ["zgrubne", "srednie", "drobne", "smart"];
       const next = order[(order.indexOf(entry.mesh) + 1) % order.length];
       toast(t("Przesiewam ponownie — sito {mesh}…", { mesh: t(MESH[next].name).toLowerCase() }));
       try {

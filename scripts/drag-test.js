@@ -367,8 +367,8 @@ app.whenReady().then(async () => {
          być", czekamy pełny czas i dopiero wtedy stwierdzamy brak;
          wolniej, ale to jedyny sposób, żeby BRAK znaczył brak, a nie
          "jeszcze nie zdążył". */
-      const PATIENCE = 1250;
-      const STEP = 25;
+      const PATIENCE = 3000;
+      const STEP = 50;
       let seen = false;
       for (let waited = 0; waited <= PATIENCE; waited += STEP) {
         seen = !!(await js("window.__grip()"));
@@ -405,10 +405,10 @@ app.whenReady().then(async () => {
       await wait(30);
       mouse("mouseMove", on.x + 1, on.y);
       let grip = null;
-      for (let waited = 0; waited <= 1250; waited += 25) {
+      for (let waited = 0; waited <= 3000; waited += 50) {
         grip = await js("window.__grip()");
         if (grip) break;
-        await wait(25);
+        await wait(50);
       }
       note.grip = grip;
       if (!grip) { out.push({ error: "uchwyt się nie pokazał" }); continue; }

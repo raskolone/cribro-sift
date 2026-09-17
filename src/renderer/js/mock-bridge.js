@@ -681,7 +681,7 @@ if (!window.cribro) {
          że kliknięcie w kółko przestawia ustawienie, a nie otwiera okna. */
       run: async (action) => {
         if (action !== "sieve") return true;
-        const order = ["zgrubne", "srednie", "drobne"];
+        const order = ["zgrubne", "srednie", "drobne", "smart"];
         settings.mesh = order[(order.indexOf(settings.mesh) + 1) % order.length] ?? order[0];
         emit("settings:changed", structuredClone(settings));
         return settings.mesh;

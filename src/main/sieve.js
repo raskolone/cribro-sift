@@ -44,6 +44,14 @@ Przeredaguj zdania na klarowną, poprawną polszczyznę (lub język, w którym m
 Nadaj strukturę: akapity, listy, w razie potrzeby nagłówki. Ton uprzejmy i rzeczowy.
 Nigdy nie dodawaj treści, której nie było — zwięzłość bierze się z usuwania, nie z wymyślania.`,
   },
+  smart: {
+    name: "Smart",
+    hint: "Inteligentna analiza, dedukcja słów i pytań, listy.",
+    rules: `Głęboko analizuj logiczną strukturę wypowiedzi. Usuń wahania, ale zachowaj całkowity sens.
+Na podstawie kontekstu poprawnie domyślaj się i zapisuj angielskie słowa, branżowe terminy i nazwy własne.
+Wykrywaj, kiedy zdanie jest pytaniem na podstawie logiki i intencji, i kończ je znakiem zapytania.
+Tam, gdzie występuje wyliczanie elementów lub ciąg logiczny, bezwzględnie sformatuj to używając list wypunktowanych (bullet points).`,
+  },
 };
 
 /**

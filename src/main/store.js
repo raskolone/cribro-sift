@@ -269,7 +269,7 @@ const DEFAULTS = {
      bez presji czasu, z diaryzacją. To on daje zapis właściwy; przepisywanie
      w biegu zostaje obok jako szkic, do porównania. */
   meetings: {
-    enabled: false,
+    enabled: true,
     detect: "ask", // off | ask | auto
     keepAudio: false,
     archive: "always", // always | until-verified | never
