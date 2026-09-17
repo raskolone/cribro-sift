@@ -735,8 +735,8 @@ class Store {
  * Cichy błąd 404 przy pierwszym dyktowaniu byłby gorszy niż reset.
  */
 function migrate(settings) {
-  const KNOWN_STT = ["gemini", "openai", "mock"];
-  const KNOWN_SIEVE = ["gemini", "openai", "anthropic"];
+  const KNOWN_STT = ["deepgram", "gemini", "openai", "groq", "mock"];
+  const KNOWN_SIEVE = ["gemini", "openai", "groq", "anthropic"];
 
   // Skrót nie ma już trybów. „hold", „toggle" i „double-tap" były wyborem
   // między gestami, które dziś działają obok siebie; przełącznik hands-off
@@ -751,6 +751,14 @@ function migrate(settings) {
 
   if (!KNOWN_STT.includes(settings.stt?.provider)) {
     settings.stt = structuredClone(DEFAULTS.stt);
+  }
+
+  // Naprawa niezgodności: jeśli sieve ma klucz OpenAI (sk-proj-...), ale dostawcę „gemini”, przestaw na „openai”
+  if (settings.sieve?.provider === "gemini" && settings.sieve?.apiKey?.startsWith("sk-proj-")) {
+    settings.sieve.provider = "openai";
+    if (settings.sieve.model === "gemini-2.5-flash" || settings.sieve.model === "gemini-3.7-flash") {
+      settings.sieve.model = "gpt-4o-mini";
+    }
   }
   /* Listwy nad Dockiem nie ma — jej cztery czynności przejęła taca widgetu
      (patrz WIDGET_TRAY w main/main.js). Kto miał listwę włączoną, ten chciał

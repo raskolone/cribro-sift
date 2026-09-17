@@ -127,7 +127,15 @@ class SttStream {
       };
 
       this.ws.onerror = (err) => {
-        logger.logWarning("STREAM", "Usterka gniazda strumieniowania Deepgram", { error: String(err?.message || err) });
+        try {
+          if (typeof logger?.logWarning === "function") {
+            logger.logWarning("STREAM", "Usterka gniazda strumieniowania Deepgram", { error: String(err?.message || err) });
+          } else if (typeof logger?.logError === "function") {
+            logger.logError("STREAM", "Usterka gniazda strumieniowania Deepgram", { error: String(err?.message || err) });
+          }
+        } catch {
+          /* ignorujemy błędy logowania */
+        }
         if (this.finalReject) {
           this.finalReject(err);
           this.finalReject = null;
@@ -142,7 +150,13 @@ class SttStream {
       return true;
     } catch (err) {
       this.active = false;
-      logger.logWarning("STREAM", "Nie udało się otworzyć WebSocket Deepgram", { error: String(err?.message || err) });
+      try {
+        if (typeof logger?.logWarning === "function") {
+          logger.logWarning("STREAM", "Nie udało się otworzyć WebSocket Deepgram", { error: String(err?.message || err) });
+        }
+      } catch {
+        /* ignorujemy błędy logowania */
+      }
       return false;
     }
   }

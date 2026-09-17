@@ -984,6 +984,7 @@
 
   function settingsCard() {
     const meet = state.settings?.meetings ?? {};
+    const enabled = meet.enabled !== false;
     /** Kółko wyboru — jedno z kilku. */
     const pick = (group, key, value, label, hint) => `
       <label class="meet__opt">
@@ -1005,7 +1006,23 @@
       <div class="meet__settings">
         <h3>${t("Jak działają spotkania")}</h3>
 
-        <div class="meet__settings-grid">
+        <!-- Włącznik/wyłącznik całego modułu. Stoi poza siatką, na górze,
+             żeby był widoczny bez scrollowania — i żeby nie wymagał szukania
+             wśród innych ustawień. Gdy wyłączony, reszta znika: i tak nie
+             działa, więc nie ma po co zajmować uwagi. -->
+        <div class="meet__module-toggle">
+          <label class="meet__set meet__set--master">
+            <span class="meet__set-text">
+              <b>${t("Moduł nagrywania spotkań")}</b>
+              <i>${t("Wyłączenie ukrywa zakładkę i blokuje nowe nagrania. Trwające nagranie dokończy się normalnie.")}</i>
+            </span>
+            <input type="checkbox" data-meet-set="enabled" ${enabled ? "checked" : ""} />
+            <span class="meet__flip" aria-hidden="true"></span>
+          </label>
+          ${!enabled ? `<p class="meet__note meet__note--warn">${t("Moduł wyłączony. Nowe nagrania są zablokowane. Zakładka zniknie po ponownym otwarciu aplikacji lub po przełączeniu na inną i powrocie.")}</p>` : ""}
+        </div>
+
+        ${!enabled ? "" : `<div class="meet__settings-grid">
         <div class="meet__group">
           <p class="meet__legend">${t("Kiedy zacząć nagrywać")}</p>
           ${option("off", "Nigdy sam", "Nagrywanie tylko z menu albo stąd.")}
@@ -1085,7 +1102,7 @@
         </p>
         <div class="meet__act meet__act--tight">
           <button class="btn btn--ghost btn--sm" data-meet-say>${t("Skopiuj zdanie do wklejenia")}</button>
-        </div>
+        </div>`}
       </div>`;
   }
 

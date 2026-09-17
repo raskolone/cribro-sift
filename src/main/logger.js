@@ -67,6 +67,11 @@ function logError(category, description, meta = null) {
   log("BŁĄD", category, description, meta);
 }
 
+/** Zarejestrowanie ostrzeżenia (np. fallback, nieoczekiwany stan, błąd sieciowy bez krytycznych konsekwencji) */
+function logWarning(category, description, meta = null) {
+  log("OSTRZEŻENIE", category, description, meta);
+}
+
 function getPath() {
   return getLogPath();
 }
@@ -95,6 +100,7 @@ module.exports = {
   logTask,
   logChange,
   logError,
+  logWarning,
   getPath,
   tail,
   clear,

@@ -454,17 +454,11 @@ async function transcribe(audio, settings, about = null) {
     );
   }
 
-  const primaryProvider = provider || "gemini";
-  const primaryModel =
-    model ||
-    (primaryProvider === "deepgram"
-      ? "nova-3"
-      : primaryProvider === "gemini"
-        ? "gemini-3.1-flash-lite"
-        : "whisper-1");
+  const primaryProvider = provider || "deepgram";
+  const primaryModel = model || "nova-3";
   const primaryKey = keyFor(primaryProvider, settings);
 
-  // Budujemy łańcuch prób: Główny -> Deepgram -> OpenAI -> Groq -> Gemini
+  // Budujemy hierarchię prób: Deepgram Nova-3 -> Deepgram Nova-2 -> OpenAI Whisper -> Gemini
   const tiers = [
     {
       provider: primaryProvider,
@@ -474,13 +468,23 @@ async function transcribe(audio, settings, about = null) {
     },
   ];
 
-  if (primaryProvider !== "deepgram") {
-    const dgModel = settings.stt?.deepgramModel || "nova-3";
+  // Jeśli główny to Deepgram Nova-3, dodajemy drugi model Deepgram (Nova-2) jako pierwszy fallback
+  if (primaryProvider === "deepgram") {
+    const dgSecondaryModel = primaryModel === "nova-3" ? "nova-2" : "nova-3";
+    if (primaryKey) {
+      tiers.push({
+        provider: "deepgram",
+        model: dgSecondaryModel,
+        apiKey: primaryKey,
+        isFallback: true,
+      });
+    }
+  } else {
     const dgKey = keyFor("deepgram", settings);
     if (dgKey) {
       tiers.push({
         provider: "deepgram",
-        model: dgModel,
+        model: "nova-3",
         apiKey: dgKey,
         isFallback: true,
       });
@@ -490,23 +494,14 @@ async function transcribe(audio, settings, about = null) {
   if (primaryProvider !== "openai") {
     const fbModel = settings.stt?.fallbackModel || "whisper-1";
     const fbKey = keyFor("openai", settings);
-    tiers.push({
-      provider: "openai",
-      model: fbModel,
-      apiKey: fbKey,
-      isFallback: true,
-    });
-  }
-
-  if (primaryProvider !== "groq") {
-    const groqModel = settings.stt?.groqModel || "whisper-large-v3-turbo";
-    const groqKey = keyFor("groq", settings);
-    tiers.push({
-      provider: "groq",
-      model: groqModel,
-      apiKey: groqKey,
-      isFallback: true,
-    });
+    if (fbKey) {
+      tiers.push({
+        provider: "openai",
+        model: fbModel,
+        apiKey: fbKey,
+        isFallback: true,
+      });
+    }
   }
 
   if (primaryProvider !== "gemini") {
@@ -514,7 +509,7 @@ async function transcribe(audio, settings, about = null) {
     if (geminiKey) {
       tiers.push({
         provider: "gemini",
-        model: "gemini-3.1-flash-lite",
+        model: "gemini-2.5-flash",
         apiKey: geminiKey,
         isFallback: true,
       });
@@ -656,9 +651,11 @@ async function geminiTranscribe(audio, model, apiKey, language, about, options =
 }
 
 async function openaiTranscribe(audio, model, apiKey, language, about, options = {}) {
+  // OpenAI v1/audio/transcriptions wymaga modelu whisper-1
+  const audioModel = !model || model.startsWith("gpt-") ? "whisper-1" : model;
   const form = new FormData();
   form.append("file", new Blob([audio], { type: "audio/wav" }), "dictation.wav");
-  form.append("model", model);
+  form.append("model", audioModel);
   form.append("response_format", "json");
   if (Number.isFinite(options?.temperature)) {
     form.append("temperature", String(options.temperature));

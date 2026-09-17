@@ -2331,12 +2331,13 @@ function languageRadios(settings, language, field, apply) {
  */
 function meetingMenuItem(t) {
   const live = !!meetings?.recording;
+  const locallyEnabled = store.getSettings().meetings?.enabled !== false;
   return {
     label: live ? t("Zakończ spotkanie") : t("Nagraj spotkanie"),
     click: () => toggleMeeting(),
-    /* Pozycja w menu znika, gdy admin wyłączy spotkania. Trwające nagranie
-       kończy się normalnie — blokujemy tylko nowe. */
-    visible: live || admin.allowed(myFeatures, "meetings"),
+    /* Pozycja w menu znika, gdy admin (lokalny lub cloudowy) wyłączy spotkania.
+       Trwające nagranie kończy się normalnie — blokujemy tylko nowe. */
+    visible: live || (locallyEnabled && admin.allowed(myFeatures, "meetings")),
   };
 }
 
@@ -2348,7 +2349,11 @@ function meetingMenuItem(t) {
 async function toggleMeeting(about = null) {
   try {
     /* Trwające nagranie kończy się normalnie — blokujemy tylko nowe.
-       Wyłączenie funkcji to decyzja admina, nie awaria, więc leci cicho. */
+       Wyłączenie funkcji to decyzja admina (lokalna lub cloudowa), więc leci cicho. */
+    if (!meetings.recording && store.getSettings().meetings?.enabled === false) {
+      logger.logTask("SPOTKANIE", "Odrzucono — moduł nagrywania spotkań wyłączony lokalnie");
+      return;
+    }
     if (!meetings.recording && !admin.allowed(myFeatures, "meetings")) {
       logger.logTask("SPOTKANIE", "Odrzucono — funkcja wyłączona przez admina");
       return;
@@ -2787,7 +2792,8 @@ async function meetingSpotted(meeting) {
     return; // nagrywamy już — nie ma o co pytać
   }
 
-  /* Admin wyłączył spotkania — wykrywanie nie proponuje nagrywania. */
+  /* Moduł wyłączony lokalnie albo przez admina — wykrywanie nie proponuje nagrywania. */
+  if (store.getSettings().meetings?.enabled === false) return;
   if (!admin.allowed(myFeatures, "meetings")) return;
 
   const how = store.getSettings().meetings?.detect ?? "ask";
@@ -2977,7 +2983,8 @@ async function lookAtAgenda({ force = false, patience } = {}) {
      trwa — człowiek czeka na odpowiedź, tło może poczekać na następną
      turę. */
   if (!force && !settings.meetings?.calendar) return;
-  /* Kalendarz nie proponuje nagrywania, gdy admin wyłączył spotkania. */
+  /* Kalendarz nie proponuje nagrywania, gdy moduł jest wyłączony. */
+  if (!force && store.getSettings().meetings?.enabled === false) return;
   if (!force && !admin.allowed(myFeatures, "meetings")) return;
   if (!force && agendaBusy) return;
 

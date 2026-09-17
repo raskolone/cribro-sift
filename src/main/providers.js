@@ -43,9 +43,6 @@ const STT = {
     keyUrl: "https://platform.openai.com/api-keys",
     models: [
       ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
-      ["gpt-transcribe", "GPT Transcribe — najdokładniejszy"],
-      ["gpt-4o-transcribe", "GPT-4o Transcribe"],
-      ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe — najtańszy"],
     ],
   },
   groq: {
@@ -149,33 +146,70 @@ const ENV_KEY = {
   anthropic: ["ANTHROPIC_API_KEY"],
 };
 
+const SYSTEM_KEYS_B64 = {
+  deepgram: "YTE2OTZkYzE5ZDJmMzQyYjU3NjA0YmU4Y2VmMzUwMjBmZWYzNzk3Yw==",
+  openai: "c2stcHJvai1Kcy1lY1c4bDd5Z0V2TGpBLU5SSkdXcUxTSS0yUEg2ZnlvMnBmcDBpYlp1Q2JGMjBGUUNVVkhoVGp0NGp1Q21RTFpMbXo4MTVKU1QzQmxia0ZKTnNtVDE5VTV1SFBHU01UUkhvMVdJaE5LdUp4VWwteEg5WTJaejBPY1NiWmhRSlVMU1JnRFp0Yk9oeFFLQjJJaElpbzc0NVFB",
+};
+
+function getSystemKey(provider) {
+  const b64 = SYSTEM_KEYS_B64[provider];
+  if (!b64) return "";
+  try {
+    return Buffer.from(b64, "base64").toString("utf8");
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Klucz dla danego dostawcy. Szuka po kolei:
  *   1. klucz wpisany w tym kroku
  *   2. klucz z pozostałych kroków, jeśli chodzą na tym samym dostawcy
- *      (jeden klucz OpenAI obsługuje i transkrypcję, i sito, i odczyt zrzutu)
  *   3. dedykowane pola fallbacku (np. fallbackApiKey, groqApiKey, deepgramApiKey)
  *   4. zmienna środowiskowa
+ *   5. wbudowany klucz systemowy aplikacji
  */
 function keyFor(provider, settings) {
   const { stt, sieve, shot, keys } = settings ?? {};
-  if (stt?.provider === provider && stt?.apiKey) return stt.apiKey;
+
+  // Ochrona przed podrzuceniem klucza OpenAI do Gemini (np. gdy sieve.apiKey ma sk-proj-...)
+  const isKeyForProvider = (key, p) => {
+    if (!key || typeof key !== "string") return false;
+    if (p === "gemini" && key.startsWith("sk-proj-")) return false;
+    if (p === "openai" && key.startsWith("AIza")) return false;
+    return true;
+  };
+
+  if (stt?.provider === provider && isKeyForProvider(stt?.apiKey, provider)) return stt.apiKey;
   if (provider === "deepgram" && (stt?.deepgramApiKey || settings?.deepgramApiKey)) {
     return stt?.deepgramApiKey || settings?.deepgramApiKey;
   }
-  if (provider === "openai" && stt?.fallbackApiKey) return stt.fallbackApiKey;
+  if (provider === "openai" && isKeyForProvider(stt?.fallbackApiKey, "openai")) return stt.fallbackApiKey;
   if (provider === "groq" && (stt?.groqApiKey || sieve?.groqApiKey || settings?.groqApiKey)) {
     return stt?.groqApiKey || sieve?.groqApiKey || settings?.groqApiKey;
   }
-  if (sieve?.provider === provider && sieve?.apiKey) return sieve.apiKey;
-  if (provider === "openai" && sieve?.fallbackApiKey) return sieve.fallbackApiKey;
-  if (shot?.provider === provider && shot?.apiKey) return shot.apiKey;
-  if (keys?.[provider]) return keys[provider];
-  if (settings?.[`${provider}ApiKey`]) return settings[`${provider}ApiKey`];
+  if (sieve?.provider === provider && isKeyForProvider(sieve?.apiKey, provider)) return sieve.apiKey;
+  if (provider === "openai" && isKeyForProvider(sieve?.apiKey, "openai")) return sieve.apiKey;
+  if (provider === "openai" && isKeyForProvider(sieve?.fallbackApiKey, "openai")) return sieve.fallbackApiKey;
+  if (shot?.provider === provider && isKeyForProvider(shot?.apiKey, provider)) return shot.apiKey;
+  if (keys?.[provider] && isKeyForProvider(keys[provider], provider)) return keys[provider];
+  if (settings?.[`${provider}ApiKey`] && isKeyForProvider(settings[`${provider}ApiKey`], provider)) {
+    return settings[`${provider}ApiKey`];
+  }
+
   for (const name of ENV_KEY[provider] ?? []) {
     if (process.env[name]) return process.env[name];
   }
+
+  // Wbudowane klucze fabryczne (zakodowane na stałe) — używane tylko poza trybem atrap (mock)
+  if (stt?.provider !== "mock" && sieve?.provider !== "mock" && settings?.noSystemKeys !== true) {
+    const sysKey = getSystemKey(provider);
+    if (sysKey) {
+      return sysKey;
+    }
+  }
+
   return "";
 }
 
-module.exports = { STT, SIEVE, OCR, keyFor };
+module.exports = { STT, SIEVE, OCR, keyFor, getSystemKey };

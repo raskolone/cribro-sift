@@ -2825,7 +2825,15 @@ function render() {
      Zakładka schowana, a nie wyszarzona, bo wyszarzona nadal mówi, co
      w niej stało — a przy funkcji w becie to jest obietnica, której nikt
      nie składał. */
-  const showFeature = (code) => state.settings?.features?.[code] !== false;
+  /* `showFeature` sprawdza, czy zakładkę wolno pokazać. Dwa poziomy:
+     - `features.[code]` pochodzi z Supabase (admin chmurowy),
+     - `meetings.enabled` to lokalny wyłącznik (admin maszyny).
+     Oba muszą być pozytywne, żeby zakładka była widoczna. */
+  const showFeature = (code) => {
+    if (state.settings?.features?.[code] === false) return false;
+    if (code === "meetings" && state.settings?.meetings?.enabled === false) return false;
+    return true;
+  };
   const visible = (view) =>
     view === "admin" ? !!state.settings?.owner : showFeature(view);
 
