@@ -124,6 +124,27 @@
       .join("");
   }
 
+  function renderNoise(noise, said) {
+    if (!noise?.length) return "";
+    return `
+      <section>
+        <h2>${t("⚪ Szum")}</h2>
+        ${noise
+          .map((mail) => {
+            const sentence = saidAbout(mail.from, said);
+            return `
+              <div class="mail mail--noise">
+                <div>
+                  <span class="mail__from">${escape(mail.from)}</span>
+                  <span class="mail__subject">${escape(mail.subject)}</span>
+                </div>
+                ${sentence ? `<p class="mail__said">${escape(sentence)}</p>` : ""}
+              </div>`;
+          })
+          .join("")}
+      </section>`;
+  }
+
   function renderFeeds(feeds) {
     if (!feeds?.length) return "";
     return `
@@ -158,14 +179,16 @@
       </header>
 
       <section>
-        <h2>${t("Wymaga uwagi")}</h2>
-        ${renderMail(data.picks ?? [], words.mail)}
+        <h2>${t("📅 Plan dnia")}</h2>
+        ${renderDay(data.plan, words.day)}
       </section>
 
       <section>
-        <h2>${t("Plan dnia")}</h2>
-        ${renderDay(data.plan, words.day)}
+        <h2>${t("🚨 Wymaga akcji")}</h2>
+        ${renderMail(data.picks ?? [], words.mail)}
       </section>
+
+      ${renderNoise(data.noise, words.szum)}
 
       ${renderFeeds(data.feeds)}
 

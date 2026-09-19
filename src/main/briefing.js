@@ -244,6 +244,21 @@ function needsAttention(mails, { plan = null, owner = "", now = new Date() } = {
     .slice(0, MAX_PICKS);
 }
 
+/**
+ * Rozsyłki i automaty odrzucone przez `needsAttention` — sam nadawca
+ * i temat, bez fragmentu treści. Nie są „ważne", ale poranek ma o nich
+ * powiedzieć jednym słowem, żeby nie trzeba było ich samemu otwierać.
+ */
+function noiseMails(mails, { max = MAX_PICKS } = {}) {
+  return (mails ?? [])
+    .filter((mail) => mail.unread && listish(mail) && !mail.starred)
+    .slice(0, max)
+    .map((mail) => ({
+      from: nameOf(mail.from),
+      subject: String(mail.subject ?? "").trim() || "(bez tematu)",
+    }));
+}
+
 /* ── Pytanie do sita ───────────────────────────────────────────── */
 
 /**
@@ -254,27 +269,31 @@ function needsAttention(mails, { plan = null, owner = "", now = new Date() } = {
  * podsumowaniu jest gorszy niż brak podsumowania, bo zaczyna się od niego
  * dzień.
  */
-const CONTRACT = `Jesteś asystentem, który układa jedno krótkie podsumowanie poranne.
+const CONTRACT = `Jesteś precyzyjnym asystentem, który układa jedno krótkie podsumowanie poranne.
 
-Dostajesz trzy rzeczy: wybrane maile (już wytypowane przez reguły — nie oceniasz, czy wybór jest trafny), plan dnia z kalendarza i nagłówki z kanałów RSS.
+Dostajesz cztery rzeczy: plan dnia z kalendarza, wybrane maile wymagające uwagi (już wytypowane przez reguły — nie oceniasz, czy wybór jest trafny), maile-szum (rozsyłki i automaty, do samego pominięcia) i nagłówki z kanałów RSS.
 
 ZASADY, KTÓRYCH NIE WOLNO ZŁAMAĆ:
 - Piszesz WYŁĄCZNIE o tym, co dostałeś. Nie zgadujesz treści maila po temacie, nie dopowiadasz ustaleń, nie wymyślasz terminów.
 - Jeśli czegoś nie ma w materiale, nie ma tego w podsumowaniu. „Nie wiem" jest poprawną odpowiedzią.
 - Nie streszczasz maila, którego treści nie widzisz — piszesz, czego dotyczy i czego się po nim spodziewać.
 - Nie moralizujesz, nie zachęcasz, nie życzysz miłego dnia. To jest notatka, nie wiadomość.
-- Piszesz po polsku, w drugiej osobie, zwięźle.
+- Piszesz po polsku, w drugiej osobie, bardzo konkretnie i zwięźle, bez korpomowy i zbędnych wstępów.
 
 FORMAT ODPOWIEDZI — dokładnie taki, bez niczego dookoła:
 
 NAGŁÓWEK: jedno zdanie o dniu jako całości (ile spotkań, co go określa).
 
-POCZTA:
+PLAN DNIA:
+- <godzina> <nazwa> — <jedno zdanie, jeśli jest co dodać; inaczej sama nazwa>
+
+WYMAGA AKCJI:
 - <nadawca> — <o co chodzi i czego się po tym spodziewać, jedno zdanie>
 (jedna linia na mail, w kolejności, w jakiej je dostałeś; pomijasz maile, o których nie masz nic do powiedzenia)
 
-DZIEŃ:
-- <godzina> <nazwa> — <jedno zdanie, jeśli jest co dodać; inaczej sama nazwa>
+SZUM:
+- <nadawca> — <temat, bez komentarza>
+(pomijasz sekcję, jeśli nic nie przyszło)
 
 ŚWIAT:
 - <jedno zdanie na temat, najwyżej trzy linie; pomijasz sekcję, jeśli nic nie przyszło>`;
@@ -287,7 +306,7 @@ function clock(ms) {
 }
 
 /** Materiał dla modelu — to samo, co widać na ekranie, tylko tekstem. */
-function buildPrompt({ picks = [], plan = null, feeds = [], now = new Date() } = {}) {
+function buildPrompt({ picks = [], plan = null, feeds = [], noise = [], now = new Date() } = {}) {
   const parts = [];
 
   const at = now instanceof Date ? now : new Date(now);
@@ -306,6 +325,13 @@ function buildPrompt({ picks = [], plan = null, feeds = [], now = new Date() } =
     );
   } else {
     parts.push("\n=== MAILE ===\nNic nie wymaga uwagi.");
+  }
+
+  if (noise.length) {
+    parts.push(
+      "\n=== MAILE-SZUM (rozsyłki, automaty — do pominięcia) ===",
+      ...noise.map((mail) => `- ${mail.from} — ${mail.subject}`),
+    );
   }
 
   const rows = plan?.all ?? [];
@@ -341,7 +367,7 @@ function buildPrompt({ picks = [], plan = null, feeds = [], now = new Date() } =
  */
 function readAnswer(raw) {
   const text = String(raw ?? "").trim();
-  if (!text) return { headline: "", mail: [], day: [], world: [] };
+  if (!text) return { headline: "", mail: [], day: [], szum: [], world: [] };
 
   /* Koniec sekcji to NASTĘPNY nagłówek albo koniec całego tekstu — i to
      drugie musi być zapisane jako „nie ma już ani jednego znaku", a nie
@@ -351,7 +377,7 @@ function readAnswer(raw) {
   const grab = (name) => {
     const found = text.match(
       new RegExp(
-        `^\\s*${name}\\s*:?\\s*$([\\s\\S]*?)(?=^\\s*(?:POCZTA|DZIEŃ|ŚWIAT|NAGŁÓWEK)\\s*:?\\s*$|(?![\\s\\S]))`,
+        `^\\s*${name}\\s*:?\\s*$([\\s\\S]*?)(?=^\\s*(?:PLAN DNIA|WYMAGA AKCJI|SZUM|ŚWIAT|NAGŁÓWEK)\\s*:?\\s*$|(?![\\s\\S]))`,
         "mi",
       ),
     );
@@ -371,8 +397,9 @@ function readAnswer(raw) {
 
   return {
     headline,
-    mail: lines(grab("POCZTA")),
-    day: lines(grab("DZIEŃ")),
+    mail: lines(grab("WYMAGA AKCJI")),
+    day: lines(grab("PLAN DNIA")),
+    szum: lines(grab("SZUM")),
     world: lines(grab("ŚWIAT")),
   };
 }
@@ -383,6 +410,7 @@ module.exports = {
   dayPlan,
   peopleToday,
   needsAttention,
+  noiseMails,
   buildPrompt,
   readAnswer,
   addressOf,

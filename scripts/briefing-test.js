@@ -15,6 +15,7 @@ const {
   dayKey,
   dayPlan,
   needsAttention,
+  noiseMails,
   buildPrompt,
   readAnswer,
   addressOf,
@@ -181,6 +182,15 @@ const doKopii = needsAttention(
 assert.ok(!doKopii[0].why.includes("napisane wprost do Ciebie"));
 ok("Mail do czterech osób nie udaje maila napisanego do Ciebie");
 
+const szum = noiseMails([
+  mail({ id: "n1", from: "Newsletter <news@example.com>", subject: "Przegląd tygodnia", listUnsubscribe: "<https://x/unsub>" }),
+  mail({ id: "n2", from: "Newsletter gwiazdkowany <ok@example.com>", listUnsubscribe: "<https://x/unsub>", starred: true }),
+  mail({ id: "n3", subject: "Sprawa" }),
+]);
+assert.equal(szum.length, 1);
+assert.equal(szum[0].from, "Newsletter");
+ok("Szum to tylko rozsyłki bez gwiazdki, samym nadawcą i tematem");
+
 /* ── Materiał dla modelu ───────────────────────────────────────── */
 
 const { system, user } = buildPrompt({ picks: wybrane, plan, feeds: [], now: teraz });
@@ -199,13 +209,16 @@ ok("Pusty dzień mówi wprost, że jest pusty — zamiast milczeć");
 
 const czytane = readAnswer(`NAGŁÓWEK: Trzy spotkania, dzień zbity po południu.
 
-POCZTA:
+PLAN DNIA:
+- 9:00 Stand-up
+- 14:00 Przegląd tygodnia — cztery osoby.
+
+WYMAGA AKCJI:
 - Magdalena — czeka na potwierdzenie grafiku.
 - Tomasz — pyta o link do zajęć.
 
-DZIEŃ:
-- 9:00 Stand-up
-- 14:00 Przegląd tygodnia — cztery osoby.
+SZUM:
+- Newsletter Sp. z o.o. — tygodniowy przegląd.
 
 ŚWIAT:
 - Nowa wersja Electrona.`);
@@ -213,15 +226,17 @@ DZIEŃ:
 assert.equal(czytane.headline, "Trzy spotkania, dzień zbity po południu.");
 assert.equal(czytane.mail.length, 2);
 assert.equal(czytane.day.length, 2);
+assert.equal(czytane.szum.length, 1);
 assert.equal(czytane.world.length, 1);
-ok("Odpowiedź modelu rozkłada się na cztery sekcje");
+ok("Odpowiedź modelu rozkłada się na pięć sekcji");
 
-const bezSwiata = readAnswer("NAGŁÓWEK: Spokojnie.\n\nPOCZTA:\n- Nic.\n\nDZIEŃ:\n- Pusto.");
+const bezSwiata = readAnswer("NAGŁÓWEK: Spokojnie.\n\nPLAN DNIA:\n- Pusto.\n\nWYMAGA AKCJI:\n- Nic.");
 assert.deepEqual(bezSwiata.world, []);
+assert.deepEqual(bezSwiata.szum, []);
 assert.equal(bezSwiata.mail.length, 1);
 ok("Pominięta sekcja to pusta lista, a nie przesunięcie pozostałych");
 
-assert.deepEqual(readAnswer(""), { headline: "", mail: [], day: [], world: [] });
+assert.deepEqual(readAnswer(""), { headline: "", mail: [], day: [], szum: [], world: [] });
 ok("Milczenie modelu nie wywraca okna");
 
 /* ── Kanały ────────────────────────────────────────────────────── */

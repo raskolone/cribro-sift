@@ -30,6 +30,7 @@ const { syncNotes } = require("./sync");
 const { HotkeyEngine } = require("./hotkeys");
 const { transcribe } = require("./stt");
 const { sift, MESH } = require("./sieve");
+const { cleanDictatedText } = require("./dictation-cleanup");
 const rescue = require("./rescue");
 const logger = require("./logger");
 const { detect: detectCommand, byId: commandById } = require("./commands");
@@ -912,7 +913,7 @@ const WIDGET_COLLAPSED = {
 const WIDGET_TRAY = {
   item: 34, // średnica kółka z ikoną
   step: 9, // odstęp między kółkami w kolumnie
-  count: 5, // dyktowanie, szybka notatka, gęstość sita, język, okno aplikacji
+  count: 6, // dyktowanie, szybka notatka, gęstość sita, język, Poranek, okno aplikacji
   gap: 12, // odstęp od krawędzi znaczka
   tip: 8, // odstęp ikona ↔ dymek
   room: 168, // najszerszy dymek kolumny („Gęstość sita — Zgrubne")
@@ -3134,6 +3135,21 @@ function buildAppMenu() {
            nie ma powodu przechodzić przez ekran. */
         { label: `${t("Tekst z obrazka")}…`, click: () => readImageFile() },
         { type: "separator" },
+        /* Ten sam warunek co w tacy paska (patrz refreshTrayMenu): pozycja
+           nie ma prawa wystawiać czegoś, co po kliknięciu powie „nie mam
+           konta". Klawisze pokazujemy bez rejestracji — o samo trzymanie
+           klawiszy dba stały skrót globalny (bindBriefingHotkey), więc menu
+           nie ma po co robić tego drugi raz. */
+        ...(briefingMine()
+          ? [
+              {
+                label: `☀️ ${t("Poranek")}`,
+                accelerator: "Command+Alt+B",
+                registerAccelerator: false,
+                click: () => void showBriefing({ force: true }),
+              },
+            ]
+          : []),
         { label: t("Notatnik"), accelerator: "Command+Shift+O", click: () => createNotesWindow() },
         { type: "separator" },
         {
@@ -3370,7 +3386,9 @@ function refreshTrayMenu() {
          czekanie do jutra. Pozycja pojawia się wyłącznie wtedy, gdy poranek
          jest włączony i podłączony: menu nie ma prawa wystawiać czegoś,
          co po kliknięciu powie „nie mam konta". */
-      ...(briefingMine() ? [{ label: t("Poranek"), click: () => void showBriefing({ force: true }) }] : []),
+      ...(briefingMine()
+        ? [{ label: `☀️ ${t("Poranek")}`, click: () => void showBriefing({ force: true }) }]
+        : []),
       { label: t("Modele AI i Fallback"), click: () => createMainWindow().webContents.send("view:go", "ai") },
       { label: t("Ustawienia"), click: () => createMainWindow().webContents.send("view:go", "settings") },
       { type: "separator" },
@@ -3553,13 +3571,15 @@ async function gatherBriefing() {
   }
 
   let picks = [];
+  let noise = [];
   try {
-    const mails = await google.mail({ days: 7 });
+    const mails = await google.mail({ days: 7, max: 15 });
     picks = briefingSource.needsAttention(mails, {
       plan,
       owner: google.snapshot().email ?? config.owner,
       now,
     });
+    noise = briefingSource.noiseMails(mails);
   } catch (error) {
     problems.push(`Poczta: ${error.message}`);
   }
@@ -3579,7 +3599,7 @@ async function gatherBriefing() {
     const provider = settings.sieve?.provider ?? "gemini";
     const apiKey = keyFor(provider, settings);
     if (apiKey || provider === "mock") {
-      const { system, user } = briefingSource.buildPrompt({ picks, plan, feeds, now });
+      const { system, user } = briefingSource.buildPrompt({ picks, plan, feeds, noise, now });
       const raw = await sendToModel({
         provider,
         model: settings.sieve?.model,
@@ -3598,6 +3618,7 @@ async function gatherBriefing() {
     owner: config.owner ?? "",
     plan,
     picks,
+    noise,
     feeds,
     words,
     problems,
@@ -4300,6 +4321,23 @@ async function runPipeline(audioBuffer, durationMs) {
        dokładne — patrz outletFor. */
     const fired = cue.command ?? (result.command ? commandById(settings.commands, result.command) : null);
 
+    stage = "czyszczenie";
+    const cleanupStarted = Date.now();
+    const cleanupModel =
+      settings.sieve?.provider === "gemini" && settings.sieve?.model
+        ? settings.sieve.model
+        : STT.gemini.models[0];
+    const cleaned = await cleanDictatedText(text, {
+      model: cleanupModel,
+      apiKey: keyFor("gemini", settings),
+    });
+    console.log("[PASTE-PERF]", {
+      originalLength: text.length,
+      cleanLength: cleaned.length,
+      latencyMs: Date.now() - cleanupStarted,
+    });
+    text = cleaned;
+
     stage = "dostarczenie";
 
     const outlet = outletFor(fired, result.commandBy, context);
@@ -4501,8 +4539,27 @@ function bindHotkeys() {
      każdym przepięciu klawiszy dyktowania — cicho, bez śladu. */
   bindShotHotkey();
   bindQuickNoteHotkey();
+  bindBriefingHotkey();
   broadcast("hotkey:backend", { backend });
   return backend;
+}
+
+/**
+ * Skrót do Poranka.
+ *
+ * W odróżnieniu od zrzutu i szybkiej notatki ten klawisz jest stały —
+ * Poranek to jedno okno raz dziennie i nie ma potrzeby oddawać go pod
+ * konfigurację. Sam skrót nic nie robi, gdy Poranek nie jest jeszcze
+ * niczyj (patrz showBriefing → briefingMine()): tak jak pozycja w menu,
+ * milczy zamiast tłumaczyć się z braku konta.
+ */
+function bindBriefingHotkey() {
+  try {
+    globalShortcut.register("CommandOrControl+Alt+B", () => void showBriefing({ force: true }));
+  } catch {
+    // Zapis, którego Electron nie rozumie, albo klawisze zajęte przez
+    // inną aplikację — Poranek zostaje dostępny z menu i z tacy.
+  }
 }
 
 /**
@@ -5085,6 +5142,15 @@ function registerIpc() {
        to rozróżnienie jest pilnowane. */
     if (action === "notebook") {
       createNotesWindow();
+      return true;
+    }
+
+    /* Poranek z tacy — trzecie gniazdo otwierające duże okno, obok „app"
+       i „notebook". Milczy tak samo jak skrót i pozycja menu, gdy Poranek
+       nie ma jeszcze konta (patrz showBriefing → briefingMine()): przycisk
+       stoi w tacy zawsze, bo dopiero klik mówi, czy jest do czego wracać. */
+    if (action === "briefing") {
+      void showBriefing({ force: true });
       return true;
     }
     return false;

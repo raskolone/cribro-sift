@@ -168,6 +168,19 @@
         color: var(--text-faint);
       }
 
+      /* ── Szum ── */
+
+      /* Sama informacja, że coś przyszło i że można to zignorować —
+         stąd bez podświetlenia przy najechaniu i bez linku, w odróżnieniu
+         od .mail, które prowadzi do wątku wymagającego odpowiedzi. */
+      .mail--noise {
+        opacity: 0.6;
+      }
+      .mail--noise:hover {
+        background: none;
+        border-left-color: transparent;
+      }
+
       /* ── Plan dnia ── */
 
       .slot {
