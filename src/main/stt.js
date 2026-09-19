@@ -3,6 +3,7 @@
 const { keyFor } = require("./providers");
 const { directive, fixedCode, whisperHint } = require("./languages");
 const aiRegistry = require("./ai-registry");
+const { weightedKeywords, glossaryNames } = require("./glossary");
 
 /**
  * Krok 1 — głos na tekst.
@@ -309,7 +310,7 @@ const MOCK_TRANSCRIPTS = [
  */
 function hintFor(about) {
   const parts = [];
-  const names = (about?.glossary ?? []).filter(Boolean);
+  const names = glossaryNames(about?.glossary ?? []);
   if (names.length) {
     parts.push(`Nazwy własne, które mogą paść: ${names.join(", ")}. Zapisuj je dokładnie tak.`);
   }
@@ -773,9 +774,8 @@ async function deepgramTranscribe(audio, model, apiKey, language, about, options
     urlObj.searchParams.set("language", code);
   }
 
-  const names = (about?.glossary ?? []).filter(Boolean);
-  for (const name of names.slice(0, 50)) {
-    urlObj.searchParams.append("keywords", `${name}:2`);
+  for (const keyword of weightedKeywords(about?.glossary, 50)) {
+    urlObj.searchParams.append("keywords", keyword);
   }
 
   const response = await fetchWithin(urlObj.toString(), {

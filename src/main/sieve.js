@@ -5,6 +5,7 @@ const { describeError, withRetry } = require("./stt");
 const { directive } = require("./languages");
 const { catalog, readMarker } = require("./commands");
 const aiRegistry = require("./ai-registry");
+const { phoneticGuide } = require("./glossary");
 
 /**
  * Krok 2 — SITO.
@@ -113,6 +114,14 @@ function buildSystemPrompt(mesh, grains, customInstruction, language, command, c
       `\nZIARNA — te słowa przechodzą przez sito nietknięte. Jeśli transkrypcja zawiera coś fonetycznie zbliżonego, zapisz dokładnie tak:\n${grains.join(", ")}`,
     );
   }
+
+  /* Żargon Cribro/EdTech ginie w transkrypcji częściej niż cokolwiek innego
+     w tej aplikacji: „Claude Code" nie brzmi jak nic, na czym uczył się
+     model akustyczny. Ta lista jedzie zawsze, niezależnie od Ziaren
+     użytkownika — patrz main/glossary.js po uzasadnienie. */
+  parts.push(
+    `\nZNANE PRZEKRĘCENIA — jeśli transkrypcja zawiera coś z lewej strony (albo coś bardzo zbliżone fonetycznie), zapisz to, co po prawej:\n${phoneticGuide()}`,
+  );
   if (customInstruction?.trim()) {
     parts.push(`\nDODATKOWE WYTYCZNE UŻYTKOWNIKA:\n${customInstruction.trim()}`);
   }

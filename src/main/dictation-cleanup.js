@@ -13,6 +13,8 @@
  * błędzie dostawcy wklejamy tekst SUROWY, nigdy nie czekamy dłużej.
  */
 
+const { phoneticGuide } = require("./glossary");
+
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const TIMEOUT_MS = 700;
 const MIN_WORDS = 3;
@@ -20,8 +22,10 @@ const MIN_WORDS = 3;
 const SYSTEM = `Jesteś mikro-filtrem tekstu dyktowanego pod kursor. Twoim jedynym zadaniem jest:
 1. Dodać naturalną interpunkcję (przecinki, kropki, znaki zapytania) i wielkie litery.
 2. Poprawić pisownię zwrotów angielskich oraz pojęć techniczno-językowych wplecionych w polską mowę (np. nazwy czasów gramatycznych, idiomy, pojęcia IT/biznesowe).
-3. ZACHOWAĆ dokładnie oryginalne słowa i ich kolejność.
-ZWRÓĆ TYLKO POPRAWIONY TEKST. Zakaz cudzysłowów, wyjaśnień, komentarzy i wstępów.`;
+3. Znane przekręcenia nazw własnych zapisać poprawnie — jeśli usłyszysz coś fonetycznie zbliżone do lewej strony, zapisz to, co po prawej:
+${phoneticGuide()}
+4. ZACHOWAĆ dokładnie oryginalne słowa i ich kolejność — punkty 2 i 3 to jedyny wyjątek: poprawiasz ZAPIS słowa, nie zastępujesz go innym.
+ZWRÓĆ TYLKO POPRAWIONY TEKST. Zakaz cudzysłowów, wyjaśnień, komentarzy i wstępów. Zero halucynacji: nie dopowiadaj nic, czego nie było w oryginale.`;
 
 async function callGeminiCleanup(rawText, { model, apiKey, signal }) {
   const response = await fetch(`${GEMINI_URL}/${model}:generateContent`, {

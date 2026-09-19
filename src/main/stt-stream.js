@@ -2,6 +2,7 @@
 
 const { keyFor } = require("./providers");
 const { fixedCode } = require("./languages");
+const { weightedKeywords } = require("./glossary");
 const logger = require("./logger");
 
 /**
@@ -77,9 +78,8 @@ class SttStream {
       url.searchParams.set("language", code);
     }
 
-    const names = (about?.glossary ?? []).filter(Boolean);
-    for (const name of names.slice(0, 30)) {
-      url.searchParams.append("keywords", `${name}:2`);
+    for (const keyword of weightedKeywords(about?.glossary, 30)) {
+      url.searchParams.append("keywords", keyword);
     }
 
     try {

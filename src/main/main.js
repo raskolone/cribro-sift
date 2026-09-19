@@ -4326,7 +4326,7 @@ async function runPipeline(audioBuffer, durationMs) {
     const cleanupModel =
       settings.sieve?.provider === "gemini" && settings.sieve?.model
         ? settings.sieve.model
-        : STT.gemini.models[0];
+        : STT.gemini.models[0][0];
     const cleaned = await cleanDictatedText(text, {
       model: cleanupModel,
       apiKey: keyFor("gemini", settings),
