@@ -37,7 +37,7 @@ const ok = (label) => (console.log(`✓ ${label}`), (passed += 1));
     }),
   });
   const poprawione = await cleanDictatedText("zróbmy dzisiaj revision bo kursant ma problem", {
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-2.0-flash-lite",
     apiKey: "k",
   });
   assert.equal(poprawione, "Zróbmy dzisiaj revision, bo kursant ma problem.");

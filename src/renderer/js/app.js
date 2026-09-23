@@ -22,6 +22,10 @@ const VIEWS = {
     title: "Meeting Notes",
     subtitle: "Zapis rozmowy i wniosek z niej. Spis po lewej, spotkanie po prawej.",
   },
+  briefing: {
+    title: "☀️ Briefing",
+    subtitle: "Co w poczcie wymaga uwagi i co jest w planie dnia — na życzenie, bez konta Google.",
+  },
   sieve: { title: "Funkcja sita", subtitle: "Jedno pokrętło: jak gęsto przesiewać." },
   grains: { title: "Ziarna", subtitle: "Słowa, których sito nigdy nie tknie." },
   commands: { title: "Polecenia", subtitle: "Zdania, po których sito wie, co zrobić." },
@@ -38,6 +42,20 @@ const VIEWS = {
 
 const KEY_GLYPH = { Alt: "⌥", Ctrl: "⌃", Shift: "⇧", Meta: "⌘", Space: "␣" };
 
+/* Ta sama lista co main/providers.js#GEMINI_FALLBACK_MODELS — modele
+   produkcyjne, które Google faktycznie utrzymuje. Renderer trzyma własną
+   kopię wyłącznie jako rezerwę na czas, zanim `providers:get` odpowie
+   (patrz state.providers niżej); gdy dojdzie prawdziwy katalog z Google
+   (przycisk „Odśwież z Google"), zastępuje ją w stanie. */
+const GEMINI_FALLBACK_MODELS = [
+  ["gemini-2.5-flash", "Gemini 2.5 Flash — szybki, domyślny multimodalny (OCR i Audio)"],
+  ["gemini-2.5-pro", "Gemini 2.5 Pro — zaawansowana analiza tekstu"],
+  ["gemini-2.0-flash", "Gemini 2.0 Flash — alternatywny szybki model ogólny"],
+  ["gemini-2.0-flash-lite", "Gemini 2.0 Flash-Lite — najlżejszy model bazowy"],
+  ["gemini-1.5-flash", "Gemini 1.5 Flash — stabilna wersja LTS"],
+  ["gemini-1.5-pro", "Gemini 1.5 Pro — wersja Pro LTS"],
+];
+
 const DEFAULT_PROVIDERS = {
   stt: {
     deepgram: {
@@ -51,18 +69,6 @@ const DEFAULT_PROVIDERS = {
         ["nova-2-general", "Deepgram Nova-2 General"],
         ["enhanced", "Deepgram Enhanced"],
         ["base", "Deepgram Base"],
-      ],
-    },
-    openai: {
-      label: "OpenAI",
-      needsKey: true,
-      keyHint: "sk-…",
-      keyUrl: "https://platform.openai.com/api-keys",
-      models: [
-        ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
-        ["gpt-transcribe", "GPT Transcribe — najdokładniejszy"],
-        ["gpt-4o-transcribe", "GPT-4o Transcribe"],
-        ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe — najtańszy"],
       ],
     },
     groq: {
@@ -80,12 +86,7 @@ const DEFAULT_PROVIDERS = {
       needsKey: true,
       keyHint: "AIza…",
       keyUrl: "https://aistudio.google.com/apikey",
-      models: [
-        ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — domyślny, najluźniejsze limity"],
-        ["gemini-3.7-flash", "Gemini 3.7 Flash — szybki, ale zatłoczony na darmowym poziomie"],
-        ["gemini-3.1-pro", "Gemini 3.1 Pro — dokładniejszy, wolniejszy"],
-        ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy, tańszy"],
-      ],
+      models: GEMINI_FALLBACK_MODELS,
     },
     mock: {
       label: "Atrapa (bez klucza)",
@@ -99,24 +100,7 @@ const DEFAULT_PROVIDERS = {
       needsKey: true,
       keyHint: "AIza…",
       keyUrl: "https://aistudio.google.com/apikey",
-      models: [
-        ["gemini-2.5-flash", "Gemini 2.5 Flash — szybki i stabilny"],
-        ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — najluźniejsze limity"],
-        ["gemini-3.1-pro", "Gemini 3.1 Pro — najlepsza redakcja"],
-        ["gemini-3.7-flash", "Gemini 3.7 Flash — szybki, domyślny"],
-      ],
-    },
-    openai: {
-      label: "OpenAI",
-      needsKey: true,
-      keyHint: "sk-…",
-      keyUrl: "https://platform.openai.com/api-keys",
-      models: [
-        ["gpt-4o-mini", "GPT-4o mini — szybki, tani i dokładny"],
-        ["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"],
-        ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"],
-        ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"],
-      ],
+      models: GEMINI_FALLBACK_MODELS,
     },
     groq: {
       label: "Groq (LPU — ultra-szybki)",
@@ -142,16 +126,12 @@ const DEFAULT_PROVIDERS = {
     },
   },
   shot: {
-    openai: {
-      label: "OpenAI",
+    gemini: {
+      label: "Google Gemini",
       needsKey: true,
-      keyHint: "sk-…",
-      keyUrl: "https://platform.openai.com/api-keys",
-      models: [
-        ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy, domyślny"],
-        ["gpt-5.6-terra", "GPT-5.6 Terra — pewniejszy przy piśmie odręcznym"],
-        ["gpt-4o-mini", "GPT-4o mini — starszy, tani klasyk"],
-      ],
+      keyHint: "AIza…",
+      keyUrl: "https://aistudio.google.com/apikey",
+      models: GEMINI_FALLBACK_MODELS,
     },
     mock: {
       label: "Atrapa (bez klucza)",
@@ -196,6 +176,8 @@ const state = {
      `settings`, bo to nie jest ustawienie — to odpowiedź procesu głównego
      na pytanie „co teraz z tym kontem". */
   briefing: null,
+  /* Czy trwa otwieranie okna Poranka po kliknięciu „Generuj briefing teraz". */
+  briefingBusy: false,
   /* Polecenie w trakcie edycji — kopia, nie oryginał. Widok przerysowuje się
      w całości, więc wpisywany tekst musi mieć gdzie przeczekać; ta sama
      sztuczka co przy formularzu konta. `null` znaczy „nikt nic nie edytuje". */
@@ -242,9 +224,12 @@ function toast(message) {
   toast.timer = setTimeout(() => el.classList.remove("in"), 2200);
 }
 
-/* Kolory rysunku pochodzą z tokenów, nie z JS — motyw ma jedno źródło prawdy. */
-const ACCENT = themeRgb("--accent");
-const QUIET = themeRgb("--text-mute");
+/* Kolory rysunku pochodzą z tokenów, nie z JS — motyw ma jedno źródło prawdy.
+   `let`, nie `const`: zmiana motywu na żywo (patrz api.theme.onChange niżej)
+   ma podmienić i te dwie stałe, inaczej sito rysowałoby się starym kolorem
+   aż do ponownego otwarcia okna. */
+let ACCENT = themeRgb("--accent");
+let QUIET = themeRgb("--text-mute");
 
 /** Sito jako rysunek: im gęstsza siatka, tym mniej przechodzi. */
 function drawMesh(canvas, density, active) {
@@ -735,9 +720,13 @@ function renderGrains() {
    co dzieje się zawsze, po to, co zabiera tekst sprzed oczu. */
 const OUTLETS = {
   cursor: ["Pod kursor", "Tak jak zwykle: wklejenie w aktywnej aplikacji i schowek."],
-  note: ["Do notatki", "Dopisuje do notatki, do której dyktujesz. Spod kursora — zakłada nową."],
+  note: ["Do notatki, do której dyktujesz", "Dopisuje do notatki, do której dyktujesz. Spod kursora — zakłada nową."],
   "new-note": ["Nowa notatka", "Zawsze zakłada osobną notatkę i tam odkłada tekst."],
   clipboard: ["Tylko schowek", "Nic się nigdzie nie wkleja."],
+  "free-thoughts": [
+    "Do Free Thoughts",
+    "Zawsze dopisuje do notatki „Free Thoughts”, niezależnie od tego, gdzie akurat dyktujesz.",
+  ],
 };
 
 const PLACES = {
@@ -1149,6 +1138,20 @@ function renderSettings() {
     </div>`;
 
   $("#view-settings").innerHTML = `
+    <div class="card" id="card-theme" style="border: 1px solid var(--accent-30);">
+      <h2>Motyw</h2>
+      <p class="sub">„Zgodny z systemem" podąża za wyglądem macOS i przełącza się sam, gdy on się zmieni.</p>
+      <div class="field">
+        <div class="field__control">
+          <div class="seg" data-theme-group>
+            <button class="seg__btn" data-theme-btn="light" aria-pressed="${String(settings.theme === "light")}">Jasny</button>
+            <button class="seg__btn" data-theme-btn="dark" aria-pressed="${String(settings.theme === "dark")}">Ciemny</button>
+            <button class="seg__btn" data-theme-btn="system" aria-pressed="${String(settings.theme !== "light" && settings.theme !== "dark")}">Zgodny z systemem</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     ${
       state.settings?.owner
         ? `<div class="card card--ai" id="card-ai-link" style="border: 1px solid var(--accent-30); background: linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent);">
@@ -1159,7 +1162,7 @@ function renderSettings() {
                    <span class="pill pill--mint">Osobna karta w menu</span>
                  </div>
                  <p class="sub" style="margin-bottom:0;">
-                   Konfiguracja modeli AI (Deepgram Nova-3, OpenAI, Groq, Gemini), wielopoziomowy fallback, analiza ze zrzutu ekranu oraz rejestr zapytań na żywo znajdują się w dedykowanej zakładce Panel admina.
+                   Konfiguracja modeli AI (Deepgram Nova-3, Gemini, Groq), wielopoziomowy fallback, analiza ze zrzutu ekranu oraz rejestr zapytań na żywo znajdują się w dedykowanej zakładce Panel admina.
                  </p>
                </div>
                <button class="btn btn--primary" data-act="go-to-admin">Przejdź do Panelu admina →</button>
@@ -1297,8 +1300,6 @@ function renderSettings() {
       </p>
       ${toggle("showInDock", "Ikona w Docku", "Wyłączenie zostawia Cribro w pasku menu. Ikona wraca sama na czas, w którym stoi otwarte okno aplikacji — po to, żeby dało się do niego wrócić ⌘Tabem.", settings.showInDock !== false)}
     </div>
-
-    ${renderBriefingCard()}
 
     ${renderWidgetCard()}
 
@@ -1549,45 +1550,45 @@ function renderEngines() {
       <div class="ai-rec-grid" style="margin-bottom:var(--s-4);">
         <div class="ai-rec-card">
           <div class="ai-rec-card__head">
-            <span class="ai-rec-card__title">1. Główny STT: Deepgram</span>
+            <span class="ai-rec-card__title">1. Główny STT: Google Gemini Audio</span>
             <span class="pill pill--mint" style="font-size:9px; padding:2px 6px;">Rekomendowany</span>
           </div>
           <div class="ai-rec-card__models">
-            Transkrypcja: <code>nova-3</code> lub <code>nova-2</code><br>
-            Ultraszybki (~0.3s), bezbłędny polski, automatyczna interpunkcja i formatowanie liczb.<br>
-            <span style="color:var(--mint); font-size:11px;">✨ $200 darmowych kredytów na start.</span>
+            Transkrypcja: <code>gemini-2.5-flash</code> (multimodalny)<br>
+            Transkrybuje i czyści tekst w jednym wywołaniu — bez osobnego kroku sita.<br>
+            <span style="color:var(--mint); font-size:11px;">Darmowy poziom z rozsądnymi limitami.</span>
+          </div>
+          <a class="ai-rec-card__link" href="https://aistudio.google.com/apikey" data-act="open-link">Zdobądź klucz Gemini API →</a>
+        </div>
+
+        <div class="ai-rec-card">
+          <div class="ai-rec-card__head">
+            <span class="ai-rec-card__title">2. Sito i Briefing: Google Gemini</span>
+            <span class="pill" style="font-size:9px; padding:2px 6px; color:var(--info); border-color:var(--info);">Domyślny</span>
+          </div>
+          <div class="ai-rec-card__models">
+            Sito (Clean up): <code>gemini-2.5-flash</code> (szybki i dokładny)<br>
+            Używane, gdy STT chodzi na Deepgram/Groq. Także Poranek (Briefing).<br>
+            Darmowy poziom z rozsądnymi limitami.
+          </div>
+          <a class="ai-rec-card__link" href="https://aistudio.google.com/apikey" data-act="open-link">Zdobądź klucz Gemini API →</a>
+        </div>
+
+        <div class="ai-rec-card">
+          <div class="ai-rec-card__head">
+            <span class="ai-rec-card__title">3. Opcjonalny fallback: Deepgram / Groq</span>
+            <span class="pill" style="font-size:9px; padding:2px 6px; color:var(--accent); border-color:var(--accent);">Fallback</span>
+          </div>
+          <div class="ai-rec-card__models">
+            Transkrypcja: Deepgram <code>nova-3</code> lub Groq <code>whisper-large-v3-turbo</code> (~0.4s)<br>
+            Sito (Clean up): <code>llama-3.3-70b-versatile</code><br>
+            Przejmuje, gdy główny dostawca nie odpowie.
           </div>
           <a class="ai-rec-card__link" href="https://console.deepgram.com/" data-act="open-link">Zdobądź klucz Deepgram ($200 free) →</a>
         </div>
-
-        <div class="ai-rec-card">
-          <div class="ai-rec-card__head">
-            <span class="ai-rec-card__title">2. Zapasowy 1: OpenAI</span>
-            <span class="pill" style="font-size:9px; padding:2px 6px; color:var(--info); border-color:var(--info);">Fallback 1</span>
-          </div>
-          <div class="ai-rec-card__models">
-            Transkrypcja: <code>whisper-1</code> (sprawdzony wzorzec mowy)<br>
-            Sito (Clean up): <code>gpt-4o-mini</code> (błyskawiczny, tani i dokładny)<br>
-            Niezawodna dostępność i odporność na skoki ruchu.
-          </div>
-          <a class="ai-rec-card__link" href="https://platform.openai.com/api-keys" data-act="open-link">Zdobądź klucz OpenAI API →</a>
-        </div>
-
-        <div class="ai-rec-card">
-          <div class="ai-rec-card__head">
-            <span class="ai-rec-card__title">3. Zapasowy 2: Groq LPU</span>
-            <span class="pill" style="font-size:9px; padding:2px 6px; color:var(--accent); border-color:var(--accent);">Fallback 2 (Darmowy)</span>
-          </div>
-          <div class="ai-rec-card__models">
-            Transkrypcja: <code>whisper-large-v3-turbo</code> (~0.4s!)<br>
-            Sito (Clean up): <code>llama-3.3-70b-versatile</code><br>
-            Dedykowany procesor LPU. Darmowe konto z wysokimi limitami.
-          </div>
-          <a class="ai-rec-card__link" href="https://console.groq.com/keys" data-act="open-link">Zdobądź darmowy klucz Groq API →</a>
-        </div>
       </div>
 
-      ${engineBlock("stt", "Krok 1 — Transkrypcja mowy (STT)", "Zamienia nagranie na wierny zapis mowy. Rekomendowany: Deepgram Nova-3 (~0.3s) z zapasowym Whisper / Groq.")}
+      ${engineBlock("stt", "Krok 1 — Transkrypcja mowy (STT)", "Zamienia nagranie na wierny, oczyszczony zapis mowy. Rekomendowany: Gemini Audio (transkrypcja + czyszczenie w jednym) z zapasowym Deepgram / Groq.")}
       ${engineBlock("sieve", "Krok 2 — Sito (Clean up tekstu)", "Czyści zapis: usuwa szum mowy, zacięcia, stawia interpunkcję i formatuje notatkę.")}
       ${engineBlock("shot", "Krok 3 — Analiza tekstu ze zrzutu ekranu (OCR)", "Czyta tekst z zaznaczonego fragmentu ekranu lub pliku graficznego.")}
       ${
@@ -1623,15 +1624,54 @@ function switchField(path, label, hint, value) {
  * jest cała umowa z użytkownikiem: kliknięcie w znaczek chowa wszystko.
  */
 /**
- * Poranek — karta w Ustawieniach.
+ * Poranek — widok BriefingView.
  *
- * Prowadzi przez trzy kroki w kolejności, w której naprawdę trzeba je
- * zrobić: klient OAuth, podłączenie konta, kanały. Każdy następny ma sens
- * dopiero po poprzednim, więc każdy następny jest wyszarzony, dopóki
- * poprzedni nie jest zrobiony — zamiast trzech pól obok siebie i pytania,
- * od którego zacząć.
+ * Osobna pozycja w menu, nie karta zakopana w Ustawieniach: klika się w nią
+ * tak samo odruchowo jak w Notatki, i ma działać od razu, bez konfiguracji.
+ * Dwie sekcje mówią dwie różne rzeczy — GENERUJ TERAZ jest czynnością
+ * i stoi na wierzchu; ŹRÓDŁA I INTEGRACJE są konfiguracją i stoją niżej,
+ * w <details>, bo do nich wraca się rzadko.
+ *
+ * Konto Google nie jest warunkiem pokazania niczego: gatherBriefing
+ * w main/main.js samo sięga po materiał lokalny, gdy konta nie ma
+ * (patrz data.googleActive / data.local niżej).
  */
-function renderBriefingCard() {
+function renderBriefingView() {
+  const target = $("#view-briefing");
+  if (!target) return;
+
+  target.innerHTML = `
+    <div class="card" id="briefToday">
+      ${renderBriefToday()}
+    </div>
+    <div class="card">
+      ${renderBriefSources()}
+    </div>`;
+}
+
+/** Sekcja A: „Dzisiejszy Briefing" — generowanie na żądanie w osobnym oknie Poranka. */
+function renderBriefToday() {
+  const busy = state.briefingBusy;
+
+  return `
+    <h2>Dzisiejszy Briefing</h2>
+    <p class="sub">
+      Co w poczcie wymaga uwagi i co jest w planie dnia — jednym kliknięciem,
+      bez konta Google, jeśli go nie masz podłączonego.
+    </p>
+
+    <div class="meet__act meet__act--tight" style="align-items:center">
+      <button class="btn btn--primary" data-brief="generate" ${busy ? "disabled" : ""}>
+        ${busy ? "Otwieram…" : "Generuj briefing teraz"}
+      </button>
+      <span class="pill">⌘⌥B / Ctrl+Alt+B</span>
+    </div>
+
+    <p class="sub">Otwiera się w osobnym oknie Poranka.</p>`;
+}
+
+/** Sekcja B: „Źródła danych i integracje" — prosto, zwinięte. */
+function renderBriefSources() {
   const settings = state.settings ?? {};
   const config = settings.briefing ?? {};
   const account = state.briefing?.account ?? { configured: false, signedIn: false, email: null };
@@ -1656,25 +1696,30 @@ function renderBriefingCard() {
   const [pill, label] = state_();
 
   return `
-    <div class="card">
-      <h2>Poranek</h2>
+    <h2>Źródła danych i integracje</h2>
+
+    <div class="field">
+      <div class="field__label"><strong>Dane lokalne</strong><span>Sticky Notes, Notatki, Zadania ze spotkań — zawsze dostępne, bez logowania.</span></div>
+      <div class="field__control"><span class="pill pill--mint">Aktywne</span></div>
+    </div>
+
+    <details>
+      <summary style="cursor:pointer; color:var(--text-mute); margin: var(--s-3) 0;">Gmail / Kalendarz (opcjonalne)</summary>
+
       <p class="sub">
-        Jedno okno raz dziennie, przy pierwszym siadaniu do komputera: co
-        w poczcie wymaga uwagi i co jest w planie dnia. Poczta czytana jest
-        tylko do odczytu i tylko z konta wpisanego niżej; wybór maili robią
+        Nieobowiązkowe: bez tego poranek i tak działa, na danych lokalnych.
+        Podłączone konto dokłada pocztę wymagającą uwagi i plan dnia z
+        kalendarza. Poczta czytana jest tylko do odczytu; wybór maili robią
         reguły na tym komputerze, a do modelu jedzie dopiero kilkanaście
         wytypowanych.
       </p>
 
-      ${toggle("briefing.enabled", "Pokazuj poranek", "Raz na dobę, przy pierwszym uruchomieniu albo odblokowaniu ekranu.", config.enabled)}
+      ${toggle("briefing.enabled", "Pokazuj poranek automatycznie", "Raz na dobę, przy pierwszym uruchomieniu albo odblokowaniu ekranu.", config.enabled)}
 
       <div class="field">
         <div class="field__label">
           <strong>Konto Google</strong>
-          <span>
-            Poranek należy do jednego konta. Zalogowanie innego jest odrzucane —
-            razem z sesją.
-          </span>
+          <span>Poranek należy do jednego konta. Zalogowanie innego jest odrzucane — razem z sesją.</span>
         </div>
         <div class="field__control">
           <span class="pill ${pill}">${escape(label)}</span>
@@ -1733,25 +1778,21 @@ function renderBriefingCard() {
                     placeholder="https://serwis.example/feed">${escape(feeds.map((feed) => feed.url ?? feed).join("\n"))}</textarea>
         </div>
       </div>
-
-      <div class="meet__act meet__act--tight">
-        <button class="btn btn--sm" data-brief="show">Pokaż teraz</button>
-      </div>
-    </div>`;
+    </details>`;
 }
 
 function renderWidgetCard() {
   const widget = state.settings.widget ?? {};
-  const desk = widget.mode === "desk";
 
   return `
     <div class="card">
       <h2>Widget</h2>
       <p class="sub">
         Znaczek pływający nad wszystkimi aplikacjami — jedyne, co Cribro
-        pokazuje poza swoimi oknami. Najechanie kursorem rozkłada pod nim
-        cztery czynności robione w biegu: dyktowanie, szybką notatkę, gęstość
-        sita i język. Z boku wychodzi przejście do notatek na wierzchu.
+        pokazuje poza swoimi oknami. Najechanie kursorem rozkłada obok niego
+        menu po łuku: Poranek, nowa karteczka, Notatnik i główna aplikacja.
+        Kliknięcie w sam znaczek go wciska, a podwójne kliknięcie chowa i
+        pokazuje wszystkie karteczki na pulpicie naraz.
       </p>
 
       ${switchField(
@@ -1763,22 +1804,31 @@ function renderWidgetCard() {
 
       <div class="field">
         <div class="field__label">
-          <strong>Widok</strong>
-          <span>
-            ${
-              desk
-                ? "Każda notatka z wierzchu dostaje własną kartkę na pulpicie — jak karteczki przyklejone do ekranu. Kartki leżą tam, gdzie je położysz, zmieniają rozmiar uchwytem w rogu i zostają nad wszystkimi oknami, także po przełączeniu pulpitu. Schodzą z wierzchu tylko na wyraźny gest: kliknięcie w znaczek albo Escape — wszystkie naraz."
-                : "Kliknięcie w znaczek rozwija przy nim listę notatek z wierzchu, a wybrana wychodzi z niej kartką. Wszystko w jednym rogu ekranu i wszystko znika razem ze znaczkiem."
-            }
-          </span>
-        </div>
-        <div class="field__control">
-          <select data-setting="widget.mode">
-            <option value="compact" ${desk ? "" : "selected"}>Kompaktowy — lista</option>
-            <option value="desk" ${desk ? "selected" : ""}>Pulpit — wszystkie kartki</option>
-          </select>
+          <strong>Moduły widżetu</strong>
+          <span>Wybierz, które narzędzia i skróty mają pojawiać się w menu po najechaniu na znaczek.</span>
         </div>
       </div>
+
+      ${switchField(
+        "widget.showQuickTasks",
+        "Szybka notatka (Quick Capture)",
+        "Szybkie okno do błyskawicznego zanotowania myśli bez otwierania głównej aplikacji.",
+        widget.showQuickTasks !== false,
+      )}
+
+      ${switchField(
+        "widget.showRecentNotes",
+        "Nowa karteczka (Stickies)",
+        "Tworzy nową, pływającą karteczkę od razu na pulpicie.",
+        widget.showRecentNotes !== false,
+      )}
+
+      ${switchField(
+        "widget.showWeatherRates",
+        "Poranek (Briefing)",
+        "Dostęp do porannego podsumowania dnia, kalendarza i poczty.",
+        widget.showWeatherRates !== false,
+      )}
 
       <div class="field">
         <div class="field__label">
@@ -2308,10 +2358,15 @@ function engineBlock(stage, title, hint) {
 
       <div class="field">
         <div class="field__label"><strong>Model główny</strong><span>Konkretny model wybranego dostawcy.</span></div>
-        <div class="field__control">
-          <select data-setting="${stage}.model">
+        <div class="field__control" style="display:flex; gap:var(--s-2); align-items:center;">
+          <select data-setting="${stage}.model" style="flex:1;">
             ${options(provider?.models ?? [], cfg.model)}
           </select>
+          ${
+            providerKey === "gemini"
+              ? `<button class="btn btn--sm" data-act="refresh-gemini-models" data-stage="${stage}" title="Pobierz aktualną listę modeli z Google AI">Odśwież z Google</button>`
+              : ""
+          }
         </div>
       </div>
 
@@ -2383,38 +2438,7 @@ function engineBlock(stage, title, hint) {
 
               <div class="field">
                 <div class="field__label">
-                  <strong>Zapasowy model 1 (OpenAI Fallback)</strong>
-                  <span>Sprawdzony wzorzec mowy OpenAI.</span>
-                </div>
-                <div class="field__control">
-                  <select data-setting="stt.fallbackModel">
-                    ${options(
-                      [
-                        ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
-                        ["gpt-transcribe", "GPT Transcribe — najdokładniejszy"],
-                        ["gpt-4o-transcribe", "GPT-4o Transcribe"],
-                        ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe — najtańszy"],
-                      ],
-                      cfg.fallbackModel || "whisper-1",
-                    )}
-                  </select>
-                </div>
-              </div>
-
-              <div class="field">
-                <div class="field__label">
-                  <strong>Klucz OpenAI API (Fallback 1)</strong>
-                  <span><a href="https://platform.openai.com/api-keys" data-act="open-link">Zdobądź klucz OpenAI</a> (współdzielony z sitem jeśli pusty)</span>
-                </div>
-                <div class="field__control">
-                  <input type="password" data-setting="stt.fallbackApiKey"
-                         value="${escape(cfg.fallbackApiKey ?? "")}" placeholder="Opcjonalny klucz sk-…" />
-                </div>
-              </div>
-
-              <div class="field">
-                <div class="field__label">
-                  <strong>Zapasowy model 2 (Groq LPU — ultra-szybki fallback)</strong>
+                  <strong>Zapasowy model (Groq LPU — ultra-szybki fallback)</strong>
                   <span>Błyskawiczny (~0.4s) procesor LPU.</span>
                 </div>
                 <div class="field__control">
@@ -2432,7 +2456,7 @@ function engineBlock(stage, title, hint) {
 
               <div class="field">
                 <div class="field__label">
-                  <strong>Klucz Groq API (Fallback 2)</strong>
+                  <strong>Klucz Groq API (Fallback)</strong>
                   <span><a href="https://console.groq.com/keys" data-act="open-link">Zdobądź darmowy klucz Groq</a></span>
                 </div>
                 <div class="field__control">
@@ -2458,39 +2482,8 @@ function engineBlock(stage, title, hint) {
 
               <div class="field">
                 <div class="field__label">
-                  <strong>Zapasowy model 1 (OpenAI Fallback)</strong>
-                  <span>Szybka i precyzyjna redakcja tekstu.</span>
-                </div>
-                <div class="field__control">
-                  <select data-setting="sieve.fallbackModel">
-                    ${options(
-                      [
-                        ["gpt-4o-mini", "GPT-4o mini — szybki, tani i dokładny"],
-                        ["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"],
-                        ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"],
-                        ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"],
-                      ],
-                      cfg.fallbackModel || "gpt-4o-mini",
-                    )}
-                  </select>
-                </div>
-              </div>
-
-              <div class="field">
-                <div class="field__label">
-                  <strong>Klucz OpenAI API (Fallback 1)</strong>
-                  <span><a href="https://platform.openai.com/api-keys" data-act="open-link">Zdobądź klucz OpenAI</a> (współdzielony jeśli pusty)</span>
-                </div>
-                <div class="field__control">
-                  <input type="password" data-setting="sieve.fallbackApiKey"
-                         value="${escape(cfg.fallbackApiKey ?? "")}" placeholder="Opcjonalny klucz sk-…" />
-                </div>
-              </div>
-
-              <div class="field">
-                <div class="field__label">
-                  <strong>Zapasowy model 2 (Groq LPU Fallback)</strong>
-                  <span>Ostateczny fallback redakcyjny na procesorach LPU Groq.</span>
+                  <strong>Zapasowy model (Groq LPU Fallback)</strong>
+                  <span>Fallback redakcyjny na procesorach LPU Groq.</span>
                 </div>
                 <div class="field__control">
                   <select data-setting="sieve.groqModel">
@@ -2507,7 +2500,7 @@ function engineBlock(stage, title, hint) {
 
               <div class="field">
                 <div class="field__label">
-                  <strong>Klucz Groq API (Fallback 2)</strong>
+                  <strong>Klucz Groq API (Fallback)</strong>
                   <span><a href="https://console.groq.com/keys" data-act="open-link">Zdobądź darmowy klucz Groq</a></span>
                 </div>
                 <div class="field__control">
@@ -2868,6 +2861,7 @@ function render() {
   if (state.view === "ai") void renderAi();
   if (state.view === "settings") renderSettings();
   if (state.view === "admin") void renderAdmin();
+  if (state.view === "briefing") renderBriefingView();
 
   const hold = state.settings?.hotkey.hold.map((key) => KEY_GLYPH[key] ?? key) ?? [];
   $("#keycap").innerHTML =
@@ -2912,6 +2906,20 @@ document.addEventListener("click", async (event) => {
   // Panel admina ma własny obieg — idzie pierwszy, bo jego przyciski nie
   // przypominają niczego innego w tym oknie i nie ma z czym kolidować.
   if (event.target.closest("[data-admin]")) return void onAdminClick(event);
+
+  // Motyw. Segment przycisków, nie <select> — trzy stany widoczne naraz,
+  // dokładnie jak w panelu admina (patrz .seg). Idzie własnym mostem
+  // (api.theme), z tego samego powodu co przy polu data-setting="theme"
+  // niżej: to on jest jedynym miejscem, które rozstrzyga resolvedTheme.
+  const themeBtn = event.target.closest("[data-theme-btn]");
+  if (themeBtn) {
+    const preference = themeBtn.dataset.themeBtn;
+    const { resolved } = await api.theme.set(preference);
+    state.settings.theme = preference;
+    document.documentElement.setAttribute("data-theme", resolved);
+    render();
+    return;
+  }
 
   const link = event.target.closest('[data-act="open-link"]');
   if (link) {
@@ -3016,12 +3024,33 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
-  /* Poranek: podłączenie konta, odłączenie i pokazanie na żądanie.
-     Wszystkie trzy mogą zawieść w sposób, o którym trzeba powiedzieć —
+  /* Poranek: podłączenie konta, odłączenie, pokazanie na żądanie oraz —
+     w BriefingView — generowanie treści wprost w oknie głównym.
+     Wszystkie mogą zawieść w sposób, o którym trzeba powiedzieć —
      „cudze konto" i „brak klienta OAuth" to nie są awarie, tylko odpowiedzi. */
   const brief = event.target.closest("[data-brief]");
   if (brief) {
     const what = brief.dataset.brief;
+
+    /* Generowanie ma pokazać „Otwieram…" NATYCHMIAST, zanim proces główny
+       zbierze materiał — inaczej klik wygląda jak nic nierobiący, bo
+       zebranie poczty i planu dnia trwa dłużej niż mrugnięcie. Klik otwiera
+       dedykowane okno Poranka (patrz briefing.html) zamiast wypisywać
+       surowy podgląd tutaj, w ustawieniach. */
+    if (what === "generate") {
+      state.briefingBusy = true;
+      render();
+      try {
+        await api.briefing.show();
+      } catch (error) {
+        toast(String(error.message ?? error));
+      } finally {
+        state.briefingBusy = false;
+        render();
+      }
+      return;
+    }
+
     const was = brief.textContent;
     try {
       if (what === "connect") {
@@ -3205,6 +3234,29 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  /* Odśwież listę modeli Gemini z Google. Katalog jest wspólny dla
+     wszystkich trzech kroków (stt/sieve/shot), więc jedno pobranie
+     aktualizuje modele Gemini we wszystkich naraz — a nie tylko w tym
+     bloku, z którego kliknięto. */
+  const refreshModels = event.target.closest('[data-act="refresh-gemini-models"]');
+  if (refreshModels) {
+    const stage = refreshModels.dataset.stage;
+    refreshModels.disabled = true;
+    refreshModels.textContent = "Pobieram…";
+    render();
+    try {
+      const models = await api.system.geminiModels(stage);
+      for (const key of ["stt", "sieve", "shot"]) {
+        if (state.providers[key]?.gemini) state.providers[key].gemini.models = models;
+      }
+      toast(`Pobrano ${models.length} modeli Gemini z Google.`);
+    } catch (error) {
+      toast(`Nie udało się pobrać listy modeli: ${String(error.message || error)}`);
+    }
+    render();
+    return;
+  }
+
   if (event.target.closest('[data-act="perm-accessibility"]')) {
     await api.system.request("accessibility");
     state.status = await api.system.status();
@@ -3382,7 +3434,7 @@ document.addEventListener("change", async (event) => {
   }
   // Zmiana widoku widgetu przepisuje wyjaśnienie pod pokrętłem — a jest
   // ono tym, co w ogóle mówi, czym te dwa widoki się różnią.
-  const rerender = ["mesh", "hotkey", "language", "widget.mode", "stt", "sieve", "shot"];
+  const rerender = ["mesh", "hotkey", "language", "stt", "sieve", "shot"];
   if (rerender.some((prefix) => field.dataset.setting.startsWith(prefix))) render();
 });
 
@@ -3793,6 +3845,10 @@ api.onState(async ({ state: next, entry }) => {
   if (next === "done" && entry) {
     state.stats = await api.history.stats();
     state.history = await api.history.get();
+    // „Do notatki" wypowiedziane na początku dyktowania kieruje tekst do
+    // Free Thoughts zamiast pod kursor — to jedyny sygnał w interfejsie,
+    // że tak się właśnie stało (patrz outlet „free-thoughts" w main.js).
+    if (entry.command?.id === "c-free-thoughts") toast(t("Zapisano w Free Thoughts"));
   }
   if (state.view === "start") renderStart();
 });
@@ -3855,6 +3911,16 @@ api.settings.onChange((settings) => {
   setLanguage(settings.uiLanguage ?? "pl");
   MeetingsView.settings(settings);
   render();
+});
+
+/* Zmiana motywu, która nie wyszła stąd: druga karta Ustawień w innym
+   oknie, albo macOS przełączający się sam między dniem a nocą w trybie
+   „Zgodny z systemem" (patrz nativeTheme.on("updated") w main.js). */
+api.theme?.onChange?.((resolved) => {
+  document.documentElement.setAttribute("data-theme", resolved);
+  ACCENT = themeRgb("--accent");
+  QUIET = themeRgb("--text-mute");
+  if (state.view === "settings") render();
 });
 
 /* Spotkanie zaczyna się i kończy także spoza tego okna — z menu, z tacy

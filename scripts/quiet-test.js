@@ -200,7 +200,7 @@ ok("Okno pojedynczego spotkania nie ogłasza, że jest spotkaniem");
 
 const stt = code(path.join(root, "src", "main", "stt.js"));
 const hosts = [...stt.matchAll(/https:\/\/([a-z0-9.-]+)/gi)].map((hit) => hit[1]);
-const allowed = new Set(["generativelanguage.googleapis.com", "api.openai.com"]);
+const allowed = new Set(["generativelanguage.googleapis.com", "api.groq.com", "api.deepgram.com"]);
 for (const host of hosts) {
   assert.ok(allowed.has(host), `transkrypcja wysyła nagranie do ${host} — to nie jest dostawca modelu`);
 }

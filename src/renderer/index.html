@@ -110,6 +110,18 @@
           <rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.4" />
           <path d="M8.5 1v3M15.5 1v3M8.5 20v3M15.5 20v3M1 8.5h3M1 15.5h3M20 8.5h3M20 15.5h3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
         </symbol>
+        <!-- Poranek. Ten sam rysunek co znaczek w widgecie (w-sun,
+             widget.html) — jedno słońce w całej aplikacji. -->
+        <symbol id="i-sun" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.6" />
+          <path
+            d="M12 3v2.4M12 18.6V21M4.2 12H6.6M17.4 12h2.4M6.2 6.2l1.7 1.7M16.1 16.1l1.7 1.7M6.2 17.8l1.7-1.7M16.1 7.9l1.7-1.7"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+        </symbol>
         <symbol id="i-mic" viewBox="0 0 24 24">
           <rect
             x="9"
@@ -267,6 +279,13 @@
           <button class="nav__item" title="Notatki" data-view="notes" aria-selected="false">
             <svg><use href="#i-note" /></svg> <span>Notatki</span>
           </button>
+          <!-- Osobna pozycja, nie karta schowana w Ustawieniach: Poranek
+               ma działać bez szukania i bez konta Google (patrz
+               BriefingView w js/app.js oraz gatherBriefing w main/main.js,
+               które bez Google sięga po notatki lokalne). -->
+          <button class="nav__item" title="Briefing" data-view="briefing" aria-selected="false">
+            <svg><use href="#i-sun" /></svg> <span>☀️ Briefing</span>
+          </button>
           <button class="nav__item" title="Meeting Notes" data-view="meetings" aria-selected="false">
             <svg><use href="#i-meeting" /></svg> <span>Spotkania</span>
           </button>
@@ -323,6 +342,7 @@
 
         <section class="view" id="view-start"></section>
         <section class="view" id="view-notes" hidden></section>
+        <section class="view" id="view-briefing" hidden></section>
         <section class="view" id="view-meetings" hidden></section>
         <section class="view" id="view-sieve" hidden></section>
         <section class="view" id="view-grains" hidden></section>

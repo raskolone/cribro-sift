@@ -60,6 +60,15 @@
   --air-55:          rgba(255, 90, 82, 0.55);
   --air-glow:        0 0 26px rgba(255, 90, 82, 0.50);
 
+  /* ---- Poranek ----
+     Bursztyn, nie zieleń: znaczek Poranka w widgecie ma być rozpoznawalny
+     kątem oka, tak samo jak zielony mikrofon, ale własnym kolorem — bo to
+     inna czynność, nie stan dyktowania. */
+  --sun:             #f59e0b;
+  --sun-soft:        #fbbf24;
+  --sun-ink:         #2a1602;   /* tekst i znak NA bursztynie */
+  --sun-glow:        0 8px 24px -8px rgba(245, 158, 11, 0.55);
+
   /* ---- Text ---- */
   --text:            #eae8e3;   /* body */
   --text-hi:         #ffffff;   /* display headings only */
@@ -71,12 +80,27 @@
   /* ---- State ---- */
   --warn:            #e0a83a;
   --danger:          #f0726f;
+  --danger-12:       rgba(240, 114, 111, 0.14);
+  --danger-30:       rgba(240, 114, 111, 0.35);
   --info:            #6fa8f0;
 
   /* ---- Lines ---- */
   --line:            rgba(255, 255, 255, 0.07);
   --line-strong:     rgba(255, 255, 255, 0.12);
   --line-soft:       rgba(255, 255, 255, 0.04);
+
+  /* ---- Wash ----
+     Podbicie powierzchni o jeden stopień — hover i active na przyciskach,
+     kartach, wierszach. W ciemnym motywie to biel na niskiej przezroczystości;
+     w jasnym (patrz [data-theme="light"] niżej) ten sam efekt daje czerń,
+     więc kierunek jest częścią tokenu, nie czymś dodanym przy użyciu. */
+  --wash-2:          rgba(255, 255, 255, 0.02);
+  --wash-3:          rgba(255, 255, 255, 0.03);
+  --wash-3-5:        rgba(255, 255, 255, 0.035);
+  --wash-4:          rgba(255, 255, 255, 0.04);
+  --wash-5:          rgba(255, 255, 255, 0.05);
+  --wash-6:          rgba(255, 255, 255, 0.06);
+  --wash-7:          rgba(255, 255, 255, 0.07);
 
   /* ---- Liquid glass ----
      Szkło, nie mleczna płyta. Trzy rzeczy naraz, dokładnie jak w macOS 26
@@ -176,6 +200,176 @@
   --t-slow:          0.4s var(--ease);
 }
 
+/* ---- Jasny motyw ----
+   Baza w :root zostaje ciemna, nienaruszona — to ona jest domyślna, gdy
+   atrybutu brak. Ten blok podmienia WYŁĄCZNIE tokeny, nigdy reguł
+   komponentów: każdy plik CSS w tym katalogu czyta kolor przez var(...),
+   więc podmiana tutaj starcza dla całej aplikacji naraz.
+
+   Kontrast liczony względem WCAG AA (4.5:1 dla tekstu, 3:1 dla dużych
+   elementów) na tle --bg-surface (#FFFFFF) i --bg (#EEF2F6). */
+[data-theme="light"] {
+  /* ---- Ground ---- */
+  --bg:              #eef2f6;
+  --bg-lift:         #e2e8f0;
+  --ink:             #ffffff;
+  --ink-2:           #f8fafc;
+  --surface:         rgba(255, 255, 255, 0.75);
+  --surface-2:       rgba(241, 245, 249, 0.65);
+  --surface-flat:    #ffffff;
+  --glass:           rgba(255, 255, 255, 0.72);
+
+  /* ---- Accent ---- */
+  --accent:          #047857;   /* szmaragd — 5.9:1 na bieli */
+  --accent-soft:     #065f46;   /* hover: ciemniej, kontrast rośnie */
+  --accent-ink:      #ffffff;
+  --accent-04:       rgba(4, 120, 87, 0.05);
+  --accent-08:       rgba(4, 120, 87, 0.08);
+  --accent-12:       rgba(4, 120, 87, 0.12);
+  --accent-15:       rgba(4, 120, 87, 0.15);
+  --accent-25:       rgba(4, 120, 87, 0.25);
+  --accent-30:       rgba(4, 120, 87, 0.30);
+  --accent-55:       rgba(4, 120, 87, 0.55);
+
+  /* ---- Nagrywanie ---- */
+  --rec:             #7c3aed;
+  --rec-soft:        #6d28d9;
+  --rec-ink:         #ffffff;
+  --rec-04:          rgba(124, 58, 237, 0.05);
+  --rec-12:          rgba(124, 58, 237, 0.12);
+  --rec-20:          rgba(124, 58, 237, 0.20);
+  --rec-30:          rgba(124, 58, 237, 0.30);
+  --rec-45:          rgba(124, 58, 237, 0.45);
+  --rec-55:          rgba(124, 58, 237, 0.55);
+  --rec-glow:        0 0 26px rgba(124, 58, 237, 0.30);
+
+  /* ---- ON AIR ---- */
+  --air:             #dc2626;
+  --air-ink:         #ffffff;
+  --air-04:          rgba(220, 38, 38, 0.05);
+  --air-20:          rgba(220, 38, 38, 0.20);
+  --air-30:          rgba(220, 38, 38, 0.30);
+  --air-45:          rgba(220, 38, 38, 0.45);
+  --air-55:          rgba(220, 38, 38, 0.55);
+  --air-glow:        0 0 26px rgba(220, 38, 38, 0.30);
+
+  /* ---- Poranek ----
+     Bursztyn zostaje na tyle jasny, że ciemny tekst NA nim (--sun-ink)
+     działa tak samo jak w ciemnym motywie — jedyny token stanu, który się
+     nie odwraca. */
+  --sun:             #d97706;
+  --sun-soft:        #b45309;
+  --sun-ink:         #2a1602;
+  --sun-glow:        0 8px 24px -8px rgba(217, 119, 6, 0.35);
+
+  /* ---- Text ---- */
+  --text:            #0f172a;
+  --text-hi:         #020617;
+  --text-2:          #1e293b;
+  --text-3:          #334155;
+  --text-mute:       #475569;   /* 5.8:1 na bieli */
+  --text-faint:      #cbd5e1;
+
+  /* ---- State ---- */
+  --warn:            #b45309;
+  --danger:          #dc2626;
+  --danger-12:       rgba(220, 38, 38, 0.12);
+  --danger-30:       rgba(220, 38, 38, 0.30);
+  --info:            #2563eb;
+
+  /* ---- Lines ---- */
+  --line:            rgba(15, 23, 42, 0.10);
+  --line-strong:     rgba(15, 23, 42, 0.18);
+  --line-soft:       rgba(15, 23, 42, 0.05);
+
+  /* ---- Wash ----
+     Kierunek się odwraca: podbicie powierzchni na jasnym tle to
+     przyciemnienie, nie rozjaśnienie. Wyższa alfa niż po ciemnej stronie —
+     czerń o tej samej przezroczystości co biel daje słabszy efekt. */
+  --wash-2:          rgba(15, 23, 42, 0.035);
+  --wash-3:          rgba(15, 23, 42, 0.05);
+  --wash-3-5:        rgba(15, 23, 42, 0.055);
+  --wash-4:          rgba(15, 23, 42, 0.06);
+  --wash-5:          rgba(15, 23, 42, 0.07);
+  --wash-6:          rgba(15, 23, 42, 0.09);
+  --wash-7:          rgba(15, 23, 42, 0.10);
+
+  /* ---- Liquid glass ----
+     Ta sama konstrukcja (rozmycie + podbicie + krawędź), tylko szkło leży
+     teraz nad jasnym tłem: wypełnienie zostaje białe, ale krawędź i cień
+     przechodzą na czerń, bo biała obwódka na białym tle jest niewidoczna. */
+  --glass-fill: linear-gradient(
+                   152deg,
+                   rgba(255, 255, 255, 0.80) 0%,
+                   rgba(255, 255, 255, 0.55) 38%,
+                   rgba(255, 255, 255, 0.42) 62%,
+                   rgba(255, 255, 255, 0.68) 100%
+                 );
+  --glass-edge:      rgba(15, 23, 42, 0.12);
+  --glass-sheen:     inset 0 1px 0 rgba(255, 255, 255, 0.70),
+                     inset 0 0 0 1px rgba(15, 23, 42, 0.05),
+                     inset 0 -1px 0 rgba(15, 23, 42, 0.06),
+                     inset 0 12px 22px -16px rgba(255, 255, 255, 0.55),
+                     inset 0 -18px 28px -22px rgba(15, 23, 42, 0.10);
+  --glass-drop:      0 22px 50px -24px rgba(15, 23, 42, 0.28);
+  --glass-thin:      rgba(255, 255, 255, 0.6);
+
+  /* ---- Kartka ----
+     Domyślny (bez [data-color]) odcień kartki w jasnym motywie. Warianty
+     kolorów niżej dostają własne, jasne odcienie tego samego motywu. */
+  --paper:           #ffffff;
+  --paper-lift:      #f8fafc;
+  --paper-sink:      #eef2f6;
+  --paper-edge:      rgba(15, 23, 42, 0.12);
+  --paper-tint:      #475569;
+
+  /* ---- Elevation ----
+     Cień w jasnym motywie musi być wyraźnie słabszy — ta sama siła co
+     w ciemnym wyglądałaby jak plama, bo tło jest jasne i cień nie ma się
+     w czym schować. */
+  --shadow-sm:       0 8px 24px -10px rgba(15, 23, 42, 0.18);
+  --shadow-md:       0 12px 32px -10px rgba(15, 23, 42, 0.20);
+  --shadow-lg:       0 16px 48px -14px rgba(15, 23, 42, 0.22);
+  --glow:            0 0 24px rgba(4, 120, 87, 0.20);
+  --glow-strong:     0 0 48px rgba(4, 120, 87, 0.28);
+  --glow-btn:        0 8px 24px -8px rgba(4, 120, 87, 0.35);
+}
+
+/* ---- Kolory kartek w jasnym motywie ----
+   Te same sześć barw, przełożone na jasne tło: podłoże jasne i lekko
+   zabarwione, obwódka i „tint" (kropka na liście) niosą kolor pełną mocą,
+   tak jak w ciemnym motywie. */
+[data-theme="light"][data-color="moss"] {
+  --paper: #ecfdf5; --paper-lift: #ffffff; --paper-sink: #d1fae5;
+  --paper-edge: rgba(4, 120, 87, 0.28);
+  --paper-tint: #047857;
+}
+[data-theme="light"][data-color="amber"] {
+  --paper: #fffbeb; --paper-lift: #ffffff; --paper-sink: #fef3c7;
+  --paper-edge: rgba(180, 83, 9, 0.28);
+  --paper-tint: #b45309;
+}
+[data-theme="light"][data-color="violet"] {
+  --paper: #f5f3ff; --paper-lift: #ffffff; --paper-sink: #ede9fe;
+  --paper-edge: rgba(109, 40, 217, 0.28);
+  --paper-tint: #6d28d9;
+}
+[data-theme="light"][data-color="rose"] {
+  --paper: #fff1f2; --paper-lift: #ffffff; --paper-sink: #ffe4e6;
+  --paper-edge: rgba(220, 38, 38, 0.24);
+  --paper-tint: #dc2626;
+}
+[data-theme="light"][data-color="sky"] {
+  --paper: #eff6ff; --paper-lift: #ffffff; --paper-sink: #dbeafe;
+  --paper-edge: rgba(37, 99, 235, 0.24);
+  --paper-tint: #2563eb;
+}
+[data-theme="light"][data-color="graphite"] {
+  --paper: #f8fafc; --paper-lift: #ffffff; --paper-sink: #e2e8f0;
+  --paper-edge: rgba(15, 23, 42, 0.20);
+  --paper-tint: #334155;
+}
+
 /* ---- Powierzchnia kartki ----
    Jedna klasa na wszystko, co jest kartką: szyba widgetu i karteczka
    na pulpicie. Gradient jest tu ROZPISANY, a nie schowany w zmiennej,
@@ -237,6 +431,74 @@
   --paper: #1a1c21; --paper-lift: #272a31; --paper-sink: #111317;
   --paper-edge: rgba(255, 255, 255, 0.13);
   --paper-tint: #9aa9bd;
+}
+
+/* ---- Karteczka na pulpicie: papier, nie szkło ----
+   Tożsamość koloru (klucz, etykieta) zostaje ta sama co w aplikacji —
+   podmienia się tylko to, JAK ten kolor wygląda, i wyłącznie w oknie
+   sticky.html (stąd `body.sticky-window`, ustawione tam wprost na <body>).
+   Ciemna paleta wyżej ma rozróżniać notatki na liście; tu chodzi o co
+   innego — o to, żeby kartka na biurku wyglądała jak kartka, a nie jak
+   panel aplikacji. Stąd ciepłe pastele zamiast granatu i cień liczony od
+   ciepłego, nie czarnego pigmentu (cień prawdziwego papieru nie jest
+   węglowy). Bursztyn/fiolet/grafit nie mają w naturze pastelowych
+   odpowiedników równie oczywistych jak żółty/miętowy/błękitny/różowy —
+   dostają więc ciepłe neutralne siostrzane odcienie, żeby paleta została
+   spójna, a nie żeby udawać, że to te same barwy. */
+body.sticky-window .paper {
+  --paper: #fef9c3; --paper-lift: #fffdf0; --paper-sink: #fde68a;
+  --paper-edge: rgba(202, 138, 4, 0.18);
+  --paper-shadow: 0 10px 28px -12px rgba(120, 100, 40, 0.35), 0 2px 6px -2px rgba(120, 100, 40, 0.18);
+}
+
+/* Kartka jest ZAWSZE jasnym papierem, obojętnie w jakim motywie chodzi
+   reszta aplikacji — więc tekst na niej musi być ustawiony wprost tutaj,
+   a nie brany z globalnego `--text`. Bez tego ciemny motyw zostawiał na
+   kartce prawie biały tekst (`--text: #eae8e3`), który ginął na żółtym,
+   miętowym czy błękitnym tle. Ta sama uwaga dotyczy linii: białe obwódki
+   z ciemnego motywu są na jasnym papierze praktycznie niewidoczne. */
+body.sticky-window {
+  --text:        #1e293b;  /* slate-800 — treść notatki */
+  --text-hi:     #0f172a;  /* slate-900 — tytuł, gdy się go przepisuje */
+  --text-2:      #334155;  /* slate-700 — tytuł w spoczynku, etykiety */
+  --text-3:      #334155;
+  --text-mute:   #64748b;  /* slate-500 — stopka, znaczki, datownik */
+  --text-faint:  #94a3b8;  /* slate-400 — placeholder „Pisz albo podyktuj…” */
+  --line:        rgba(15, 23, 42, 0.08);
+  --line-soft:   rgba(15, 23, 42, 0.06);
+  --line-strong: rgba(15, 23, 42, 0.14);
+}
+body.sticky-window [data-color="moss"] {
+  --paper: #d8f3e3; --paper-lift: #eafbf1; --paper-sink: #bee9d2;
+  --paper-edge: rgba(6, 95, 70, 0.18);
+}
+body.sticky-window [data-color="sky"] {
+  --paper: #dceefb; --paper-lift: #eff8fe; --paper-sink: #c3e2f7;
+  --paper-edge: rgba(30, 64, 175, 0.16);
+}
+body.sticky-window [data-color="rose"] {
+  --paper: #fbe1e8; --paper-lift: #fef0f3; --paper-sink: #f6c7d3;
+  --paper-edge: rgba(190, 24, 93, 0.16);
+}
+body.sticky-window [data-color="amber"] {
+  --paper: #fcefd9; --paper-lift: #fff8ec; --paper-sink: #f7dfb0;
+  --paper-edge: rgba(180, 83, 9, 0.18);
+}
+body.sticky-window [data-color="violet"] {
+  --paper: #efe7fb; --paper-lift: #f8f4fe; --paper-sink: #ded0f5;
+  --paper-edge: rgba(109, 40, 217, 0.16);
+}
+body.sticky-window [data-color="graphite"] {
+  --paper: #f1efea; --paper-lift: #faf9f6; --paper-sink: #e3e0d8;
+  --paper-edge: rgba(41, 37, 36, 0.16);
+}
+/* Szyba, nie papier: kartka na pulpicie nie ma być przezroczysta jak
+   reszta widgetu ani nosić ukośnego połysku pomyślanego dla ciemnego
+   szkła — ma być płaskim, matowym prostokątem papieru. */
+body.sticky-window .paper {
+  background: var(--paper);
+  border: none;
+  box-shadow: var(--paper-shadow);
 }
 
 /* Kropka koloru — na liście i w wybieraku. Ten sam gradient co kartka,

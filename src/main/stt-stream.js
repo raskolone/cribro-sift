@@ -78,8 +78,11 @@ class SttStream {
       url.searchParams.set("language", code);
     }
 
+    const isNova3 = String(this.model || "").toLowerCase().includes("nova-3");
+    const keywordParam = isNova3 ? "keyterm" : "keywords";
     for (const keyword of weightedKeywords(about?.glossary, 30)) {
-      url.searchParams.append("keywords", keyword);
+      const term = isNova3 ? keyword.replace(/:\d+$/, "") : keyword;
+      url.searchParams.append(keywordParam, term);
     }
 
     try {

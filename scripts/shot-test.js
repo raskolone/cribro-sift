@@ -119,23 +119,16 @@ check("Pusty odczyt zostaje pusty", clean("   \n  ") === "");
 
 /* ── Co jedzie do modelu ────────────────────────────────────── */
 
-const request = buildRequest(Buffer.from("PNG-udawany"), "gpt-5.6-luna");
-
-check("Model idzie z ustawień, a nie z kodu wywołania", request.model === "gpt-5.6-luna");
+const request = buildRequest(Buffer.from("PNG-udawany"), "gemini-2.0-flash-lite");
 
 check(
-  "Obrazek jedzie jako data: z typem PNG",
-  request.messages[1].content[0].image_url.url.startsWith("data:image/png;base64,"),
-);
-
-check(
-  "Odczyt idzie w rozdzielczości „high\" — drobny druk inaczej wychodzi zgadywanką",
-  request.messages[1].content[0].image_url.detail === "high",
+  "Obrazek jedzie jako inlineData z typem PNG",
+  request.contents[0].parts[0].inlineData.mimeType === "image/png",
 );
 
 check(
   "Kontrakt zakazuje odpowiadania na to, co widać na obrazku",
-  /NIE ODPOWIADASZ/.test(READ_PROMPT) && READ_PROMPT === request.messages[0].content,
+  /NIE ODPOWIADASZ/.test(READ_PROMPT) && READ_PROMPT === request.systemInstruction.parts[0].text,
 );
 
 check(
@@ -148,7 +141,7 @@ check(
 const settings = (patch = {}) => ({
   stt: { provider: "gemini", apiKey: "" },
   sieve: { provider: "gemini", apiKey: "" },
-  shot: { provider: "openai", model: "gpt-5.6-luna", apiKey: "", ...patch },
+  shot: { provider: "gemini", model: "gemini-2.0-flash-lite", apiKey: "", ...patch },
 });
 
 (async () => {
@@ -163,25 +156,28 @@ const settings = (patch = {}) => ({
 
   const calls = [];
   global.fetch = async (url, init) => {
-    calls.push({ url, body: JSON.parse(init.body), auth: init.headers.Authorization });
+    calls.push({ url, body: JSON.parse(init.body), key: init.headers["x-goog-api-key"] });
     return {
       ok: true,
       status: 200,
-      json: async () => ({ choices: [{ message: { content: "Plan na jutro" }, finish_reason: "stop" }] }),
+      json: async () => ({ candidates: [{ content: { parts: [{ text: "Plan na jutro" }] } }] }),
     };
   };
 
-  const read = await readText(Buffer.from("x"), settings({ apiKey: "sk-test" }));
+  const read = await readText(Buffer.from("x"), settings({ apiKey: "AIza-test" }));
   check("Odczyt wraca oczyszczony z odpowiedzi modelu", read.text === "Plan na jutro");
-  check("Klucz jedzie nagłówkiem Authorization", calls[0].auth === "Bearer sk-test");
-  check("Żądanie idzie do OpenAI", calls[0].url === "https://api.openai.com/v1/chat/completions");
+  check("Klucz jedzie nagłówkiem x-goog-api-key", calls[0].key === "AIza-test");
+  check(
+    "Żądanie idzie do Gemini",
+    calls[0].url === "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
+  );
 
   global.fetch = async () => ({
     ok: false,
     status: 401,
     text: async () => JSON.stringify({ error: { message: "Incorrect API key" } }),
   });
-  const rejected = await readText(Buffer.from("x"), settings({ apiKey: "sk-złe" })).catch(
+  const rejected = await readText(Buffer.from("x"), settings({ apiKey: "AIza-złe" })).catch(
     (error) => error.message,
   );
   check(
@@ -218,11 +214,11 @@ const settings = (patch = {}) => ({
      wtedy klucz wpisuje się raz, w dowolnym z nich. */
   check(
     "Klucz wpisany przy sicie obsługuje też odczyt z ekranu",
-    keyFor("openai", {
-      stt: { provider: "gemini", apiKey: "" },
-      sieve: { provider: "openai", apiKey: "sk-z-sita" },
-      shot: { provider: "openai", apiKey: "" },
-    }) === "sk-z-sita",
+    keyFor("gemini", {
+      stt: { provider: "deepgram", apiKey: "" },
+      sieve: { provider: "gemini", apiKey: "AIza-z-sita" },
+      shot: { provider: "gemini", apiKey: "" },
+    }) === "AIza-z-sita",
   );
 
   /* ── Obrazek w notatce ───────────────────────────────────────
@@ -341,18 +337,76 @@ const settings = (patch = {}) => ({
      żądania, a nie zostać w połowie drogi. */
   check(
     "Typ z pliku dojeżdża do żądania, a nie gubi się po drodze",
-    buildRequest(JPEG, "gpt-5.6-luna", "image/jpeg").messages[1].content[0].image_url.url.startsWith(
-      "data:image/jpeg;base64,",
-    ),
+    buildRequest(JPEG, "gemini-2.0-flash-lite", "image/jpeg").contents[0].parts[0].inlineData.mimeType ===
+      "image/jpeg",
   );
   check(
     "Bez podanego typu zostaje PNG — tym jest zaznaczenie ekranu",
-    buildRequest(PNG, "gpt-5.6-luna").messages[1].content[0].image_url.url.startsWith(
-      "data:image/png;base64,",
-    ),
+    buildRequest(PNG, "gemini-2.0-flash-lite").contents[0].parts[0].inlineData.mimeType === "image/png",
   );
 
   fs.rmSync(workdir, { recursive: true, force: true });
+
+  /* ── Edytor graficzny Markup ───────────────────────────────── */
+  const markupCode = fs.readFileSync(path.join(__dirname, "../src/renderer/js/markup.js"), "utf8");
+  const ctx = {
+    window: {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    },
+    document: { createElement: () => ({ getContext: () => ({}) }) },
+    Image: class { constructor() {} },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(markupCode, ctx);
+
+  check("Silnik MarkupEngine definiuje klasę w oknie", typeof ctx.window.MarkupEngine === "function");
+
+  const dummyCanvas = {
+    getContext: () => ({
+      clearRect: () => {},
+      drawImage: () => {},
+      beginPath: () => {},
+      arc: () => {},
+      fill: () => {},
+      stroke: () => {},
+      roundRect: () => {},
+      ellipse: () => {},
+      moveTo: () => {},
+      lineTo: () => {},
+      closePath: () => {},
+      save: () => {},
+      restore: () => {},
+      measureText: () => ({ width: 40 }),
+      fillText: () => {},
+      strokeRect: () => {},
+      fillRect: () => {},
+      setLineDash: () => {},
+      translate: () => {},
+    }),
+    parentElement: { clientWidth: 800, clientHeight: 600 },
+    style: {},
+    addEventListener: () => {},
+  };
+
+  const engine = new ctx.window.MarkupEngine({ canvas: dummyCanvas });
+  check("Domyślne narzędzie to zaznaczanie (select)", engine.tool === "select");
+  engine.setTool("bubble");
+  check("Przełączenie narzędzia na dymek dialogowy (bubble)", engine.tool === "bubble");
+  engine.setColor("#22c55e");
+  check("Zmiana koloru na zielony", engine.color === "#22c55e");
+  engine.setLineWidth(8);
+  check("Zmiana grubości linii na grubą (8px)", engine.lineWidth === 8);
+  engine.setFontSize(36);
+  check("Zmiana rozmiaru fontu na L (36px)", engine.fontSize === 36);
+
+  const { translator, DICTS } = require("../src/shared/strings");
+  const tEn = translator("en");
+  check("Tłumaczenie: Zapisz na dysk", tEn("Zapisz na dysk") === "Save to disk");
+  check("Tłumaczenie: Kopiuj obraz do schowka", tEn("Kopiuj obraz do schowka") === "Copy image to clipboard");
+  check("Tłumaczenie: Dymek", tEn("Dymek") === "Speech Bubble");
+  check("Tłumaczenie: Zakreślacz", tEn("Zakreślacz") === "Highlighter");
+  check("Tłumaczenie: Kadruj", tEn("Kadruj") === "Crop");
 
   console.log(`\nTekst z ekranu: ${passed} sprawdzeń przeszło. Odczyt czyta, a nie odpowiada.`);
 })();

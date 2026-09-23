@@ -13,9 +13,12 @@
     <link rel="stylesheet" href="css/note-acts.css" />
     <link rel="stylesheet" href="css/ask.css" />
   </head>
-  <body>
-    <!-- Tło motywu — pierwszym dzieckiem body, reszta warstwę wyżej. -->
-    <canvas id="constellation"></canvas>
+  <!-- Notatnik trzyma się jasnego, czystego motywu na stałe — patrz
+       komentarz nad #app w css/notes.css po uzasadnienie — stąd `data-theme`
+       ustawione tu wprost, niezależnie od globalnej preferencji z Ustawień.
+       Bez rozgwieżdżonego tła: ono ma sens na ciemnym motywie reszty
+       aplikacji, na jasnym byłoby tylko szumem pod tekstem. -->
+  <body data-theme="light">
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
         <symbol id="i-heading" viewBox="0 0 24 24">
@@ -128,6 +131,12 @@
     </svg>
 
     <div id="app">
+      <!-- Szuflada — trzecia, najwęższa kolumna: „Wszystkie", każda
+           szuflada, „Bez szuflady". Zawsze widoczna, jak w Notatkach
+           systemowych — klik filtruje środkową kolumnę od razu, bez
+           osobnego „wejścia" do folderu. -->
+      <nav id="folderRail"></nav>
+
       <aside id="list">
         <header class="list__head">
           <div>
@@ -142,7 +151,6 @@
           <svg><use href="#i-search" /></svg>
           <input type="search" id="search" placeholder="Szukaj w notatkach…" />
         </div>
-        <div class="notes__folders" id="folders"></div>
         <div class="list__items" id="items"></div>
       </aside>
 
@@ -291,7 +299,6 @@
     <script src="../shared/blockmove.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/mock-bridge.js"></script>
-    <script src="js/constellation.js"></script>
     <script src="js/editor.js"></script>
     <script src="js/ask.js"></script>
     <script src="js/notes-core.js"></script>

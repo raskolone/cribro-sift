@@ -216,7 +216,7 @@ textarea {
 }
 .nav__item:hover {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--wash-3);
 }
 .nav__item[aria-selected="true"] {
   background: var(--accent-08);
@@ -530,7 +530,7 @@ main:has(#view-notes:not([hidden])) {
   padding: var(--s-2) var(--s-3);
   border-radius: var(--r-sm);
   border: 1px solid var(--line-strong);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash-4);
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 11.5px;
@@ -540,7 +540,7 @@ main:has(#view-notes:not([hidden])) {
 }
 .btn--ghost:hover,
 .btn--sm:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-7);
   border-color: var(--line-strong);
   color: var(--text);
   box-shadow: none;
@@ -1603,7 +1603,7 @@ details.engine[open] > summary {
 }
 .notes__group:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--wash-5);
 }
 .notes__caret {
   width: 12px;
@@ -1682,26 +1682,17 @@ details.engine[open] > summary {
    sekundy po pierwszej — czyli długo po tym, jak lista jest już do czytania. */
 .note-card {
   transform-origin: left center;
-  /* Własna warstwa i własny układ: przebudowa jednego kafla nie ma prawa
-     kazać przeglądarce przeliczać całej listy. */
-  contain: layout paint style;
+  contain: layout style;
   transition:
     background var(--t),
-    border-color var(--t),
-    transform var(--fold),
-    opacity var(--fold);
-  transition-delay: 0s, 0s, 0s, 0s;
-}
-.notes[data-list="open"] .note-card {
-  transition-delay:
-    0s,
-    0s,
-    calc(min(var(--i, 0), 12) * 26ms),
-    calc(min(var(--i, 0), 12) * 26ms);
+    border-color var(--t);
 }
 .notes[data-list="closed"] .note-card {
   opacity: 0;
   transform: perspective(900px) rotateY(-26deg) translateX(-12px);
+  transition:
+    transform var(--fold),
+    opacity var(--fold);
 }
 
 .notes__head {
@@ -1757,7 +1748,7 @@ details.engine[open] > summary {
   cursor: pointer;
 }
 .note-card:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--wash-3);
 }
 .note-card[aria-selected="true"] {
   background: var(--accent-08);
@@ -1838,7 +1829,7 @@ details.engine[open] > summary {
   opacity: 1;
 }
 .note-card__pin:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-6);
   color: var(--text);
 }
 .note-card__pin[aria-pressed="true"] {
@@ -1896,7 +1887,7 @@ details.engine[open] > summary {
   height: 16px;
 }
 .notes .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-7);
   color: var(--text);
 }
 /* Włączone formatowanie widać na przycisku — tak samo jak w edytorze
@@ -2234,7 +2225,7 @@ details.engine[open] > summary {
 }
 .tag button:hover {
   color: var(--danger);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-6);
 }
 /* Etykieta na kaflu jest przyciskiem w całości: kliknięcie pokazuje
    resztę notatek z tą etykietą — bo po to się na nią patrzy. */
@@ -2454,7 +2445,7 @@ input.tag-input:focus {
   padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--wash-5);
   color: var(--text);
   font-size: var(--fs-xs);
   font-weight: 500;
@@ -2471,7 +2462,7 @@ input.tag-input:focus {
 .meet__cog:hover {
   color: var(--text-hi);
   border-color: var(--line-strong);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-7);
 }
 /* Wyłożona szuflada widać po samym znaku — inaczej kliknięcie w koło
    wygląda jak kliknięcie, które nic nie zrobiło. */
@@ -3606,7 +3597,7 @@ input.tag-input:focus {
   height: 30px;
   border: 1px solid var(--line-strong);
   border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash-4);
   color: var(--text);
   font-size: 17px;
   line-height: 1;
@@ -3664,7 +3655,7 @@ input.tag-input:focus {
 }
 .week__close:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-6);
 }
 
 /* Siedem kolumn, jedna na dzień. `auto-fit` nie ma tu czego dostosowywać
@@ -3866,7 +3857,7 @@ input.tag-input:focus {
   vertical-align: middle;
 }
 .ai-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--wash-2);
 }
 .ai-pill {
   display: inline-flex;

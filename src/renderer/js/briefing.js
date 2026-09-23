@@ -1,19 +1,30 @@
 "use strict";
 
 /**
- * Poranek — rysowanie.
+ * Poranek — centrum dowodzenia: pięć modułowych, zwijanych sekcji zamiast
+ * jednej listy od góry do dołu.
  *
- * Cała treść przychodzi gotowa z procesu głównego jedną wiadomością
- * (`briefing:data`); tutaj nie ma ani jednej decyzji o tym, CO pokazać.
- * To jest celowe: wybór maili i kolejność dnia rozstrzyga main/briefing.js
- * i sprawdza je zwykły Node, bez przeglądarki. Widok, który zaczynałby
- * filtrować po swojemu, byłby drugim miejscem z regułami — i pierwszym,
- * którego nikt nie testuje.
+ * DWA ŹRÓDŁA, JEDEN EKRAN. Treść przychodzi z dwóch niezależnych torów,
+ * które kończą w różnym czasie:
+ *   1. `briefing:data` — plan dnia, maile wytypowane regułami (main/briefing.js)
+ *      i kanały RSS. Przychodzi raz, gotowe.
+ *   2. `api.mail.analyze()` — segregacja skrzynki modelem, z osobnym cyklem
+ *      życia (main/inbox-triage.js): kategorie odebranych ORAZ wysłane
+ *      czekające na odpowiedź. Może skończyć wcześniej albo później.
+ * Stąd jeden stan (`state`) i jedna funkcja rysująca (`render`), wołana
+ * z obu torów niezależnie — żaden z nich nie czeka na drugi.
  *
- * Zdanie od modelu (`words`) jest DODATKIEM do listy, nie jej zamiennikiem.
- * Gdy modelu nie było albo odmówił, lista maili i plan dnia stoją same
- * i są kompletne. Odwrotnie się nie da: samo zdanie bez listy nie mówi,
- * co otworzyć.
+ * BEZ FILTROWANIA W WIDOKU. Wybór treści rozstrzygają main/briefing.js
+ * i main/inbox-triage.js i sprawdza je zwykły Node, bez przeglądarki. Ten
+ * plik tylko układa to, co dostał, w pięciu sekcjach z licznikami.
+ *
+ * DOMYŚLNE ZWINIĘCIE ŻYJE W HTML-u. Sekcje "Pilne" i "Oczekujące" mają
+ * atrybut `open` wpisany w briefing.html, reszta go nie ma — i JS nigdy
+ * tego atrybutu nie rusza, żeby ręczne rozwinięcie/zwinięcie przez
+ * człowieka przeżyło każde odświeżenie treści.
+ *
+ * Human-in-the-loop: to okno nigdy samo nie usuwa. Zaznaczenie i klik
+ * w „Przenieś do Kosza" to jedyna droga do mail:trashSelected.
  */
 
 (function () {
@@ -33,7 +44,6 @@
     return Number.isNaN(at.getTime()) ? "" : `${at.getHours()}:${pad(at.getMinutes())}`;
   };
 
-  /** „za 25 min", „za 2 godz." — to, o co się naprawdę pyta. */
   function inMinutes(minutes) {
     if (!Number.isFinite(minutes) || minutes < 0) return "";
     if (minutes < 1) return t("za chwilę");
@@ -42,13 +52,9 @@
   }
 
   /**
-   * Zdanie modelu dopasowane do pozycji listy.
-   *
-   * Model dostaje maile ponumerowane i oddaje je w tej samej kolejności,
-   * ale bywa oszczędny i pomija te, o których nie ma nic do powiedzenia.
-   * Dlatego dopasowujemy PO NADAWCY, a nie po numerze wiersza: pomylone
-   * przesunięcie przypisałoby zdanie o Magdalenie do maila od Tomasza,
-   * czyli skłamałoby dokładnie tam, gdzie ma pomagać.
+   * Zdanie modelu dopasowane do pozycji listy — po nadawcy, nie po numerze
+   * wiersza, bo model bywa oszczędny i pomija te, o których nie ma nic do
+   * powiedzenia.
    */
   function saidAbout(subject, lines) {
     const who = String(subject ?? "").trim().toLowerCase();
@@ -56,28 +62,24 @@
     if (!first || first.length < 3) return "";
     const hit = (lines ?? []).find((line) => line.toLowerCase().includes(first));
     if (!hit) return "";
-
-    /* „Magdalena — czeka na potwierdzenie." → zostaje samo zdanie.
-       Myślnik MUSI stać w otoczeniu spacji i musi być myślnikiem, a nie
-       dywizem: „Stand-up zespołu" ma w środku kreskę, po której cięcie
-       zostawiało na ekranie „up zespołu". Widać to było jako urwane słowo
-       pod przekreśloną pozycją planu dnia. */
     const cut = hit.match(/^(.{0,60}?)\s[—–]\s(.+)$/);
     const said = (cut ? cut[2] : hit).trim();
-
-    /* Zdanie, które tylko powtarza to, przy czym stoi, nie wnosi niczego —
-       a wygląda jak usterka. Model bywa oszczędny i przepisuje samą nazwę. */
     const bare = said.toLowerCase().replace(/[.\s]+$/, "");
     if (!bare || who.includes(bare) || bare.includes(who)) return "";
     return said;
   }
 
-  /* ── Rysowanie ─────────────────────────────────────────────── */
+  /* ── Stan ──────────────────────────────────────────────────────
+     `briefing` — dane z briefing:data (plan, picks, feeds, words).
+     `triage`   — stan segregacji skrzynki (mail.analyze). */
+  const state = {
+    briefing: null,
+    triage: { status: "loading" },
+  };
 
-  function renderMail(picks, said) {
-    if (!picks.length) {
-      return `<p class="empty">${t("Nic nie czeka na Twoją odpowiedź. Tak też bywa.")}</p>`;
-    }
+  /* ── Sekcja: Pilne i ważne ────────────────────────────────────── */
+
+  function renderMailList(picks, said) {
     return picks
       .map((mail) => {
         const sentence = saidAbout(mail.from, said);
@@ -87,10 +89,7 @@
             <span class="mail__subject">${escape(mail.subject)}</span>
           </div>
           ${sentence ? `<p class="mail__said">${escape(sentence)}</p>` : ""}
-          <div class="mail__why">${escape(mail.why.join(" · "))}</div>`;
-        /* Kliknięcie otwiera wątek w przeglądarce — jedyna czynność w tym
-           oknie. Mail bez wątku (zdarza się) zostaje zwykłym akapitem,
-           zamiast udawać odnośnik, który nigdzie nie prowadzi. */
+          <div class="mail__why">${escape((mail.why ?? [mail.reason]).filter(Boolean).join(" · "))}</div>`;
         return mail.link
           ? `<a class="mail" href="${escape(mail.link)}" target="_blank" rel="noreferrer">${body}</a>`
           : `<div class="mail">${body}</div>`;
@@ -98,11 +97,121 @@
       .join("");
   }
 
+  function nextDeadlines(plan) {
+    const rows = (plan?.ahead ?? []).slice(0, 2);
+    if (!rows.length) return "";
+    return `
+      <div class="subhead">${t("Kluczowe terminy dnia")}</div>
+      ${rows
+        .map(
+          (event) => `
+        <div class="slot">
+          <div class="slot__at">${clock(event.from)}</div>
+          <div class="slot__what"><div class="slot__title">${escape(event.title)}</div></div>
+        </div>`,
+        )
+        .join("")}`;
+  }
+
+  function renderUrgent() {
+    const picks = state.briefing?.picks ?? [];
+    const said = state.briefing?.words?.mail ?? [];
+    const requiresAction = state.triage.data?.requiresAction ?? [];
+    const plan = state.briefing?.plan;
+
+    const parts = [];
+    if (picks.length) {
+      parts.push(`<div class="subhead">${t("Z ostatnich dni")}</div>`, renderMailList(picks, said));
+    }
+    if (requiresAction.length) {
+      parts.push(`<div class="subhead">${t("Skrzynka — wymaga akcji")}</div>`, renderMailList(requiresAction, []));
+    }
+    const deadlines = nextDeadlines(plan);
+    if (deadlines) parts.push(deadlines);
+
+    if (!parts.length) {
+      parts.push(`<p class="empty">${t("Nic pilnego nie czeka. Tak też bywa.")}</p>`);
+    }
+    return { html: parts.join(""), count: picks.length + requiresAction.length };
+  }
+
+  /* ── Sekcja: Oczekujące na odpowiedź ──────────────────────────── */
+
+  function renderWaiting() {
+    const items = state.triage.data?.awaitingReply ?? [];
+    if (state.triage.status === "loading") {
+      return { html: `<p class="empty">${t("Sprawdzam wysłane…")}</p>`, count: 0 };
+    }
+    if (!items.length) {
+      return { html: `<p class="empty">${t("Wszystko, co wysłałeś, doczekało się odpowiedzi.")}</p>`, count: 0 };
+    }
+    const html = items
+      .map((mail) => {
+        const body = `
+          <span class="row__body">
+            <span class="row__line"><span class="row__from">${escape(mail.to)}</span><span class="row__subject">${escape(mail.about)}</span></span>
+            <span class="row__reason">${escape(mail.reason)}</span>
+          </span>
+          <span class="row__days">${mail.days} ${dni(mail.days)}</span>`;
+        return mail.link
+          ? `<a class="row mail" href="${escape(mail.link)}" target="_blank" rel="noreferrer" style="display:flex">${body}</a>`
+          : `<div class="row">${body}</div>`;
+      })
+      .join("");
+    return { html, count: items.length };
+  }
+
+  /** „1 dzień", „3 dni" — polska liczba mnoga. */
+  function dni(count) {
+    return count === 1 ? t("dzień") : t("dni");
+  }
+
+  /* ── Sekcje skrzynki: glance / trash (checkboxy + kasowanie) ──── */
+
+  function triageRow(mail, { checkbox = false, checked = false } = {}) {
+    const box = checkbox
+      ? `<input type="checkbox" class="row__box" data-triage-box data-id="${escape(mail.id)}" data-domain="${escape(mail.domain)}" ${checked ? "checked" : ""} />`
+      : "";
+    return `
+      <label class="row">
+        ${box}
+        <span class="row__body">
+          <span class="row__line"><span class="row__from">${escape(mail.from)}</span><span class="row__subject">${escape(mail.subject)}</span></span>
+          <span class="row__reason">${escape(mail.reason)}</span>
+        </span>
+      </label>`;
+  }
+
+  function renderGlance() {
+    const items = state.triage.data?.glanceOnly ?? [];
+    if (state.triage.status === "loading") return { html: `<p class="empty">${t("Analizuję skrzynkę…")}</p>`, count: 0 };
+    if (state.triage.status === "error") return { html: `<p class="empty">${escape(state.triage.message)}</p>`, count: 0 };
+    if (!items.length) return { html: `<p class="empty">${t("Pusto — nic w tej grupie.")}</p>`, count: 0 };
+    return { html: items.map((mail) => triageRow(mail)).join(""), count: items.length };
+  }
+
+  function renderTrash() {
+    if (state.triage.status === "loading") return { html: `<p class="empty">${t("Analizuję skrzynkę…")}</p>`, count: 0 };
+    if (state.triage.status === "error") return { html: `<p class="empty">${escape(state.triage.message)}</p>`, count: 0 };
+
+    const items = state.triage.data?.trashCandidate ?? [];
+    const note = state.triage.degraded
+      ? `<p class="triage__note">${t("Model niedostępny — segregacja regułami lokalnymi.")}</p>`
+      : "";
+    const rows = items.length
+      ? items.map((mail) => triageRow(mail, { checkbox: true, checked: true })).join("")
+      : `<p class="empty">${t("Pusto — nic w tej grupie.")}</p>`;
+    const action = items.length
+      ? `<button class="bulk-act" data-triage-trash>${t("Przenieś zaznaczone do Kosza")}</button>`
+      : "";
+    return { html: `${note}${rows}${action}`, count: items.length };
+  }
+
+  /* ── Placeholder: Kalendarz i przegląd dnia ───────────────────── */
+
   function renderDay(plan, said) {
     const rows = plan?.all ?? [];
-    if (!rows.length) {
-      return `<p class="empty">${t("Kalendarz na dziś jest pusty.")}</p>`;
-    }
+    if (!rows.length) return `<p class="empty">${t("Kalendarz na dziś jest pusty.")}</p>`;
     const nextId = plan.next?.id ?? null;
     return rows
       .map((event) => {
@@ -124,87 +233,127 @@
       .join("");
   }
 
-  function renderNoise(noise, said) {
-    if (!noise?.length) return "";
-    return `
-      <section>
-        <h2>${t("⚪ Szum")}</h2>
-        ${noise
-          .map((mail) => {
-            const sentence = saidAbout(mail.from, said);
-            return `
-              <div class="mail mail--noise">
-                <div>
-                  <span class="mail__from">${escape(mail.from)}</span>
-                  <span class="mail__subject">${escape(mail.subject)}</span>
-                </div>
-                ${sentence ? `<p class="mail__said">${escape(sentence)}</p>` : ""}
-              </div>`;
-          })
-          .join("")}
-      </section>`;
-  }
-
   function renderFeeds(feeds) {
     if (!feeds?.length) return "";
     return `
-      <section>
-        <h2>${t("Świat")}</h2>
-        ${feeds
-          .map(
-            (entry) => `
-          <a class="feed" href="${escape(entry.link)}" target="_blank" rel="noreferrer">
-            <em>${escape(entry.source)}</em>${escape(entry.title)}
-          </a>`,
-          )
-          .join("")}
-      </section>`;
+      <div class="subhead">${t("Świat")}</div>
+      ${feeds
+        .map(
+          (entry) => `
+        <a class="feed" href="${escape(entry.link)}" target="_blank" rel="noreferrer">
+          <em>${escape(entry.source)}</em>${escape(entry.title)}
+        </a>`,
+        )
+        .join("")}`;
   }
 
-  function render(data) {
+  function renderCalendar() {
+    const plan = state.briefing?.plan;
+    const feeds = state.briefing?.feeds ?? [];
+    if (!state.briefing) return { html: "", count: 0 };
+    const said = state.briefing.words?.day ?? [];
+    const html = `
+      <p class="placeholder-note">${t("Ten moduł jest jeszcze placeholderem — pełny przegląd dnia dojedzie tu później.")}</p>
+      <div class="subhead">${t("Plan dnia")}</div>
+      ${renderDay(plan, said)}
+      ${renderFeeds(feeds)}`;
+    return { html, count: plan?.all?.length ?? 0 };
+  }
+
+  /* ── Rysowanie całości ─────────────────────────────────────────── */
+
+  function fill(id, countId, { html, count }) {
+    const body = document.getElementById(id);
+    if (body) body.innerHTML = html;
+    const badge = document.getElementById(countId);
+    if (badge) badge.textContent = String(count);
+  }
+
+  function render() {
+    fill("body-urgent", "count-urgent", renderUrgent());
+    fill("body-waiting", "count-waiting", renderWaiting());
+    fill("body-glance", "count-glance", renderGlance());
+    fill("body-trash", "count-trash", renderTrash());
+    fill("body-calendar", "count-calendar", renderCalendar());
+  }
+
+  function renderHeader() {
+    const data = state.briefing;
+    if (!data) return;
     const at = new Date(data.at ?? Date.now());
-    const date = at.toLocaleDateString("pl-PL", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    });
-    const words = data.words ?? {};
+    const date = at.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
+    $("#date").textContent = date;
+    const headline = data.words?.headline;
+    const headEl = $("#headline");
+    if (headline) {
+      headEl.textContent = headline;
+      headEl.hidden = false;
+    } else {
+      headEl.hidden = true;
+    }
 
-    $("#wait").hidden = true;
-    $("#stage").innerHTML = `
-      <header class="head">
-        <div class="date">${escape(date)}</div>
-        <h1>${t("Dzień dobry.")}</h1>
-        ${words.headline ? `<p>${escape(words.headline)}</p>` : ""}
-      </header>
-
-      <section>
-        <h2>${t("📅 Plan dnia")}</h2>
-        ${renderDay(data.plan, words.day)}
-      </section>
-
-      <section>
-        <h2>${t("🚨 Wymaga akcji")}</h2>
-        ${renderMail(data.picks ?? [], words.mail)}
-      </section>
-
-      ${renderNoise(data.noise, words.szum)}
-
-      ${renderFeeds(data.feeds)}
-
-      ${
-        data.problems?.length
-          ? `<div class="trouble">${data.problems.map((line) => escape(line)).join("<br />")}</div>`
-          : ""
-      }`;
+    const problems = data.problems ?? [];
+    $("#trouble").innerHTML = problems.length
+      ? `<div class="trouble">${problems.map((line) => escape(line)).join("<br />")}</div>`
+      : "";
   }
 
-  /* ── Zdarzenia ─────────────────────────────────────────────── */
+  /* ── Zdarzenia: briefing:data ──────────────────────────────────── */
 
-  api.briefing?.onData?.((data) => render(data ?? {}));
+  api.briefing?.onData?.((data) => {
+    state.briefing = data ?? {};
+    $("#wait").hidden = true;
+    $("#stage").hidden = false;
+    renderHeader();
+    render();
+  });
 
-  /* Odnośniki wychodzą do przeglądarki, a nie otwierają się w tym oknie.
-     Okno poranka wczytujące Gmaila przestałoby być porankiem. */
+  /* ── Raport Skrzynki: segregacja modelem, osobny cykl życia ─────
+     Rusza od razu, niezależnie od briefing:data — patrz komentarz
+     na górze pliku. */
+
+  async function loadTriage() {
+    state.triage = { status: "loading" };
+    render();
+    try {
+      const data = await api.mail.analyze();
+      state.triage = { status: "ready", data, degraded: !!data.degraded };
+    } catch (error) {
+      state.triage = { status: "error", message: error?.message || t("Nie udało się przeanalizować skrzynki.") };
+    }
+    render();
+  }
+
+  /** Zdejmuje zaznaczone pozycje z widoku „Auto-trash" po zatwierdzeniu. */
+  function dropTrashed(ids) {
+    if (!state.triage.data) return;
+    const gone = new Set(ids);
+    state.triage.data.trashCandidate = state.triage.data.trashCandidate.filter((mail) => !gone.has(mail.id));
+    render();
+  }
+
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-triage-trash]")) return;
+    event.preventDefault();
+    const host = $("#body-trash");
+    const boxes = [...(host?.querySelectorAll("[data-triage-box]:checked") ?? [])];
+    if (!boxes.length) return;
+    const items = boxes.map((box) => ({ id: box.dataset.id, domain: box.dataset.domain }));
+    const btn = event.target.closest("[data-triage-trash]");
+    btn.disabled = true;
+    btn.textContent = t("Przenoszę…");
+    api.mail
+      .trashSelected(items)
+      .then(() => dropTrashed(items.map((item) => item.id)))
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = t("Przenieś zaznaczone do Kosza");
+      });
+  });
+
+  void loadTriage();
+
+  /* Odnośniki wychodzą do przeglądarki, a nie otwierają się w tym oknie. */
   document.addEventListener("click", (event) => {
     const link = event.target.closest("a[href^='http']");
     if (!link) return;
@@ -212,7 +361,6 @@
     api.system?.openExternal?.(link.href);
   });
 
-  // Escape zamyka — tak jak w każdym innym okienku tej aplikacji.
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") window.close();
   });

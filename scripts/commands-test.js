@@ -236,8 +236,8 @@ const settings = {
   language: "auto",
   grains: [],
   commands: config,
-  stt: { provider: "gemini", model: "gemini-3.7-flash", apiKey: "AIza-test" },
-  sieve: { provider: "gemini", model: "gemini-3.7-flash", apiKey: "", customInstruction: "" },
+  stt: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "AIza-test" },
+  sieve: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "", customInstruction: "" },
 };
 
 (async () => {

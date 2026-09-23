@@ -16,7 +16,7 @@ const req1 = aiRegistry.start({
   stage: "stt",
   stageLabel: "Transkrypcja",
   provider: "gemini",
-  model: "gemini-3.1-flash-lite",
+  model: "gemini-2.0-flash-lite",
   isFallback: false,
   inputInfo: "35 kB WAV",
 });
@@ -33,7 +33,7 @@ const req2 = aiRegistry.start({
   stage: "stt",
   stageLabel: "Transkrypcja",
   provider: "gemini",
-  model: "gemini-3.7-flash",
+  model: "gemini-2.5-flash",
   isFallback: false,
   inputInfo: "50 kB WAV",
 });
@@ -49,7 +49,7 @@ const req3 = aiRegistry.start({
   stage: "sieve",
   stageLabel: "Sito (Clean up)",
   provider: "gemini",
-  model: "gemini-3.7-flash",
+  model: "gemini-2.5-flash",
   isFallback: false,
   inputInfo: "120 znaków",
 });
@@ -64,8 +64,8 @@ console.log("✓ Poprawne rozpoznanie błędu 503 Przeciążenie");
 const req4 = aiRegistry.start({
   stage: "stt",
   stageLabel: "Transkrypcja",
-  provider: "openai",
-  model: "whisper-1",
+  provider: "groq",
+  model: "whisper-large-v3-turbo",
   isFallback: true,
   inputInfo: "50 kB WAV",
 });

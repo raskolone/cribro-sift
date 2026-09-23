@@ -13,13 +13,22 @@ const canvas = document.getElementById("ring");
 const ctx = canvas.getContext("2d");
 
 /* Pierścień jest rysowany, nie stylowany — kolory bierze z tokenów motywu,
-   żeby akcent nie istniał drugi raz, wpisany na sztywno w JS. */
-const ACCENT = themeRgb("--accent");
-const WARN = themeRgb("--warn");
+   żeby akcent nie istniał drugi raz, wpisany na sztywno w JS. `let`, żeby
+   zmiana motywu w trakcie (patrz cribro.theme.onChange niżej) mogła je
+   podmienić — HUD bywa otwarty tyle sekund, ile trwa dyktowanie, ale nawet
+   w tym oknie pierścień nie może zostać przy starym kolorze. */
+let ACCENT = themeRgb("--accent");
+let WARN = themeRgb("--warn");
 /* Nagrywanie ma własny kolor — fiolet. Zieleń zostaje temu, co gotowe,
    i pierścień musi mówić to samo co obwódka pigułki, znaczek widgetu
    i ikona w pasku menu. Patrz #shell[data-state="listening"] w hud.html. */
-const REC = themeRgb("--rec");
+let REC = themeRgb("--rec");
+
+window.cribro?.theme?.onChange?.(() => {
+  ACCENT = themeRgb("--accent");
+  WARN = themeRgb("--warn");
+  REC = themeRgb("--rec");
+});
 
 const BARS = 28;
 const bars = Array.from({ length: BARS }, () => {

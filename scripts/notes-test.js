@@ -155,16 +155,12 @@ check(
   /api\.notes\.create\(\{ widget: true \}\)/.test(widget),
 );
 check(
-  "W trybie pulpitu wykłada ją KARTKĄ, a nie szybą nad znaczkiem",
-  /if \(mode === "desk"\) \{[\s\S]{0,320}api\.deck\.reveal\(note\.id\)/.test(widget),
+  "…i wykłada ją KARTKĄ, gotową do pisania",
+  /await api\.notes\.create\(\{ widget: true \}\);[\s\S]{0,120}api\.deck\.reveal\(note\.id\)/.test(widget),
 );
 check(
-  "…i taca schodzi, bo patrzy się teraz na kartkę",
-  /api\.deck\.reveal\(note\.id\);[\s\S]{0,120}return toBadge\(\);/.test(widget),
-);
-check(
-  "W trybie zwartym, gdzie kartek nie ma, zostaje po staremu",
-  /return toSticky\(note\);\n  \}/.test(widget),
+  "…a menu po łuku schodzi, bo patrzy się teraz na kartkę",
+  /api\.deck\.reveal\(note\.id\);[\s\S]{0,120}toBadge\(\);/.test(widget),
 );
 
 const sticky = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "js", "sticky.js"), "utf8");
@@ -180,34 +176,34 @@ check(
 const main = fs.readFileSync(path.join(__dirname, "..", "src", "main", "main.js"), "utf8");
 check("…ale zwykłe wyłożenie talii uwagi nie zabiera", /if \(wanted\) win\.show\(\);\s*\n\s*else win\.showInactive\(\);/.test(main));
 
-/* ── Rząd notatek w tacy widgetu ───────────────────────────────────
-   Trzy kółka w bok od znaczka: pokaż kartki z pulpitu, dołóż nową, otwórz
-   Notatnik. Stoją jedno przy drugim, więc ich dymki NIE MOGĄ wychodzić
-   w bok — lądowały wtedy na sąsiedzie i z „Notatek" widać było trzy
-   litery. */
+/* ── Menu po łuku ───────────────────────────────────────────────────
+   Sześć kółek na ćwierćobrocie wokół znaczka: cztery przejścia (Poranek,
+   nowa karteczka, Notatnik, okno aplikacji) i dwa nieaktywne miejsca na
+   przyszłość. Main.js liczy przesunięcia trygonometrią (arcSlots) i wysyła
+   je gotowe do renderera — CSS sam takiego rachunku nie zrobi. */
 const html = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "widget.html"), "utf8");
 
+check("Menu ma sześć gniazd", (html.match(/<button class="slot(?:"| )/g) ?? []).length === 6);
 check(
-  "Rząd notatek ma trzy gniazda",
-  (html.match(/class="slot slot--side/g) ?? []).length === 3,
+  "…dwa z nich nieaktywne, na przyszłość",
+  (html.match(/<button class="slot slot--soon" disabled/g) ?? []).length === 2,
 );
-check("…a ostatnie z nich otwiera Notatnik", /data-do="notebook"/.test(html));
+check("…a jedno otwiera Notatnik", /data-do="notebook"/.test(html));
 check(
-  "Dymek rzędu bocznego idzie w pion, przeciwnie do kolumny",
-  /#stage\[data-tray-dir="down"\] \.slot--side \.tip \{[\s\S]{0,200}bottom: calc\(100% \+ 8px\)/.test(html) &&
-    /#stage\[data-tray-dir="up"\] \.slot--side \.tip \{[\s\S]{0,200}top: calc\(100% \+ 8px\)/.test(html),
-);
-check(
-  "…a kółko pod kursorem idzie na wierzch razem z nim",
-  /\.slot:hover \{\s*\n\s*z-index: 2;/.test(html),
+  "Okno aplikacji to jedyne gniazdo, które otwiera duże okno — i wyróżnia się kolorem",
+  /class="slot slot--primary" data-do="app"/.test(html),
 );
 check(
-  "Okno zostawia miejsce na dymek po stronie przeciwnej do kolumny",
+  "Łuk liczy się trygonometrią w main.js, nie w CSS-ie",
+  /function arcSlots\(tray\)/.test(main) && /Math\.cos\(rad\)/.test(main) && /Math\.sin\(rad\)/.test(main),
+);
+check(
+  "Renderer podstawia gotowe dx/dy na kółka, bez własnego rachunku",
+  /function applyArc\(arc\)/.test(widget) && /setProperty\("--dx"/.test(widget),
+);
+check(
+  "Okno zostawia miejsce na łuk w stronę side/dir i samą aureolę po przeciwnej",
   /const trayBack =/.test(main) && /const back = Math\.max\(half, trayBack\);/.test(main),
-);
-check(
-  "…i mieści cały rząd boczny w szerokości",
-  /\(WIDGET_TRAY\.sideCount - 1\) \* \(WIDGET_TRAY\.gap \+ WIDGET_TRAY\.item\)/.test(main),
 );
 check(
   "Notatnik otwiera się osobnym oknem, nie oknem aplikacji",

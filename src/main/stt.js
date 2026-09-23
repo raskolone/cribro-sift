@@ -17,7 +17,6 @@ const { weightedKeywords, glossaryNames } = require("./glossary");
  */
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const OPENAI_URL = "https://api.openai.com/v1/audio/transcriptions";
 const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 const DEEPGRAM_URL = "https://api.deepgram.com/v1/listen";
 const MAX_INLINE_BYTES = 18 * 1024 * 1024; // Gemini przyjmuje 20 MB na całe żądanie
@@ -215,6 +214,38 @@ function collapseLoops(text) {
   return s.trim();
 }
 
+/**
+ * Automatyczny bezpiecznik usuwający znaczniki czasu z tekstu transkrypcji.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+function sanitizeTranscript(text) {
+  if (!text || typeof text !== "string") return "";
+  let s = text;
+
+  // Usuwanie znaczników w nawiasach kwadratowych i okrągłych: [0:03-0:10], (1:23)
+  s = s.replace(/\[\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?\]/g, "");
+  s = s.replace(/\(\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?\)/g, "");
+
+  // Usuwanie wolnostojących przedziałów i znaczników czasowych: 0:03-0:10, 2:15
+  s = s.replace(/\b\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?\b/g, "");
+
+  // Usuwanie zbędnych spacji przed znakami interpunkcyjnymi (np. ' .' -> '.')
+  s = s.replace(/\s+([.,;:!?…])/g, "$1");
+
+  // Normalizacja wielokrotnych spacji do pojedynczej
+  s = s.replace(/[^\S\r\n]+/g, " ");
+
+  // Usuwanie spacji na początku lub końcu linii
+  s = s.replace(/^[^\S\r\n]+|[^\S\r\n]+$/gm, "");
+
+  // Normalizacja wielokrotnych pustych linii
+  s = s.replace(/\n{3,}/g, "\n\n");
+
+  return s.trim();
+}
+
 const RETRY_DELAY = 2000;
 
 /**
@@ -286,6 +317,31 @@ Zwróć wyłącznie treść wypowiedzi.`;
 
 /** Który prompt dla tego materiału. Spotkanie ma swój, reszta dyktuje. */
 const promptFor = (about) => (about?.kind === "meeting" ? LECTURE_PROMPT : VERBATIM_PROMPT);
+
+/* ══ GEMINI AUDIO — TRANSKRYPCJA I SITO W JEDNYM WYWOŁANIU ══
+
+   Prompty wyżej (VERBATIM_PROMPT, LECTURE_PROMPT) celowo trzymają się
+   wiernego zapisu — sito (main/sieve.js) czyści dopiero potem, osobnym
+   wywołaniem. Gemini jako GŁÓWNY silnik dyktowania robi to inaczej: model
+   dostaje dźwięk i od razu oddaje gotowy, oczyszczony tekst, więc dalszy
+   krok sita w potoku dyktowania (main.js#runPipeline) jest zbędny —
+   dostawca już go wykonał.
+
+   Dotyczy WYŁĄCZNIE dyktowania (patrz `about?.kind !== "meeting"` przy
+   wywołaniu w transcribe() niżej). Zapis zajęć zostaje przy wiernym
+   zapisie — tam sito nie tyle czyści, co scala wielu mówców i tego
+   Gemini w locie zrobić nie umie. */
+const GEMINI_AUDIO_PROMPT = `Jesteś precyzyjnym systemem transkrypcji mowy i asystentem produktywności Cribro Sift.
+Twoim zadaniem jest dokładne spisanie mowy z nagrania audio w języku polskim.
+
+Przepisz mowę dokładnie i bez zniekształceń w języku polskim. Bezwzględnie NIE dodawaj żadnych znaczników czasu (np. 0:00-0:10, 1:23), kodów czasowych, etykiet mówcy ani metadanych. Zwróć wyłącznie czysty, ciągły tekst wypowiedzi.
+
+ZASADY:
+- Zachowaj naturalne terminy techniczne i słownictwo angielskie bez fonetycznego spolszczania (np. „pull request”, „merge”, „feature”, „commit”, „deployment”, „endpoint”).
+- Dodaj poprawną interpunkcję, wielkie litery i przejrzyste akapity.
+- Usuń wahania, powtórzenia („ee”, „yy”) oraz zająknięcia.
+- Bezwzględnie NIE dodawaj żadnych znaczników czasu (np. 0:00-0:10, 1:23), kodów czasowych, etykiet mówcy ani metadanych.
+- Zwróć WYŁĄCZNIE oczyszczony tekst końcowy, bez żadnych wstępów, komentarzy ani cudzysłowów.`;
 
 const MOCK_TRANSCRIPTS = [
   "yyy dobra to znaczy chciałem powiedzieć że eee ta funkcja z sitem no wiesz ona powinna działać tak że użytkownik trzyma dwa klawisze i mówi i potem yyy to znaczy jak puści to się kończy nagranie i tekst leci do schowka automatycznie",
@@ -378,6 +434,8 @@ const PROMPT_ECHO = [
   /nazwy własne, które mogą paść/i,
   /jeśli w nagraniu nie ma mowy, zwróć pusty tekst/i,
   /nie zapętlaj ani nie powtarzaj w nieskończoność/i,
+  /precyzyjnym systemem transkrypcji mowy/i,
+  /zwróć wyłącznie oczyszczony tekst końcowy/i,
 ];
 
 /**
@@ -435,6 +493,9 @@ async function dispatchWithProtection(dispatchFn) {
       error.kind = "zapętlenie";
       throw error;
     }
+    if (out && typeof out.text === "string") {
+      out.text = sanitizeTranscript(out.text);
+    }
     return out;
   });
 }
@@ -459,7 +520,7 @@ async function transcribe(audio, settings, about = null) {
   const primaryModel = model || "nova-3";
   const primaryKey = keyFor(primaryProvider, settings);
 
-  // Budujemy hierarchię prób: Deepgram Nova-3 -> Deepgram Nova-2 -> OpenAI Whisper -> Gemini
+  // Budujemy hierarchię prób: Deepgram Nova-3 -> Deepgram Nova-2 -> Gemini
   const tiers = [
     {
       provider: primaryProvider,
@@ -487,19 +548,6 @@ async function transcribe(audio, settings, about = null) {
         provider: "deepgram",
         model: "nova-3",
         apiKey: dgKey,
-        isFallback: true,
-      });
-    }
-  }
-
-  if (primaryProvider !== "openai") {
-    const fbModel = settings.stt?.fallbackModel || "whisper-1";
-    const fbKey = keyFor("openai", settings);
-    if (fbKey) {
-      tiers.push({
-        provider: "openai",
-        model: fbModel,
-        apiKey: fbKey,
         isFallback: true,
       });
     }
@@ -546,10 +594,15 @@ async function transcribe(audio, settings, about = null) {
           return deepgramTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
         }
         if (tier.provider === "gemini") {
+          // Główny silnik dyktowania (nie spotkanie, nie fallback) dostaje
+          // wariant, który transkrybuje i czyści tekst w jednym wywołaniu —
+          // patrz GEMINI_AUDIO_PROMPT. Spotkania i tiery zapasowe zostają
+          // przy wiernym zapisie, bo dalszy potok wciąż na niego liczy
+          // (diaryzacja, sito).
+          if (!tier.isFallback && about?.kind !== "meeting") {
+            return geminiTranscribeAudio(audio, tier.model, tier.apiKey, language, about, opts);
+          }
           return geminiTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
-        }
-        if (tier.provider === "openai") {
-          return openaiTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
         }
         if (tier.provider === "groq") {
           return groqTranscribe(audio, tier.model, tier.apiKey, language, about, opts);
@@ -609,12 +662,17 @@ async function transcribe(audio, settings, about = null) {
 }
 
 async function geminiTranscribe(audio, model, apiKey, language, about, options = {}) {
+  const cleanKey = typeof apiKey === "string" ? apiKey.trim() : "";
   const hint = `\n\n${directive(language)}${hintFor(about)}`;
   const temperature = Number.isFinite(options?.temperature) ? options.temperature : 0.1;
 
-  const response = await fetchWithin(`${GEMINI_URL}/${model}:generateContent`, {
+  const url = cleanKey
+    ? `${GEMINI_URL}/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`
+    : `${GEMINI_URL}/${model}:generateContent`;
+
+  const response = await fetchWithin(url, {
     method: "POST",
-    headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
+    headers: { "x-goog-api-key": cleanKey, "Content-Type": "application/json" },
     body: JSON.stringify({
       contents: [
         {
@@ -626,13 +684,10 @@ async function geminiTranscribe(audio, model, apiKey, language, about, options =
       ],
       /* Ochrona przed zapętleniem transkrypcji:
          - temperature: 0.1 (lub 0.4 przy retry), aby uniknąć deterministycznego zacięcia greedy
-         - maxOutputTokens: 4096 (zamiast 32k tokenów, które blokowały sieć na 2.5 minuty)
-         - presencePenalty i frequencyPenalty: penalizują powtarzanie tych samych tokenów w próbkowaniu */
+         - maxOutputTokens: 4096 (zamiast 32k tokenów, które blokowały sieć na 2.5 minuty) */
       generationConfig: {
         temperature,
         maxOutputTokens: 4096,
-        presencePenalty: 0.3,
-        frequencyPenalty: 0.3,
       },
     }),
   });
@@ -651,37 +706,56 @@ async function geminiTranscribe(audio, model, apiKey, language, about, options =
   return { text, provider: "gemini", model };
 }
 
-async function openaiTranscribe(audio, model, apiKey, language, about, options = {}) {
-  // OpenAI v1/audio/transcriptions wymaga modelu whisper-1
-  const audioModel = !model || model.startsWith("gpt-") ? "whisper-1" : model;
-  const form = new FormData();
-  form.append("file", new Blob([audio], { type: "audio/wav" }), "dictation.wav");
-  form.append("model", audioModel);
-  form.append("response_format", "json");
-  if (Number.isFinite(options?.temperature)) {
-    form.append("temperature", String(options.temperature));
-  }
+/**
+ * Gemini jako główny silnik dyktowania: transkrypcja i czyszczenie językowe
+ * w JEDNYM wywołaniu multimodalnym (patrz GEMINI_AUDIO_PROMPT wyżej).
+ * Wynik ma `cleaned: true` — main.js#runPipeline czyta tę flagę i pomija
+ * dalszy krok sita, bo dostawca już go wykonał.
+ *
+ * `thinkingBudget: 0` wyłącza bufor myślenia (transkrypcja nie potrzebuje
+ * rozumowania, tylko szybkiej odpowiedzi), `temperature: 0.1` trzyma model
+ * blisko tego, co naprawdę usłyszał.
+ */
+async function geminiTranscribeAudio(audio, model, apiKey, language, about, options = {}) {
+  const cleanKey = typeof apiKey === "string" ? apiKey.trim() : "";
+  const hint = `\n\n${directive(language)}${hintFor(about)}`;
+  const temperature = Number.isFinite(options?.temperature) ? options.temperature : 0.1;
 
-  // Kod języka tylko wtedy, gdy język jest jeden. Narzucony przy dwóch
-  // językach kazałby Whisperowi zmielić drugi na pierwszy — czyli dokładnie
-  // to, czego dwujęzyczne dyktowanie ma unikać.
-  const code = fixedCode(language);
-  if (code) form.append("language", code);
-  /* Whisper ma na to własne pole i jest ono dokładnie tym: podpowiedzią
-     o brzmieniu nazw i o tym, co padło przed chwilą. */
-  const hint = [whisperHint(language), hintFor(about).trim()].filter(Boolean).join(" ");
-  if (hint) form.append("prompt", hint);
+  const url = cleanKey
+    ? `${GEMINI_URL}/${model}:generateContent?key=${encodeURIComponent(cleanKey)}`
+    : `${GEMINI_URL}/${model}:generateContent`;
 
-  const response = await fetchWithin(OPENAI_URL, {
+  const response = await fetchWithin(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body: form,
+    headers: { "x-goog-api-key": cleanKey, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: GEMINI_AUDIO_PROMPT + hint }] },
+      contents: [
+        {
+          role: "user",
+          parts: [{ inlineData: { mimeType: "audio/wav", data: audio.toString("base64") } }],
+        },
+      ],
+      generationConfig: {
+        temperature,
+        maxOutputTokens: 4096,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
   });
 
-  if (!response.ok) throw new Error(await describeError(response, "OpenAI"));
+  if (!response.ok) throw new Error(await describeError(response, "Gemini"));
 
   const data = await response.json();
-  return { text: (data.text ?? "").trim(), provider: "openai", model };
+  const blocked = data.promptFeedback?.blockReason;
+  if (blocked) throw new Error(`Gemini odrzucił nagranie (${blocked}).`);
+
+  const text = (data.candidates?.[0]?.content?.parts ?? [])
+    .map((part) => part.text ?? "")
+    .join("")
+    .trim();
+
+  return { text, provider: "gemini", model, cleaned: true };
 }
 
 async function groqTranscribe(audio, model, apiKey, language, about, options = {}) {
@@ -707,7 +781,11 @@ async function groqTranscribe(audio, model, apiKey, language, about, options = {
   if (!response.ok) throw new Error(await describeError(response, "Groq"));
 
   const data = await response.json();
-  return { text: (data.text ?? "").trim(), provider: "groq", model: model || "whisper-large-v3-turbo" };
+  return {
+    text: (data.text ?? "").trim(),
+    provider: "groq",
+    model: model || "whisper-large-v3-turbo",
+  };
 }
 
 /**
@@ -774,8 +852,12 @@ async function deepgramTranscribe(audio, model, apiKey, language, about, options
     urlObj.searchParams.set("language", code);
   }
 
+  const isNova3 = modelName.toLowerCase().includes("nova-3");
+  const keywordParam = isNova3 ? "keyterm" : "keywords";
   for (const keyword of weightedKeywords(about?.glossary, 50)) {
-    urlObj.searchParams.append("keywords", keyword);
+    // Dla Nova-3 (keyterm) Deepgram nie przyjmuje wag :waga, tylko sam termin
+    const term = isNova3 ? keyword.replace(/:\d+$/, "") : keyword;
+    urlObj.searchParams.append(keywordParam, term);
   }
 
   const response = await fetchWithin(urlObj.toString(), {
@@ -834,7 +916,7 @@ module.exports = {
   transcribe,
   deepgramTranscribe,
   geminiTranscribe,
-  openaiTranscribe,
+  geminiTranscribeAudio,
   groqTranscribe,
   describeError,
   hintFor,
@@ -845,9 +927,11 @@ module.exports = {
   withRetry,
   loopedTranscript,
   collapseLoops,
+  sanitizeTranscript,
   echoedPrompt,
   turnsFrom,
   promptFor,
   LECTURE_PROMPT,
+  GEMINI_AUDIO_PROMPT,
 };
 

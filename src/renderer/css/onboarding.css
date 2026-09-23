@@ -87,7 +87,7 @@
   transition: background var(--t), color var(--t);
 }
 .guide__close:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-7);
   color: var(--text);
 }
 .guide__close svg {
@@ -352,7 +352,7 @@
   stroke-width: 1.4;
 }
 .gart-plate {
-  fill: rgba(255, 255, 255, 0.035);
+  fill: var(--wash-3-5);
   stroke: var(--glass-edge);
   stroke-width: 1;
 }

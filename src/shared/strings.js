@@ -364,6 +364,7 @@ const EN = {
   "Nadaj dostęp": "Grant access",
   "Odbierz dostęp": "Revoke access",
   "Zapisane.": "Saved.",
+  "Zapisano w Free Thoughts": "Saved to Free Thoughts",
 
   /* Przegląd tygodnia — okno kontekstowe otwierane z „Nadchodzące". */
   "Zobacz cały tydzień": "See the whole week",
@@ -520,7 +521,7 @@ const EN = {
   "Pod kursor": "Under the cursor",
   "Tak jak zwykle: wklejenie w aktywnej aplikacji i schowek.":
     "As usual: pasted into the active app, and the clipboard.",
-  "Do notatki": "Into a note",
+  "Do notatki, do której dyktujesz": "Into the note you're dictating into",
   "Dopisuje do notatki, do której dyktujesz. Spod kursora — zakłada nową.":
     "Appends to the note you are dictating into. From the cursor — it starts a new one.",
   "Nowa notatka": "New note",
@@ -528,6 +529,9 @@ const EN = {
     "Always starts a separate note and puts the text there.",
   "Tylko schowek": "Clipboard only",
   "Nic się nigdzie nie wkleja.": "Nothing is pasted anywhere.",
+  "Do Free Thoughts": "To Free Thoughts",
+  "Zawsze dopisuje do notatki „Free Thoughts”, niezależnie od tego, gdzie akurat dyktujesz.":
+    "Always appends to the „Free Thoughts” note, no matter where you're dictating.",
   "Ujście słucha wyłącznie frazy wypowiedzianej dokładnie tak, jak ją zapisałeś.":
     "The outlet obeys only a phrase spoken exactly as you saved it.",
   "Włącz albo wyłącz": "Turn on or off",
@@ -615,6 +619,13 @@ const EN = {
   "Zmienia napisy w oknach, w pasku menu i na widgecie. Język dyktowania ustawia się osobno, w zakładce Funkcja sita.":
     "Changes the labels in the windows, the menu bar and the widget. The dictation language is set separately, in the Sieve function tab.",
 
+  Motyw: "Theme",
+  '„Zgodny z systemem" podąża za wyglądem macOS i przełącza się sam, gdy on się zmieni.':
+    "„Follows the system” tracks the macOS appearance and switches itself when it changes.",
+  Jasny: "Light",
+  Ciemny: "Dark",
+  "Zgodny z systemem": "Follows the system",
+
   "Dwa osobne kroki. Najpierw ktoś zamienia głos na tekst, potem ktoś inny ten tekst czyści. Możesz dać oba jednemu dostawcy albo je rozdzielić.":
     "Two separate steps. First someone turns speech into text, then someone else cleans that text up. You can give both to one provider or split them.",
   "Krok 1 — transkrypcja": "Step 1 — transcription",
@@ -635,7 +646,6 @@ const EN = {
   Sprawdź: "Test",
   "Atrapa (bez klucza)": "Mock (no key)",
   "Google Gemini": "Google Gemini",
-  OpenAI: "OpenAI",
   "Anthropic Claude": "Anthropic Claude",
 
   /* ── Widget ── */
@@ -820,6 +830,20 @@ const EN = {
   "za {n} godz.": "in {n} h",
   "Nic nie czeka na Twoją odpowiedź. Tak też bywa.": "Nothing is waiting for your reply. It happens.",
   "Zbieram pocztę, kalendarz i kanały…": "Collecting mail, calendar and feeds…",
+  /* ── Raport Skrzynki (Smart Inbox Triage) ── */
+  "📬 Raport Skrzynki": "📬 Inbox Report",
+  "Analizuję skrzynkę…": "Analyzing your inbox…",
+  "Model niedostępny — segregacja regułami lokalnymi.": "Model unavailable — sorted with local rules instead.",
+  "Nie udało się przeanalizować skrzynki.": "Couldn't analyze the inbox.",
+  "Do usunięcia": "To delete",
+  "Newslettery, powiadomienia, spam.": "Newsletters, notifications, spam.",
+  "Wymaga rzutu okiem": "Worth a glance",
+  "Anomalie i nietypowe tematy z zaufanych nadawców.": "Anomalies and odd subjects from trusted senders.",
+  Ważne: "Important",
+  "Klienci, faktury, ludzie.": "Clients, invoices, people.",
+  "Pusto — nic w tej grupie.": "Empty — nothing in this group.",
+  "Przenieś zaznaczone do Kosza": "Move selected to Trash",
+  "Przenoszę…": "Moving…",
   "Konto podłączone.": "Account connected.",
   "Konto odłączone.": "Account disconnected.",
   "Czekam na przeglądarkę…": "Waiting for the browser…",
@@ -1001,8 +1025,29 @@ const EN = {
   "poprawki wpisujesz tutaj": "corrections go here",
   "czytam…": "reading…",
   Dokąd: "Where to",
+  "Nowa notatka": "New note",
   "Do notatki": "To a note",
   "Pod kursor": "At the cursor",
+  "Zapisz na dysk": "Save to disk",
+  "Zapisano na dysku.": "Saved to disk.",
+  "Zapisz zrzut ekranu": "Save screenshot",
+  "Kopiuj obraz do schowka": "Copy image to clipboard",
+  "Skopiowano obraz do schowka": "Image copied to clipboard",
+  "Edytuj zrzut": "Edit screenshot",
+  "Gotowe": "Done",
+  "Kadruj": "Crop",
+  "Zakreślacz": "Highlighter",
+  "Prostokąt": "Rectangle",
+  "Elipsa": "Ellipse",
+  "Trójkąt": "Triangle",
+  "Linia": "Line",
+  "Strzałka": "Arrow",
+  "Dymek": "Speech Bubble",
+  "Cofnij": "Undo",
+  "Ponów": "Redo",
+  "Cienka": "Thin",
+  "Średnia": "Medium",
+  "Gruba": "Thick",
   Forma: "Form",
   Tekst: "Text",
   Obrazek: "Image",
@@ -1016,8 +1061,8 @@ const EN = {
   "Wklejone pod kursor.": "Pasted at the cursor.",
   "Dopisane do notatki.": "Appended to the note.",
   "Zapisane w nowej notatce.": "Saved as a new note.",
-  "Brak klucza OpenAI — zostaje sam obrazek. Klucz wpisuje się w Ustawieniach.":
-    "No OpenAI key — the image alone remains. The key goes in Settings.",
+  "Brak klucza Gemini — zostaje sam obrazek. Klucz wpisuje się w Ustawieniach.":
+    "No Gemini key — the image alone remains. The key goes in Settings.",
   /* To samo zdanie dla wszystkich, którzy nie są właścicielem: kroku
      „Silniki" u nich nie ma, więc nie ma ich dokąd odesłać (main/owner.js). */
   "Odczyt tekstu jest w tej chwili niedostępny — zostaje sam obrazek.":

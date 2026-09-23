@@ -38,12 +38,13 @@ button {
 }
 
 #app {
+  --rail-w: 168px;
   --list-w: 236px;
   --fold: 0.42s cubic-bezier(0.22, 1, 0.36, 1);
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: var(--list-w) 1fr;
+  grid-template-columns: var(--rail-w) var(--list-w) 1fr;
   height: 100vh;
   transition: --list-w var(--fold);
 }
@@ -69,7 +70,7 @@ body[data-list="closed"] #list {
 .list__edge {
   position: absolute;
   top: calc(50% - 13px);
-  left: calc(var(--list-w) - 13px);
+  left: calc(var(--rail-w) + var(--list-w) - 13px);
   z-index: 6;
   width: 26px;
   height: 26px;
@@ -136,7 +137,7 @@ body.is-solo .list__edge {
 }
 .list__group:hover {
   color: var(--text-hi);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--wash-5);
 }
 .list__caret {
   width: 12px;
@@ -169,6 +170,7 @@ body.is-solo #app {
   grid-template-columns: 1fr;
 }
 body.is-solo #list,
+body.is-solo #folderRail,
 body.is-solo #detach {
   display: none;
 }
@@ -229,7 +231,7 @@ body.is-solo #detach {
   transition: background var(--t), color var(--t), border-color var(--t);
 }
 .note:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--wash-3);
   color: var(--text);
 }
 .note[aria-selected="true"] {
@@ -237,21 +239,31 @@ body.is-solo #detach {
   border-color: var(--accent-25);
   color: var(--accent);
 }
+/* Nagłówek kafla: tytuł i data w jednym rzędzie, jak w Notatkach
+   systemowych — data jest tam, gdzie pada na nią wzrok najpierw, nie
+   schowana pod zajawką. */
+.note__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-right: 22px;
+  margin-bottom: 2px;
+}
 .note__title {
+  flex: 1;
+  min-width: 0;
   font-size: var(--fs-sm);
   font-weight: 500;
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 2px;
-  padding-right: 22px;
 }
 /* Przepisywany tytuł: to samo miejsce, ta sama linia, tylko pole na wpis
    jest teraz widoczne. */
 .note__title.is-editing {
   padding: 1px 5px;
-  margin: -2px -5px 2px;
+  margin: -2px -5px;
   border-radius: 4px;
   background: var(--surface-flat);
   box-shadow: inset 0 0 0 1px var(--accent-30);
@@ -263,18 +275,27 @@ body.is-solo #detach {
 .note[aria-selected="true"] .note__title {
   color: var(--accent);
 }
-.note__when {
+.note__date {
+  flex: none;
   font-family: var(--font-mono);
   font-size: var(--fs-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-mute);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
+}
+/* Zajawka — dwie linie, tak jak w Notatkach systemowych: tyle wystarcza,
+   żeby rozpoznać notatkę bez jej otwierania. */
+.note__snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--text-mute);
+  margin-bottom: 4px;
+}
+.note[aria-selected="true"] .note__snippet {
+  color: color-mix(in srgb, var(--accent) 70%, var(--text-mute));
 }
 /* Pinezka na kaflu. Widać ją, gdy jest po co — pod kursorem albo wtedy,
    gdy notatka jest przypięta i sama musi to o sobie mówić. */
@@ -301,7 +322,7 @@ body.is-solo #detach {
   opacity: 1;
 }
 .note__pin:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-6);
   color: var(--text);
 }
 .note__pin[aria-pressed="true"] {
@@ -386,7 +407,7 @@ body.is-solo #detach {
   height: 16px;
 }
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-7);
   color: var(--text);
 }
 .icon-btn--accent {
@@ -728,179 +749,64 @@ body.is-solo #detach {
   color: var(--text);
 }
 
-.notes__folders {
-  display: flex;
-  gap: 5px;
-  overflow-x: auto;
-  padding: 2px var(--s-4) var(--s-2);
-  scrollbar-width: none;
-}
-.notes__folders[hidden] {
-  display: none;
-}
-.notes__folders::-webkit-scrollbar {
-  display: none;
-}
-/* Szuflada jest wyborem, po którym widać połowę listy — więc jej nazwa
-   musi być do przeczytania także wtedy, gdy się jej nie szuka. Kolor
-   metryczki (--text-mute) zostawiał ją na granicy widoczności; nazwa
-   niewybranej szuflady chodzi teraz w kolorze treści, a wybranej —
-   w akcencie, tak jak dotąd. */
-.folder-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: none;
-  padding: 4px 10px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--line-strong);
-  background: none;
-  color: var(--text-2);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color var(--t), border-color var(--t), background var(--t);
-}
-.folder-chip b {
-  font-weight: 400;
-  color: var(--text-mute);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.folder-chip:hover {
-  color: var(--text-hi);
-  border-color: var(--line-strong);
-  background: rgba(255, 255, 255, 0.04);
-}
-.folder-chip[aria-pressed="true"] {
-  color: var(--accent);
-  border-color: var(--accent-30);
-  background: var(--accent-08);
-}
-.folder-chip[aria-pressed="true"] b {
-  color: var(--accent-soft);
-}
-
-/* Wyjście na papier stoi w tym samym pasie, co szuflady, ale NIE JEST
-   szufladą — jest czynnością. Kreskowana obwódka i odstęp przed nią mówią
-   to bez podpisu: obok wybiera się, tutaj się robi. Bez tej różnicy
-   „Do PDF" wyglądałoby jak kolejna szuflada o dziwnej nazwie. */
-.folder-chip--act {
-  margin-left: auto;
-  border-style: dashed;
-  color: var(--text-mute);
-}
-.folder-chip--act:hover {
-  color: var(--accent);
-  border-color: var(--accent-30);
-  border-style: solid;
-}
-.folder-chip svg {
-  width: 13px;
-  height: 13px;
-  flex: none;
-}
-/* Przycisk „Szuflady" jest dziś jedyną rzeczą na tym pasku, dopóki nikt
-   nie wszedł do środka żadnej szuflady — ma się dać zauważyć bez szukania. */
-.folder-chip--toggle[aria-pressed="true"] {
-  color: var(--accent);
-  border-color: var(--accent-30);
-  background: var(--accent-08);
-}
-
-/* ══ SIATKA SZUFLAD ══
-   Ten sam wzorzec, co w zakładce Notatki (patrz .folder-grid w app.css) —
-   karty, w które się wchodzi, nie chipy filtra. */
-.folder-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: var(--s-3);
-  padding-top: var(--s-2);
-}
-.folder-card {
+/* ══ SZUFLADA — TRZECIA KOLUMNA ══
+   Stały spis, nie pasek chipów do przewijania i nie karty, w które się
+   „wchodzi": „Wszystkie", każda szuflada, „Bez szuflady", jedno pod
+   drugim — jak w Notatkach systemowych. Klik filtruje środkową kolumnę
+   od razu; nie ma osobnego widoku do zamknięcia. */
+#folderRail {
+  background-color: var(--surface-2);
+  background-image: var(--glass-fill);
+  backdrop-filter: var(--glass-blur-lg);
+  -webkit-backdrop-filter: var(--glass-blur-lg);
+  border-right: 1px solid var(--glass-edge);
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
-  padding: var(--s-3) var(--s-3) var(--s-2);
-  border-radius: var(--r-lg);
-  border: 1px solid var(--line);
-  background: var(--surface-2);
-  cursor: pointer;
-  transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t-fast);
+  gap: 1px;
+  padding: var(--s-3) var(--s-2);
+  overflow-y: auto;
+  min-height: 0;
 }
-.folder-card:hover {
-  transform: translateY(-1px);
-  border-color: var(--paper-tint, var(--accent-30));
-  box-shadow: var(--shadow-md);
-}
-.folder-card:focus-visible {
-  outline: 2px solid var(--accent-55);
-  outline-offset: 2px;
-}
-.folder-card__icon {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-bottom: 2px;
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--paper-tint, var(--text-mute)) 18%, transparent);
-  color: var(--paper-tint, var(--text-mute));
-}
-.folder-card__icon svg {
-  width: 17px;
-  height: 17px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
-}
-.folder-card__name {
+.folder-rail__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
   font-size: var(--fs-sm);
-  font-weight: 500;
-  color: var(--text);
-  max-width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  transition: color var(--t), background var(--t);
+}
+.folder-rail__item:hover {
+  color: var(--text-hi);
+  background: var(--wash-4);
+}
+.folder-rail__item[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-08);
+}
+.folder-rail__name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.folder-card__count {
-  font-size: var(--fs-label);
+.folder-rail__count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
   color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
 }
-.folder-card__colors {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-  opacity: 0;
-  transition: opacity var(--t-fast);
+.folder-rail__item[aria-pressed="true"] .folder-rail__count {
+  color: var(--accent-soft);
 }
-.folder-card:hover .folder-card__colors,
-.folder-card:focus-within .folder-card__colors {
-  opacity: 1;
-}
-.folder-card__swatch {
-  padding: 2px;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  cursor: pointer;
-  line-height: 0;
-  transition: transform var(--t-fast);
-}
-.folder-card__swatch:hover {
-  transform: scale(1.15);
-}
-.folder-card__swatch[aria-pressed="true"] .swatch {
-  box-shadow: var(--paper-sheen), 0 0 0 2px var(--accent-55);
-}
-
-.notes__nothing {
-  margin: var(--s-3) 6px;
-  font-size: var(--fs-xs);
-  color: var(--text-mute);
+.folder-rail__item .swatch {
+  flex: none;
+  width: 9px;
+  height: 9px;
 }
 
 .notes__tags {
@@ -939,7 +845,7 @@ body.is-solo #detach {
 }
 .tag button:hover {
   color: var(--danger);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--wash-6);
 }
 .tag--sm {
   padding: 1px 7px;

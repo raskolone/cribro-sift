@@ -135,7 +135,7 @@
 
     /* ── Formatowanie ── */
 
-    format(kind) {
+    format(kind, value) {
       this.root.focus();
 
       if (kind === "bold" || kind === "italic") {
@@ -144,6 +144,8 @@
         document.execCommand(kind);
       } else if (kind === "code") {
         this.#wrapInline("code");
+      } else if (kind === "color") {
+        this.#applyColor(value);
       } else if (kind === "h1" || kind === "h2" || kind === "h3") {
         this.#setBlock(kind);
       } else if (kind === "toggle") {
@@ -175,6 +177,7 @@
         bullet: list?.tagName === "UL" && !list.classList.contains("task"),
         numbered: list?.tagName === "OL",
         todo: !!list && list.classList.contains("task"),
+        color: this.#colorAt(),
       };
     }
 
@@ -641,6 +644,49 @@
       const wrapper = document.createElement(tag);
       wrapper.appendChild(range.extractContents());
       range.insertNode(wrapper);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    /* ── Kolor tekstu ──────────────────────────────────────────────
+       Nie ma execCommand na to warte zaufania — `foreColor` pisze kolor
+       jako styl inline (`<span style="color:…">`) i po zapisie do Markdown
+       zostałaby po nim wyłącznie zwykła litera, żaden ślad koloru. Kolor
+       stoi więc w atrybucie `data-color`, tak jak kolor samej kartki
+       (patrz [data-color] w css/tokens.css), a jego wygląd na piśmie
+       nadaje CSS — nie ten kod. Wartość wraca do pliku jako
+       `[color=klucz]…[/color]` (patrz shared/richtext.js), więc notatka
+       otwarta gdzie indziej pokazuje zwykły, czytelny tekst. */
+
+    #colorAt() {
+      const node = this.#anchor();
+      return node?.closest?.("span[data-color]")?.getAttribute("data-color") ?? "default";
+    }
+
+    #applyColor(key) {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
+      const range = selection.getRangeAt(0);
+      const fragment = range.extractContents();
+
+      // Zdjęcie starego koloru idzie zawsze, nawet gdy zaraz nałoży się
+      // nowy — inaczej „domyślny” dokładałby drugi span zamiast czyścić,
+      // a zmiana koloru zagnieżdżałaby span w spanie z każdym kliknięciem.
+      for (const span of [...fragment.querySelectorAll("span[data-color]")]) {
+        const parent = span.parentNode;
+        while (span.firstChild) parent.insertBefore(span.firstChild, span);
+        parent.removeChild(span);
+      }
+
+      let node = fragment;
+      if (key && key !== "default") {
+        const wrapper = document.createElement("span");
+        wrapper.setAttribute("data-color", key);
+        wrapper.appendChild(fragment);
+        node = wrapper;
+      }
+
+      range.insertNode(node);
       selection.removeAllRanges();
       selection.addRange(range);
     }

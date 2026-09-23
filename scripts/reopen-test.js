@@ -28,12 +28,12 @@ assert.ok(
 );
 ok("Kursor na oknie widgetu jest rozpoznawany po współrzędnych ekranowych");
 
-// 3. Sprawdzenie, czy widget.js uwzględnia dymki .tip w overUs
+// 3. Sprawdzenie, czy overUs uwzględnia każde kółko rozłożonego menu
 assert.ok(
-  widgetJs.includes('slot.querySelector(".tip")'),
-  "overUs w widget.js musi uwzględniać dymki .tip gniazd tacy",
+  /for \(const slot of slots\) boxes\.push\(slot\.getBoundingClientRect\(\)\)/.test(widgetJs),
+  "overUs w widget.js musi uwzględniać obrys każdego kółka menu po łuku",
 );
-ok("Dymki .tip są włączone do obszaru interakcji tacy widgetu");
+ok("Kółka rozłożonego menu są włączone do obszaru interakcji widgetu");
 
 // 4. Sprawdzenie, czy COLLAPSE_DELAY daje wystarczająco dużo czasu na czytanie
 const delayMatch = widgetJs.match(/COLLAPSE_DELAY\s*=\s*(\d+)/);

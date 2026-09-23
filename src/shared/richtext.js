@@ -61,6 +61,20 @@
   const IMAGE = /!\[([^\]\n]*)\]\(([^)\s]+)\)/g;
   const SLOT = "\u0000";
 
+  /* ── Kolor tekstu ──────────────────────────────────────────────
+     Cztery klucze, bo tyle jest kolorów w wybieraku paska (patrz
+     TEXT_COLORS w js/notes-core.js) — „domyślny" nie ma tu wpisu, bo brak
+     koloru po prostu nie zapisuje żadnego znacznika. Zapis w nawiasach
+     kwadratowych, nie w HTML-u: `**pogrubienie**` i `` `kod` `` już są
+     czytelne bez aplikacji, kolor ma być taki sam — cudzy edytor Markdownu
+     pokaże `[color=navy]tekst[/color]` jako dziwny, ale wciąż czytelny
+     tekst, nie jako rozjechany znacznik HTML. */
+  const COLOR_KEYS = ["navy", "maroon", "forest", "slate"];
+  const COLOR_TAG = new RegExp(
+    `\\[color=(${COLOR_KEYS.join("|")})\\]([\\s\\S]*?)\\[/color\\]`,
+    "g",
+  );
+
   /* ── Rozmiar obrazka ──────────────────────────────────────────
      Zrzut wchodzi do notatki w pełnej szerokości kolumny i przez długi
      czas nie dało się z nim zrobić NIC WIĘCEJ: ani zmniejszyć, ani
@@ -111,6 +125,10 @@
     // słowa — inaczej „30*40" i „snake_case_nazwa" zamieniłyby się w kursywę.
     out = out.replace(/(^|[\s(„"'])\*([^*\n]+)\*(?=$|[\s.,;:!?)”"'])/g, "$1<em>$2</em>");
     out = out.replace(/(^|[\s(„"'])_([^_\n]+)_(?=$|[\s.,;:!?)”"'])/g, "$1<em>$2</em>");
+    // Kolor idzie na końcu, po pogrubieniu i kursywie — dzięki temu
+    // „[color=navy]**ważne**[/color]" trafia w span, w którym już siedzi
+    // gotowy <strong>, zamiast walczyć o kolejność z tamtymi regexami.
+    out = out.replace(COLOR_TAG, '<span data-color="$1">$2</span>');
     return out.replace(new RegExp(`${SLOT}(\\d+)${SLOT}`, "g"), (_all, index) => images[Number(index)]);
   }
 
@@ -279,6 +297,14 @@
     }
 
     const inner = childrenOf(node).map(inlineToMarkdown).join("");
+
+    if (tag === "span") {
+      const color = attr(node, "data-color");
+      if (!color || !COLOR_KEYS.includes(color) || !inner.trim()) return inner;
+      const [, head, core, tail] = /^(\s*)([\s\S]*?)(\s*)$/.exec(inner);
+      return `${head}[color=${color}]${core}[/color]${tail}`;
+    }
+
     const mark = INLINE_MARK[tag];
     // Znacznik wokół samych spacji byłby Markdownem, którego nikt nie odczyta
     // z powrotem — pusty pogrubiony fragment zostaje pustym fragmentem.
@@ -446,6 +472,7 @@
     applyFolds,
     foldRange,
     clickFold,
+    COLOR_KEYS,
   };
 
   if (typeof module !== "undefined" && module.exports) module.exports = RICHTEXT;

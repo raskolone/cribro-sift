@@ -12,6 +12,45 @@ const on = (channel) => (handler) => {
   return () => ipcRenderer.removeListener(channel, listener);
 };
 
+/* Motyw na <html> PRZED pierwszym renderem.
+ *
+ * Musi być synchroniczne i musi biec tutaj, nie w renderer.js: preload
+ * kończy się zanim strona narysuje choćby jedną klatkę, więc atrybut jest
+ * na miejscu, gdy CSS pierwszy raz liczy kolory. Asynchroniczne theme:get
+ * przyszłoby o klatkę za późno — i to jest dokładnie ten błysk złego
+ * motywu (FOUC), któremu ta linia zapobiega.
+ *
+ * `document.documentElement` na tym etapie ("document-start") jeszcze
+ * NIE ISTNIEJE — parser nie doszedł jeszcze do <html>. Stąd MutationObserver
+ * zamiast prostego przypisania: obserwuje `document` (który istnieje od
+ * razu) i łapie <html> w chwili, gdy parser je wstawia — to wciąż mikrozadanie
+ * sprzed pierwszej klatki, więc FOUC-owi nadal nie ma kiedy się zdarzyć.
+ */
+try {
+  const resolved = ipcRenderer.sendSync("theme:getSync");
+  const applyAttr = () => document.documentElement.setAttribute("data-theme", resolved);
+  if (document.documentElement) {
+    applyAttr();
+  } else {
+    new MutationObserver((_records, observer) => {
+      if (!document.documentElement) return;
+      applyAttr();
+      observer.disconnect();
+    }).observe(document, { childList: true });
+  }
+} catch {
+  // Okna testowe/mock (patrz mock-bridge.js) nie mają tego kanału — motyw
+  // zostaje wtedy na domyślnym, ciemnym tle z tokens.css.
+}
+
+/* Zmiana na żywo — w KAŻDYM oknie, niezależnie od tego, czy jego własny
+   renderer w ogóle słucha theme:changed. Ustawienie atrybutu tutaj, a nie
+   wyłącznie w app.js, jest tym, co przełącza Sticky i resztę okien razem
+   z głównym — one też ładują ten sam preload. */
+ipcRenderer.on("theme:changed", (_event, resolved) => {
+  document.documentElement.setAttribute("data-theme", resolved);
+});
+
 contextBridge.exposeInMainWorld("cribro", {
   isDesktop: true,
   // Interfejs musi wiedzieć, na czym stoi: na macOS pisownią zarządza
@@ -22,6 +61,14 @@ contextBridge.exposeInMainWorld("cribro", {
     get: () => ipcRenderer.invoke("settings:get"),
     save: (patch) => ipcRenderer.invoke("settings:save", patch),
     onChange: on("settings:changed"),
+  },
+
+  /* Motyw. Osobno od settings, bo dochodzi do niego zdarzenie ('updated'
+     w nativeTheme), którego reszta ustawień nie ma — patrz theme:changed. */
+  theme: {
+    get: () => ipcRenderer.invoke("theme:get"),
+    set: (preference) => ipcRenderer.invoke("theme:set", preference),
+    onChange: on("theme:changed"),
   },
 
   history: {
@@ -85,6 +132,17 @@ contextBridge.exposeInMainWorld("cribro", {
     ready: () => ipcRenderer.invoke("shot:ready"),
     save: (choice) => ipcRenderer.invoke("shot:save", choice),
     cancel: () => ipcRenderer.send("shot:cancel"),
+    // Edycja i schowek zrzutu
+    updateImage: (dataUrl) => ipcRenderer.invoke("shot:updateImage", dataUrl),
+    copyText: (text) => ipcRenderer.invoke("shot:copyText", text),
+    copyImage: (dataUrl) => ipcRenderer.invoke("shot:copyImage", dataUrl),
+    copyAll: (payload) => ipcRenderer.invoke("shot:copyAll", payload),
+    shareAppleNotes: (payload) => ipcRenderer.invoke("shot:shareAppleNotes", payload),
+    shareNotion: (payload) => ipcRenderer.invoke("shot:shareNotion", payload),
+    shareSpark: (payload) => ipcRenderer.invoke("shot:shareSpark", payload),
+    shareWhatsApp: (payload) => ipcRenderer.invoke("shot:shareWhatsApp", payload),
+    saveToDisk: (dataUrl) => ipcRenderer.invoke("shot:saveToDisk", dataUrl),
+    setWindowSize: (size) => ipcRenderer.invoke("shot:setWindowSize", size),
     // Odczyt przychodzi osobno, bo okno stanęło przed nim.
     onText: on("shot:text"),
   },
@@ -256,9 +314,22 @@ contextBridge.exposeInMainWorld("cribro", {
   briefing: {
     state: () => ipcRenderer.invoke("briefing:state"),
     show: () => ipcRenderer.invoke("briefing:show"),
+    // Poranek osadzony w widoku BriefingView — patrz renderer/js/app.js.
+    generate: () => ipcRenderer.invoke("briefing:generate"),
+    toSticky: (data) => ipcRenderer.invoke("briefing:toSticky", data),
     connect: () => ipcRenderer.invoke("briefing:connect"),
     disconnect: () => ipcRenderer.invoke("briefing:disconnect"),
     onData: on("briefing:data"),
+    onBusy: on("briefing:busy"),
+  },
+
+  /* Raport Skrzynki — segregacja poczty w oknie Poranka. `analyze` ocenia,
+     `trashSelected` wykonuje WYŁĄCZNIE to, co użytkownik zaznaczył i
+     zatwierdził (patrz sekcja „Raport Skrzynki" w main/main.js). */
+  mail: {
+    fetchHeaders: () => ipcRenderer.invoke("mail:fetchHeaders"),
+    analyze: () => ipcRenderer.invoke("mail:analyze"),
+    trashSelected: (items) => ipcRenderer.invoke("mail:trashSelected", items),
   },
 
   /* Panel admina — spis kont i przełączniki funkcji.
@@ -280,6 +351,7 @@ contextBridge.exposeInMainWorld("cribro", {
     request: (kind) => ipcRenderer.invoke("permissions:request", kind),
     capture: () => ipcRenderer.invoke("capture:toggle"),
     providers: () => ipcRenderer.invoke("providers:get"),
+    geminiModels: (stage) => ipcRenderer.invoke("providers:gemini-models", stage),
     openExternal: (url) => ipcRenderer.invoke("link:open", url),
     testSieve: () => ipcRenderer.invoke("test:sieve"),
     // Próba polecenia: samo rozpoznanie, bez wywołania sita.

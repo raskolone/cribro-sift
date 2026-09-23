@@ -100,10 +100,8 @@ function repairWavHeaderIfNeeded(filePath, knownSamples = null) {
     if (stats.size < 44) return false;
 
     const payloadFromDisk = stats.size - 44;
-    const payloadFromSamples = Number.isFinite(knownSamples) && knownSamples > 0 ? knownSamples * 2 : null;
-    const finalPayload = payloadFromSamples != null && payloadFromSamples <= payloadFromDisk
-      ? payloadFromSamples
-      : payloadFromDisk;
+    // Jeśli plik ma próbki na dysku (np. po finish() i paddingu ciszą), używamy faktycznego rozmiaru z dysku
+    const finalPayload = payloadFromDisk > 0 ? payloadFromDisk : (Number.isFinite(knownSamples) && knownSamples > 0 ? knownSamples * 2 : 0);
 
     const fd = fs.openSync(filePath, "r+");
     try {

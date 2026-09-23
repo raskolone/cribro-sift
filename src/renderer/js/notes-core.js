@@ -78,6 +78,11 @@
    * @param {string}   title  nowa nazwa
    */
   async function saveTitle(api, note, title) {
+    // Notatka systemowa (Free Thoughts) nie zmienia nazwy — jej tytuł jest
+    // stałym drogowskazem, po którym człowiek ją odróżnia (patrz `system`
+    // w store.js; store i tak odrzuci zmianę, ale tu unikamy migotania
+    // tytułu w interfejsie zanim odpowiedź wróci).
+    if (note.system) return note.title;
     const clean = String(title ?? "").replace(/\s+/g, " ").trim();
     note.title = clean || null;
     note.updatedAt = new Date().toISOString();
@@ -153,15 +158,11 @@
    * @returns {{ groups: {key: string, label: string, items: object[]}[], divided: boolean }}
    */
   function groupNotes(notes) {
-    const sorted = sortNotes(notes);
+    const nonMeeting = (notes || []).filter((n) => !isMeeting(n));
+    const sorted = sortNotes(nonMeeting);
     const loose = sorted.filter((note) => !note.pinned);
     const groups = [
       { key: "pinned", label: "Przypięte", items: sorted.filter((note) => !!note.pinned) },
-      {
-        key: "meeting",
-        label: "Notatki ze spotkań",
-        items: loose.filter(isMeeting),
-      },
       { key: "quick", label: "Szybkie notatki", items: loose.filter(isQuick) },
       {
         key: "note",
@@ -194,11 +195,14 @@
      karteczki na monitorze: żeby rozpoznać ją, zanim się ją przeczyta.
      „Ta żółta" jest szybsza niż „ta druga od góry" i przeżywa przesunięcie.
 
-     Kolorów jest siedem i wszystkie są CIEMNE. To nie jest paleta do wyboru
-     ładnego odcienia, tylko do rozróżniania kartek — a kartka na wierzchu
-     musi zostać czytelna, więc jasne tło pod jasnym tekstem nie wchodzi
-     w grę. Akcent (odhaczenia, punktory) zostaje zielony we wszystkich:
-     zieleń tutaj znaczy „zrobione", a nie „taki kolor notatki".
+     Kolorów jest siedem i w aplikacji wszystkie są CIEMNE — to nie jest
+     paleta do wyboru ładnego odcienia, tylko do rozróżniania kartek, a lista
+     notatek musi zostać czytelna. Akcent (odhaczenia, punktory) zostaje
+     zielony we wszystkich: zieleń tutaj znaczy „zrobione", a nie „taki
+     kolor notatki". Kartka na PULPICIE (sticky.html) rysuje te same klucze
+     pastelowo — papierowo, jak prawdziwa karteczka — patrz nadpisanie
+     `body.sticky-window .paper[data-color]` w css/tokens.css; tożsamość
+     koloru (klucz, etykieta) zostaje jedna dla obu miejsc.
 
      Klucz jedzie do pliku notatki i na serwer; to własność notatki, nie
      tego biurka — inaczej niż „na wierzchu" (patrz toggleWidget w notes.js). */
@@ -216,6 +220,21 @@
 
   /** Kolor notatki albo „default" — także dla wartości, której już nie ma. */
   const colorOf = (note) => (COLOR_KEYS.has(note?.color) ? note.color : "default");
+
+  /* ---- Kolor TEKSTU ----
+     Inna paleta niż kolor kartki wyżej: tu chodzi o pojedyncze zaznaczenie
+     w treści, nie o całą notatkę, i klucze idą wprost do pliku (patrz
+     `[color=…]` w shared/richtext.js), więc muszą się z nim zgadzać co do
+     znaku. Pięć stonowanych barw, każda czytelna na jasnym papierze —
+     „domyślny" nie niesie koloru wcale, więc zdejmuje każdy wcześniej
+     nałożony. */
+  const TEXT_COLORS = [
+    ["default", "Domyślny", "#0f172a"],
+    ["navy", "Granat", "#1e3a8a"],
+    ["maroon", "Bordo", "#991b1b"],
+    ["forest", "Zieleń", "#166534"],
+    ["slate", "Grafit", "#475569"],
+  ];
 
   /**
    * Przepisanie tytułu w miejscu.
@@ -568,6 +587,11 @@
 
   /** Stan przycisków: co jest włączone i jak się w tej chwili nazywa. */
   function paintActions(root, note) {
+    // Notatka systemowa (np. Free Thoughts) nie ma kosza — store i tak
+    // odmówi skasować, ale przycisk, który zawsze przegrywa, tylko myli.
+    const trash = root?.querySelector?.('.note-acts__slot [data-act="delete"]');
+    if (trash) trash.hidden = !!note?.system;
+
     for (const act of ACTIONS) {
       const button = root?.querySelector?.(`[data-act="${act.id}"]`);
       if (!button) continue;
@@ -629,9 +653,9 @@
          Pytanie stoi TUTAJ, a nie w trzech oknach osobno, bo `runAction`
          jest jedynym miejscem, przez które kasowanie przechodzi w każdym
          z nich (zakładka Notatki, Notatnik, kartka na pulpicie). */
+      if (note.system) return false; // Free Thoughts i spółka nie znikają
       if (confirm !== false && !(await askDelete(note))) return false;
-      await api.notes.remove(note.id);
-      return true;
+      return !!(await api.notes.remove(note.id));
     }
 
     return false;
@@ -801,6 +825,7 @@
     highlight,
     NOTE_COLORS,
     colorOf,
+    TEXT_COLORS,
     renameInPlace,
     dateStamp,
     ensureIcons,

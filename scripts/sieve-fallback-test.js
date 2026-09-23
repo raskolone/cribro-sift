@@ -1,7 +1,7 @@
 "use strict";
 /**
  * Test mechanizmu fallbacku dla Sita (Clean up):
- * Gemini -> OpenAI (gpt-4o-mini) -> Groq (llama-3.3-70b-versatile)
+ * Gemini -> Groq (llama-3.3-70b-versatile)
  *   node scripts/sieve-fallback-test.js
  */
 const assert = require("assert");
@@ -10,17 +10,14 @@ const aiRegistry = require("../src/main/ai-registry");
 
 const calls = [];
 let geminiHandler = null;
-let openaiHandler = null;
 let groqHandler = null;
 
 global.fetch = async (url, init) => {
   const isGoogle = url.includes("googleapis");
-  const isLocalOpenAi = url.includes("api.openai.com");
   const isGroq = url.includes("api.groq.com");
-  calls.push({ url, init, isGoogle, isLocalOpenAi, isGroq });
+  calls.push({ url, init, isGoogle, isGroq });
 
   if (isGoogle && geminiHandler) return geminiHandler(url, init);
-  if (isLocalOpenAi && openaiHandler) return openaiHandler(url, init);
   if (isGroq && groqHandler) return groqHandler(url, init);
 
   if (isGoogle) {
@@ -29,16 +26,6 @@ global.fetch = async (url, init) => {
       status: 200,
       json: async () => ({
         candidates: [{ content: { parts: [{ text: "Oczyszczony tekst z Gemini." }] } }],
-      }),
-    };
-  }
-
-  if (isLocalOpenAi) {
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({
-        choices: [{ message: { content: "Oczyszczony tekst z OpenAI." } }],
       }),
     };
   }
@@ -64,11 +51,8 @@ global.fetch = async (url, init) => {
     language: "pl",
     sieve: {
       provider: "gemini",
-      model: "gemini-3.7-flash",
+      model: "gemini-2.5-flash",
       apiKey: "AIza-test",
-      fallbackProvider: "openai",
-      fallbackModel: "gpt-4o-mini",
-      fallbackApiKey: "sk-openai-test",
       groqApiKey: "gsk-groq-test",
     },
   };
@@ -76,7 +60,6 @@ global.fetch = async (url, init) => {
   // 1. Działa Gemini - brak fallbacku
   calls.length = 0;
   geminiHandler = null;
-  openaiHandler = null;
   groqHandler = null;
 
   let res = await sift({ raw: "yyy to jest test no wiesz", settings: baseSettings });
@@ -86,7 +69,7 @@ global.fetch = async (url, init) => {
   assert.ok(calls[0].isGoogle);
   console.log("✓ Normalne czyszczenie Gemini nie uruchamia fallbacku");
 
-  // 2. Gemini 429 -> Fallback 1: OpenAI
+  // 2. Gemini 429 -> Fallback: Groq
   calls.length = 0;
   geminiHandler = async () => ({
     ok: false,
@@ -95,36 +78,32 @@ global.fetch = async (url, init) => {
   });
 
   res = await sift({ raw: "yyy to jest test no wiesz", settings: baseSettings });
-  assert.equal(res.text, "Oczyszczony tekst z OpenAI.");
-  assert.equal(res.provider, "openai");
-  assert.equal(res.model, "gpt-4o-mini");
+  assert.equal(res.text, "Oczyszczony tekst z Groq Llama.");
+  assert.equal(res.provider, "groq");
+  assert.equal(res.model, "llama-3.3-70b-versatile");
   assert.equal(res.fallback, true);
   assert.ok(calls.some((c) => c.isGoogle));
-  assert.ok(calls.some((c) => c.isLocalOpenAi));
-  console.log("✓ Gemini 429 na sicie płynnie przełącza się na fallback OpenAI");
+  assert.ok(calls.some((c) => c.isGroq));
+  console.log("✓ Gemini 429 na sicie płynnie przełącza się na fallback Groq");
 
-  // 3. Gemini 503 i OpenAI 500 -> Fallback 2: Groq
+  // 3. Gemini i Groq oba zawodzą -> sito oddaje surowy tekst jako degraded
   calls.length = 0;
   geminiHandler = async () => ({
     ok: false,
     status: 503,
     text: async () => "Service Unavailable",
   });
-  openaiHandler = async () => ({
+  groqHandler = async () => ({
     ok: false,
     status: 500,
-    text: async () => "OpenAI server error",
+    text: async () => "Groq server error",
   });
 
   res = await sift({ raw: "yyy to jest test no wiesz", settings: baseSettings });
-  assert.equal(res.text, "Oczyszczony tekst z Groq Llama.");
-  assert.equal(res.provider, "groq");
-  assert.equal(res.model, "llama-3.3-70b-versatile");
-  assert.equal(res.fallback, true);
+  assert.equal(res.degraded, true, "Sito powinno oddać surowy tekst, gdy wszyscy dostawcy zawiodą");
   assert.ok(calls.some((c) => c.isGoogle));
-  assert.ok(calls.some((c) => c.isLocalOpenAi));
   assert.ok(calls.some((c) => c.isGroq));
-  console.log("✓ Awaria Gemini i OpenAI przełącza się na Groq Llama");
+  console.log("✓ Awaria Gemini i Groq oddaje surowy tekst zamiast rzucać błąd");
 
   // 4. Rejestr AI zarejestrował wpisy
   const registryItems = aiRegistry.list();

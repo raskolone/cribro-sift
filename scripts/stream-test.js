@@ -16,10 +16,10 @@ const stream = new SttStream();
 check("Instancja SttStream tworzy się poprawnie", stream !== null && stream.active === false);
 
 // 1. Bez klucza lub z innym dostawcą nie otwiera sesji
-const noKey = stream.startSession({ stt: { provider: "openai" } });
-check("Inny dostawca (OpenAI) nie uruchamia strumienia WebSocket Deepgram", noKey === false && stream.active === false);
+const noKey = stream.startSession({ stt: { provider: "gemini" } });
+check("Inny dostawca (Gemini) nie uruchamia strumienia WebSocket Deepgram", noKey === false && stream.active === false);
 
-const noKeyDeepgram = stream.startSession({ stt: { provider: "deepgram", apiKey: "" } });
+const noKeyDeepgram = stream.startSession({ stt: { provider: "deepgram", apiKey: "" }, noSystemKeys: true });
 check("Brak klucza Deepgram nie uruchamia sesji", noKeyDeepgram === false);
 
 // 2. Wyłączone strumieniowanie w ustawieniach

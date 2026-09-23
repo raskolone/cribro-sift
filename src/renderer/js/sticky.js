@@ -34,6 +34,7 @@
     countWords,
     colorOf,
     NOTE_COLORS,
+    TEXT_COLORS,
     renameInPlace,
     ensureIcons,
     actionBar,
@@ -86,8 +87,8 @@
      raz, po swojemu, rozjechałoby się z Notatnikiem przy pierwszej zmianie
      w tamtym. */
 
-  function applyFormat(kind) {
-    editor.format(kind);
+  function applyFormat(kind, value) {
+    editor.format(kind, value);
     refreshTools();
   }
 
@@ -97,7 +98,38 @@
     for (const button of document.querySelectorAll("[data-format]")) {
       button.setAttribute("aria-pressed", String(!!active[button.dataset.format]));
     }
+    refreshTextColor(active.color);
   }
+
+  /* ── Kolor tekstu ──────────────────────────────────────────────
+     Wybierak wysuwa się spod paska narzędzi, tak jak paleta koloru kartki
+     spod nagłówka — ten sam gest, inne miejsce. Klucz jedzie prosto do
+     shared/richtext.js (patrz #applyColor w js/editor.js), więc paleta tu
+     ma dokładnie te same klucze, co tam. */
+
+  function buildTextColors() {
+    $("#textColors").innerHTML = TEXT_COLORS.map(
+      ([key, label, hex]) => `
+        <button type="button" data-text-color="${key}" title="${label}"
+                aria-pressed="false" style="--text-color-dot: ${hex}">
+          <span class="dot"></span>
+        </button>`,
+    ).join("");
+  }
+
+  /** Kropka na znaczku i zaznaczenie w popowerze pokazują kolor pod kursorem. */
+  function refreshTextColor(key) {
+    const entry = TEXT_COLORS.find(([k]) => k === key) ?? TEXT_COLORS[0];
+    $("#textColor").style.setProperty("--text-color-dot", entry[2]);
+    for (const button of $("#textColors").querySelectorAll("[data-text-color]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.textColor === entry[0]));
+    }
+  }
+
+  const showTextColors = (open) => {
+    $("#textColors").hidden = !open;
+    $("#textColor").setAttribute("aria-expanded", String(!!open));
+  };
 
   /* Data i godzina w miejscu kursora — jedna rzecz, po którą na kartce
      leżącej przy pracy sięga się równie często co po listę: „14:30 — " przed
@@ -114,7 +146,9 @@
      kursor. Osobny nasłuch, bo ten wyżej melduje kliknięcie procesowi
      głównemu i ma dochodzić zawsze. */
   document.addEventListener("mousedown", (event) => {
-    if (event.target.closest("[data-format], #stamp")) event.preventDefault();
+    if (event.target.closest("[data-format], #stamp, #textColor, #textColors [data-text-color]")) {
+      event.preventDefault();
+    }
   });
 
   document.addEventListener("selectionchange", () => {
@@ -225,7 +259,7 @@
      i zmienia podpis razem z nią. */
 
   function startRename() {
-    if (!note) return;
+    if (!note || note.system) return;
     const target = note;
     renameInPlace($("#title"), {
       text: rawTitle(target),
@@ -399,6 +433,15 @@
     if (event.target.closest("#paint")) return showPalette($("#palette").hidden);
     // Klik gdziekolwiek indziej zamyka paletę — tak jak każde menu.
     showPalette(false);
+
+    const textColor = event.target.closest("#textColors [data-text-color]");
+    if (textColor) {
+      applyFormat("color", textColor.dataset.textColor);
+      showTextColors(false);
+      return;
+    }
+    if (event.target.closest("#textColor")) return showTextColors($("#textColors").hidden);
+    showTextColors(false);
 
     const tool = event.target.closest("[data-format]");
     if (tool) return applyFormat(tool.dataset.format);
@@ -618,6 +661,7 @@
       $("#roll").title = "Rozwiń kartkę";
     }
     buildPalette();
+    buildTextColors();
     setTimeout(unfoldAnyway, 400);
     const settings = await api.settings.get();
     setLanguage(settings.uiLanguage ?? "pl");

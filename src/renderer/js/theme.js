@@ -12,6 +12,11 @@
 window.themeRgb = (function () {
   const cache = new Map();
 
+  // Podmiana motywu na żywo zmienia wartości pod tymi samymi nazwami
+  // zmiennych — bez czyszczenia cache canvas rysowałby stary motyw aż do
+  // restartu okna.
+  window.cribro?.theme?.onChange?.(() => cache.clear());
+
   return function themeRgb(name) {
     if (cache.has(name)) return cache.get(name);
 

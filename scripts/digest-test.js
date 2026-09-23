@@ -216,7 +216,7 @@ check("Pusta odpowiedź to pusta rozmowa", readDialogue("").length === 0);
 (async () => {
   const ustawienia = {
     stt: { provider: "gemini", apiKey: "" },
-    sieve: { provider: "openai", model: "gpt-x", apiKey: "sk-test" },
+    sieve: { provider: "anthropic", model: "claude-haiku-4-5", apiKey: "sk-ant-test" },
     meetings: { template: "generic" },
   };
 
@@ -229,7 +229,7 @@ check("Pusta odpowiedź to pusta rozmowa", readDialogue("").length === 0);
   });
   check("Podsumowanie wraca z tytułem", wynik.title === "Raport przed poniedziałkiem");
   check("…i z treścią", wynik.summary.startsWith("**O czym było**"));
-  check("Dostawca jest ten sam, co przy sicie", widziane.provider === "openai" && widziane.model === "gpt-x");
+  check("Dostawca jest ten sam, co przy sicie", widziane.provider === "anthropic" && widziane.model === "claude-haiku-4-5");
   check("Model dostaje i notatki, i zapis",
     widziane.user.includes("Ania przysyła dane") && widziane.user.includes("Wyślę je dziś"));
 
@@ -244,7 +244,7 @@ check("Pusta odpowiedź to pusta rozmowa", readDialogue("").length === 0);
     });
 
   // Brak klucza to nie awaria sieci, tylko brakująca konfiguracja.
-  await digest(rozmowa, { stt: { provider: "gemini", apiKey: "" }, sieve: { provider: "openai", model: "gpt-x" }, meetings: {} }, { ask: async () => "x" })
+  await digest(rozmowa, { stt: { provider: "gemini", apiKey: "" }, sieve: { provider: "anthropic", model: "claude-haiku-4-5" }, meetings: {} }, { ask: async () => "x" })
     .then(() => check("Brak klucza jest zgłaszany", false))
     .catch((problem) => check("Brak klucza jest zgłaszany po ludzku", problem.message.includes("Brak klucza API")));
 

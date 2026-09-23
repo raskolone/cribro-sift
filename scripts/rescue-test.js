@@ -28,8 +28,8 @@ const settings = {
   mesh: "srednie",
   language: "auto",
   grains: [],
-  stt: { provider: "gemini", model: "gemini-3.7-flash", apiKey: "AIza-test" },
-  sieve: { provider: "gemini", model: "gemini-3.7-flash", apiKey: "", customInstruction: "" },
+  stt: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "AIza-test" },
+  sieve: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "", customInstruction: "" },
 };
 
 (async () => {

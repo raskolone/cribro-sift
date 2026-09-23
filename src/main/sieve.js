@@ -18,7 +18,6 @@ const { phoneticGuide } = require("./glossary");
  */
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 const MESH = {
@@ -161,7 +160,7 @@ async function sift({ raw, settings, command = null, detect = false }) {
 
   const commands = detect && !command ? settings.commands : null;
   const primaryProvider = settings.sieve?.provider || "gemini";
-  const primaryModel = settings.sieve?.model || (primaryProvider === "gemini" ? "gemini-3.7-flash" : "gpt-4o-mini");
+  const primaryModel = settings.sieve?.model || (primaryProvider === "gemini" ? "gemini-2.5-flash" : "llama-3.3-70b-versatile");
   const primaryKey = keyFor(primaryProvider, settings);
 
   const system = buildSystemPrompt(
@@ -173,7 +172,7 @@ async function sift({ raw, settings, command = null, detect = false }) {
     commands,
   );
 
-  // Budujemy łańcuch prób (Główny -> OpenAI -> Groq -> Anthropic -> Gemini)
+  // Budujemy łańcuch prób (Główny -> Groq -> Anthropic -> Gemini)
   const tiers = [
     {
       provider: primaryProvider,
@@ -182,17 +181,6 @@ async function sift({ raw, settings, command = null, detect = false }) {
       isFallback: false,
     },
   ];
-
-  if (primaryProvider !== "openai") {
-    const fbModel = settings.sieve?.fallbackModel || "gpt-4o-mini";
-    const fbKey = keyFor("openai", settings);
-    tiers.push({
-      provider: "openai",
-      model: fbModel,
-      apiKey: fbKey,
-      isFallback: true,
-    });
-  }
 
   if (primaryProvider !== "groq") {
     const groqModel = settings.sieve?.groqModel || "llama-3.3-70b-versatile";
@@ -222,7 +210,7 @@ async function sift({ raw, settings, command = null, detect = false }) {
     if (geminiKey) {
       tiers.push({
         provider: "gemini",
-        model: "gemini-3.7-flash",
+        model: "gemini-2.5-flash",
         apiKey: geminiKey,
         isFallback: true,
       });
@@ -243,7 +231,6 @@ async function sift({ raw, settings, command = null, detect = false }) {
 
   const dispatchMap = {
     gemini: geminiSift,
-    openai: openaiSift,
     groq: groqSift,
     anthropic: anthropicSift,
   };
@@ -338,28 +325,6 @@ async function geminiSift(raw, system, model, apiKey) {
   return { text, provider: "gemini", model, refused: false };
 }
 
-async function openaiSift(raw, system, model, apiKey) {
-  const response = await fetch(OPENAI_URL, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: raw },
-      ],
-      max_completion_tokens: 4000,
-    }),
-  });
-
-  if (!response.ok) throw new Error(await describeError(response, "OpenAI"));
-
-  const data = await response.json();
-  const choice = data.choices?.[0];
-  const text = (choice?.message?.content ?? "").trim();
-  return { text, provider: "openai", model, refused: choice?.finish_reason === "content_filter" };
-}
-
 async function groqSift(raw, system, model, apiKey) {
   const response = await fetch(GROQ_URL, {
     method: "POST",
@@ -408,4 +373,4 @@ async function anthropicSift(raw, system, model, apiKey) {
   return { text, provider: "anthropic", model: response.model, refused: false };
 }
 
-module.exports = { sift, MESH, buildSystemPrompt, groqSift, geminiSift, openaiSift, anthropicSift };
+module.exports = { sift, MESH, buildSystemPrompt, groqSift, geminiSift, anthropicSift };

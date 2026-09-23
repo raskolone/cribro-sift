@@ -34,7 +34,7 @@ const { cleanDictatedText } = require("./dictation-cleanup");
 const rescue = require("./rescue");
 const logger = require("./logger");
 const { detect: detectCommand, byId: commandById } = require("./commands");
-const { keyFor, STT, SIEVE, OCR } = require("./providers");
+const { keyFor, STT, SIEVE, OCR, listGeminiModels } = require("./providers");
 const { deliver, frontmostApp } = require("./paste");
 const { toAppleNotes, toMarkdown } = require("./share");
 const { noteToPdf, folderToPdf } = require("./pdf");
@@ -46,12 +46,14 @@ const { Meetings } = require("./meeting");
 const { helperPath } = require("./tap");
 const { Watcher: MeetingWatcher, spot: spotMeeting } = require("./detect");
 const { speakerFor } = require("./merge");
-const { digest, polish, asNote, flipToggle, send: sendToModel } = require("./digest");
+const { digest, polish, asNote, flipToggle, send: sendToModel, tasksFrom } = require("./digest");
 const { keepNote } = require("./meetnote");
 const agendaSource = require("./agenda");
 const { Google } = require("./google");
 const briefingSource = require("./briefing");
 const { headlines } = require("./rss");
+const mailService = require("./mail-service");
+const inboxTriage = require("./inbox-triage");
 const { LANGUAGES, normalize: normalizeLanguage, shortLabel } = require("./languages");
 const { translator } = require("../shared/strings");
 const ownership = require("./owner");
@@ -153,7 +155,7 @@ function createMainWindow() {
     minWidth: 860,
     minHeight: 560,
     show: false,
-    backgroundColor: "#0a0f14",
+    backgroundColor: bgForTheme(resolveTheme()),
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 18, y: 22 },
     vibrancy: "under-window",
@@ -240,7 +242,7 @@ function createNotesWindow() {
     minWidth: 620,
     minHeight: 420,
     show: false,
-    backgroundColor: "#09101c", // --bg
+    backgroundColor: bgForTheme(resolveTheme()), // --bg
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
@@ -279,7 +281,7 @@ function openNoteWindow(id) {
     minWidth: 380,
     minHeight: 320,
     show: false,
-    backgroundColor: "#09101c", // --bg
+    backgroundColor: bgForTheme(resolveTheme()), // --bg
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 16 },
     webPreferences: {
@@ -328,7 +330,7 @@ function openMeetingWindow(id) {
     minWidth: 420,
     minHeight: 360,
     show: false,
-    backgroundColor: "#09101c", // --bg
+    backgroundColor: bgForTheme(resolveTheme()), // --bg
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 12 },
     webPreferences: {
@@ -705,10 +707,106 @@ function freshestNote() {
  * Obrazek zapisujemy dopiero tutaj i wyłącznie wtedy, gdy padło na formę,
  * która go pokazuje. Zrzut zrobiony po to, żeby wyjąć z niego zdanie, nie
  * ma powodu zostawać na dysku.
+/**
+ * Zapis zrzutu bezpośrednio do pliku na dysku wybranego przez użytkownika.
  */
-async function saveShot({ target = "new", noteId = null, form = "text", text = "" } = {}) {
+async function saveShotToDisk(dataUrl = null) {
   const settings = store.getSettings();
   const t = translator(settings.uiLanguage);
+  let buffer = null;
+  if (dataUrl) {
+    const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+    buffer = Buffer.from(base64Data, "base64");
+  } else if (shot?.image) {
+    buffer = shot.image;
+  }
+  if (!buffer) return { error: t("Nie ma czego zapisać.") };
+
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const defaultName = `Zrzut ekranu ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} o ${pad(now.getHours())}.${pad(now.getMinutes())}.${pad(now.getSeconds())}.png`;
+
+  const { canceled, filePath } = await dialog.showSaveDialog(shotWindow ?? mainWindow, {
+    title: t("Zapisz zrzut ekranu"),
+    defaultPath: path.join(app.getPath("pictures") || app.getPath("downloads") || app.getPath("desktop") || os.homedir(), defaultName),
+    filters: [{ name: "PNG", extensions: ["png"] }],
+  });
+
+  if (canceled || !filePath) return { canceled: true };
+
+  try {
+    fs.writeFileSync(filePath, buffer);
+    return { saved: true, filePath };
+  } catch (error) {
+    return { error: `${t("Nie udało się zapisać zrzutu")}: ${error.message}` };
+  }
+}
+
+function updateShotImage(dataUrl) {
+  if (!dataUrl) return false;
+  const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, "");
+  const buffer = Buffer.from(base64Data, "base64");
+  if (!shot) {
+    shot = { image: buffer, reading: false, text: "", missingKey: false, error: null, at: Date.now() };
+  } else {
+    shot.image = buffer;
+  }
+  return true;
+}
+
+function copyShotImage(dataUrl = null) {
+  let img = null;
+  if (dataUrl) {
+    img = nativeImage.createFromDataURL(dataUrl);
+  } else if (shot?.image) {
+    img = nativeImage.createFromBuffer(shot.image);
+  }
+  if (img && !img.isEmpty()) {
+    clipboard.writeImage(img);
+    return { ok: true };
+  }
+  return { error: "Brak obrazu do skopiowania" };
+}
+
+function setShotWindowSize(size = {}) {
+  if (!shotWindow || shotWindow.isDestroyed()) return;
+  const width = size.width ?? 460;
+  const height = size.height ?? 640;
+  const bounds = shotWindow.getBounds();
+  const newX = Math.round(bounds.x - (width - bounds.width) / 2);
+  const newY = Math.round(bounds.y - (height - bounds.height) / 2);
+  shotWindow.setBounds({
+    x: Math.max(0, newX),
+    y: Math.max(24, newY),
+    width,
+    height,
+  }, true);
+}
+
+/**
+ * Decyzja z okna → notatka lub dysk.
+ *
+ * Obrazek zapisujemy dopiero tutaj i wyłącznie wtedy, gdy padło na formę,
+ * która go pokazuje. Zrzut zrobiony po to, żeby wyjąć z niego zdanie, nie
+ * ma powodu zostawać na dysku.
+ */
+async function saveShot({ target = "new", noteId = null, form = "text", text = "", image = null } = {}) {
+  const settings = store.getSettings();
+  const t = translator(settings.uiLanguage);
+
+  if (image) {
+    updateShotImage(image);
+  }
+
+  if (target === "disk") {
+    const diskResult = await saveShotToDisk(image);
+    if (diskResult.saved) {
+      store.saveSettings({ shot: { target, form } });
+      tellSettings();
+    }
+    return diskResult;
+  }
+
   const buffer = shot?.image ?? null;
 
   let imagePath = null;
@@ -856,23 +954,10 @@ const WIDGET_BADGE = 60; // średnica znaczka
    z odciętym brzegiem. Pierwsza wersja miała tu 8 pikseli i dokładnie tak
    wyglądała. */
 const WIDGET_HALO = 22;
-/* Szyba przy znaczku. Domyślnie o piątą część mniejsza od pierwszej wersji
-   (320×400): ta zajmowała ćwiartkę wysokości ekranu i zasłaniała okno, obok
-   którego miała tylko leżeć. Notatka na wierzchu to jedno zdanie do
-   dopisania, nie dokument — a od czytania długich jest Notatnik.
-
-   Rozmiar jest jednak do zmiany uchwytem w rogu szyby i zapamiętany
-   (widget.panel w ustawieniach), bo „ile to jest za dużo" zależy od ekranu
-   i od tego, co się w tych notatkach trzyma. Klamry są po to, żeby szyba
-   nie zeszła poniżej czytelności ani nie urosła w drugie okno aplikacji. */
-const WIDGET_PANEL_DEFAULT = { width: 256, height: 320 };
-const WIDGET_PANEL_MIN = { width: 208, height: 196 };
-const WIDGET_PANEL_MAX = { width: 560, height: 760 };
-const WIDGET_GAP = 14; // odstęp znaczek ↔ panel
 /* Ile ręka musi przejechać, zanim uznamy to za przeciąganie, a nie za
    kliknięcie. Poniżej tego progu znaczek stoi — inaczej każde kliknięcie
    przesuwałoby go o piksel. */
-const WIDGET_DRAG_MIN = 4;
+const WIDGET_DRAG_MIN = 5;
 /* Jak szybko gaśnie odstęp między kursorem a środkiem znaczka po chwyceniu.
    0,7 na klatkę znaczy: po pięciu klatkach (~80 ms) zostaje z trzydziestu
    pikseli mniej niż pięć, a po ośmiu — nic. */
@@ -887,137 +972,72 @@ const WIDGET_COLLAPSED = {
   height: WIDGET_BADGE + WIDGET_HALO * 2,
 };
 
-/* ── Taca ──────────────────────────────────────────────────────
+/* ── Menu po łuku ──────────────────────────────────────────────
 
-   To, co rozkłada się pod znaczkiem po najechaniu kursorem: pięć rzeczy
-   kolumną w dół i ikonka notatek z boku.
+   To, co rozkłada się obok znaczka po najechaniu kursorem: sześć kółek na
+   łuku ćwierć obrotu, w tej ćwiartce, w którą jest miejsce na ekranie —
+   ta sama strona (`side`) i ten sam kierunek (`dir`), które wcześniej
+   prowadziły kolumnę tacy.
 
-   W DÓŁ, a nie w bok jak dawna listwa: znaczek stoi zwykle przy krawędzi
-   ekranu, więc w poziomie miejsca nie ma, a w pionie jest go zawsze tyle,
-   ile trzeba na kilka kółek. Przy dolnej krawędzi kolumna wychodzi
-   w górę — kierunek liczy się z miejsca, tak samo jak przy szybie.
+   Cztery żywe czynności — Poranek, nowa karteczka, Notatnik, okno
+   aplikacji — i dwa nieaktywne miejsca na przyszłość. Kolejność w DOM-ie
+   (patrz widget.html) idzie od strony `side` do strony `dir`, więc pierwsze
+   kółko stoi najbliżej poziomej krawędzi, ostatnie najbliżej pionowej.
 
-   Kolumna jest uporządkowana od tego, co robi się najczęściej i najszybciej,
-   do tego, co wyprowadza z biegu: dyktowanie, szybka notatka, gęstość sita,
-   język, a na końcu — najdalej od znaczka — okno aplikacji. Ostatnie stoi
-   na końcu, bo jako jedyne otwiera duże okno; przypadkowe kliknięcie ma
-   trafić w cokolwiek innego.
-
-   Ikonka notatek NIE jest kolejnym kółkiem w kolumnie i to jest celowe:
-   czynności robi się „przy okazji", a notatki się otwiera. Stoi więc
-   osobno, w bok — w stronę, w którą jest miejsce.
-
-   `room` to miejsce na dymek z nazwą czynności. Bez niego okno ucinałoby
-   go na krawędzi, a same ikony nie mówią, co robią — listwa miała te
-   dymki i to dzięki nim dawała się poznać bez instrukcji. */
+   Podpisy kółek to teraz zwykłe dymki systemowe (`title`), nie własna
+   bańka — sześć bijących się o miejsce etykiet na łuku byłoby ciaśniejsze
+   niż cztery w kolumnie, a system i tak umie pokazać jedno zdanie przy
+   kursorze. */
 const WIDGET_TRAY = {
   item: 34, // średnica kółka z ikoną
-  step: 9, // odstęp między kółkami w kolumnie
-  count: 6, // dyktowanie, szybka notatka, gęstość sita, język, Poranek, okno aplikacji
-  gap: 12, // odstęp od krawędzi znaczka
-  tip: 8, // odstęp ikona ↔ dymek
-  room: 168, // najszerszy dymek kolumny („Gęstość sita — Zgrubne")
-  /* Wysokość dymka: dziesięciopunktowy napis w ramce z odstępami.
-     Potrzebna, odkąd dymki rzędu bocznego idą w PION (patrz .slot--side
-     w widget.html) — bo od niej zależy, ile okna musi zostać po stronie
-     przeciwnej do kolumny. */
-  tipHeight: 20,
-  /* Ile gniazd stoi w bok od znaczka: notatki, nowa kartka, Notatnik. */
-  sideCount: 3,
-  /* Pytanie o notatki ze spotkania wychodzi w tę samą stronę co ikonka
-     notatek i jest z nich wszystkich najszersze — bo jako jedyne ma dwa
-     przyciski. Ta sama liczba stoi w widget.html jako --ask-w; okno musi
-     być szersze od dymka, inaczej przycięłoby mu „Nie teraz". */
-  roomAsk: 200,
+  count: 6, // Poranek, nowa karteczka, Notatnik, aplikacja, 2× wkrótce
+  gap: 12, // odstęp od krawędzi znaczka do łuku
+  radius: 130, // promień łuku, liczony od środka znaczka
   margin: 10, // zapas na powiększenie pod kursorem i na cień
 };
 
-/** Jak daleko od środka znaczka sięga kolumna czynności. */
-const trayReach =
-  WIDGET_BADGE / 2 +
-  WIDGET_TRAY.gap +
-  WIDGET_TRAY.count * WIDGET_TRAY.item +
-  (WIDGET_TRAY.count - 1) * WIDGET_TRAY.step +
-  WIDGET_TRAY.margin;
+/** Kąty (w stopniach, 0° = w prawo, dodatnie w dół) dwóch krańców łuku —
+    ten sam, w który wcześniej wychodziła kolumna (`dir`) i rząd (`side`). */
+const TRAY_SIDE_ANGLE = { right: 0, left: 180 };
+const TRAY_DIR_ANGLE = { down: 90, up: -90 };
 
-/** Jak daleko sięga w bok. Trzy rzeczy walczą tu o miejsce i wygrywa
-    najszersza — okno przycięte na którejkolwiek ucinałoby to, co widać. */
-const traySide =
-  Math.max(
-    /* RZĄD BOCZNY: notatki, nowa kartka, Notatnik. Liczy się tu samo
-       ostatnie kółko, bo dymki tego rzędu idą w PION (patrz .slot--side
-       w widget.html) i w bok nie zabierają już nic. Wcześniej to one
-       decydowały o szerokości — i mimo tego zapasu i tak lądowały jeden
-       na drugim, bo problem nie był w krawędzi okna, tylko w sąsiedzie. */
-    WIDGET_BADGE / 2 +
-      WIDGET_TRAY.gap +
-      (WIDGET_TRAY.sideCount - 1) * (WIDGET_TRAY.gap + WIDGET_TRAY.item) +
-      WIDGET_TRAY.item,
-    // Dymek kolumny czynności — ten zostaje z boku i bywa długi.
-    WIDGET_TRAY.item / 2 + WIDGET_TRAY.tip + WIDGET_TRAY.room,
-    // Pytanie o notatki ze spotkania — stoi przy samym znaczku i jest
-    // szersze od każdego dymka.
-    WIDGET_BADGE / 2 + WIDGET_TRAY.gap + WIDGET_TRAY.roomAsk,
-  ) + WIDGET_TRAY.margin;
+/** Przesunięcie (dx, dy) każdego z sześciu kółek względem środka znaczka.
+    CSS nie liczy trygonometrii, więc łuk liczy się tutaj i idzie do
+    renderera gotowymi przesunięciami — patrz applyArc w renderer/js/widget.js. */
+function arcSlots(tray) {
+  const from = TRAY_SIDE_ANGLE[tray.side] ?? 0;
+  const to = TRAY_DIR_ANGLE[tray.dir] ?? 90;
+  const count = WIDGET_TRAY.count;
+  return Array.from({ length: count }, (_, i) => {
+    const deg = from + ((to - from) * i) / (count - 1);
+    const rad = (deg * Math.PI) / 180;
+    return {
+      dx: Math.round(Math.cos(rad) * WIDGET_TRAY.radius),
+      dy: Math.round(Math.sin(rad) * WIDGET_TRAY.radius),
+    };
+  });
+}
 
-/**
- * Ile okna zostaje po stronie PRZECIWNEJ do kolumny czynności.
- *
- * Tam wychodzą dymki rzędu bocznego, odkąd poszły w pion. Wcześniej po tej
- * stronie zostawał sam promień znaczka z aureolą i wystarczał, bo nie było
- * tam nic do pokazania.
- */
-const trayBack =
-  WIDGET_TRAY.item / 2 + WIDGET_TRAY.tip + WIDGET_TRAY.tipHeight + WIDGET_TRAY.margin;
+/** Jak daleko od środka znaczka sięga łuk w stronę `side`/`dir` — jeden
+    wymiar starczy dla obu, bo skrajne kółka łuku stoją dokładnie na tych
+    dwóch osiach (cos/sin = ±1 na końcach zakresu). */
+const trayReach = WIDGET_BADGE / 2 + WIDGET_TRAY.gap + WIDGET_TRAY.radius + WIDGET_TRAY.item / 2 + WIDGET_TRAY.margin;
+const traySide = trayReach;
+
+/** Ile okna zostaje po stronach PRZECIWNYCH do łuku — tam nie wychodzi już
+    nic, więc starczy promień samego znaczka z aureolą. */
+const trayBack = WIDGET_BADGE / 2 + WIDGET_TRAY.margin;
 
 const clamp = (value, low, high) => Math.min(Math.max(value, low), high);
 
-/**
- * Rozmiar szyby: zapamiętany, przycięty do granic i do ekranu.
- *
- * Przycięcie do ekranu nie jest ostrożnością na zapas — szyba zapamiętana
- * na dużym monitorze musi się zmieścić na laptopie, na którym aplikacja
- * właśnie wstała, a okno większe od obszaru roboczego przestaje trafiać
- * kotwicą tam, gdzie stoi znaczek.
- */
-/* Rozmiar w trakcie ciągnięcia uchwytu. Trzymamy go w pamięci, bo zapis do
-   pliku ustawień przy każdej klatce ruchu myszy to sześćdziesiąt zapisów na
-   sekundę — a wynik i tak liczy się dopiero wtedy, gdy uchwyt się puści. */
-let widgetPanelDrag = null;
-
-function widgetPanel(workArea) {
-  const saved = widgetPanelDrag ?? store.getSettings().widget?.panel ?? {};
-  let width = clamp(
-    Math.round(saved.width ?? WIDGET_PANEL_DEFAULT.width),
-    WIDGET_PANEL_MIN.width,
-    WIDGET_PANEL_MAX.width,
-  );
-  let height = clamp(
-    Math.round(saved.height ?? WIDGET_PANEL_DEFAULT.height),
-    WIDGET_PANEL_MIN.height,
-    WIDGET_PANEL_MAX.height,
-  );
-
-  if (workArea) {
-    const spare = WIDGET_GAP + WIDGET_BADGE + WIDGET_HALO * 2;
-    width = Math.max(WIDGET_PANEL_MIN.width, Math.min(width, workArea.width - spare));
-    height = Math.max(WIDGET_PANEL_MIN.height, Math.min(height, workArea.height - spare));
-  }
-  return { width, height };
-}
-
-/* W jakim stanie jest okno widgetu. Trzy, i każdy ma inny rozmiar:
+/* W jakim stanie jest okno widgetu. Dwa, i każdy ma inny rozmiar:
 
      "badge"  sam znaczek,
-     "tray"   znaczek z rozłożoną tacą czynności,
-     "panel"  znaczek z szybą notatek (lista albo kartka).
+     "tray"   znaczek z rozłożonym menu po łuku.
 
    Stan trzyma proces główny, bo to on zmienia rozmiar okna — renderer
    tylko o zmianę prosi i dostaje w odpowiedzi gotową geometrię. */
 let widgetView = "badge";
-/** Strona, w którą wyszła szyba. Trzymana, żeby nie przeskakiwała w połowie
-    ciągnięcia uchwytu — kierunek liczy się z miejsca, a rozmiar go nie zmienia. */
-let widgetDir = "up";
 /** Środek znaczka WEWNĄTRZ okna. Zmienia się przy rozwijaniu i zwijaniu. */
 let widgetAnchorIn = { x: WIDGET_COLLAPSED.width / 2, y: WIDGET_COLLAPSED.height / 2 };
 /* Czy okno widgetu przepuszcza w tej chwili kliknięcia na wylot. Renderer
@@ -1088,52 +1108,15 @@ function savedAnchor() {
 }
 
 /**
- * W którą stronę ma wyjść panel.
- *
- * Nie jedna stała strona, tylko ta, w którą jest miejsce — a przy wyborze
- * między dwiema pasującymi ta, która prowadzi do ŚRODKA ekranu. Widget
- * postawiony u góry rozwija się w dół, przy dolnej krawędzi w górę,
- * a wciśnięty w róg, gdzie w pionie nie mieści się nic, wychodzi bokiem.
- */
-function widgetDirection(cx, cy, workArea, panel) {
-  const half = WIDGET_COLLAPSED.width / 2;
-  const room = {
-    up: cy - workArea.y,
-    down: workArea.y + workArea.height - cy,
-    left: cx - workArea.x,
-    right: workArea.x + workArea.width - cx,
-  };
-  const need = {
-    up: panel.height + WIDGET_GAP + half,
-    down: panel.height + WIDGET_GAP + half,
-    left: panel.width + WIDGET_GAP + half,
-    right: panel.width + WIDGET_GAP + half,
-  };
-
-  // Pion przed poziomem, bo lista notatek jest pionowa. W obrębie każdej
-  // pary najpierw ta strona, w którą jest dalej do krawędzi.
-  const order = [
-    ...(room.down >= room.up ? ["down", "up"] : ["up", "down"]),
-    ...(room.right >= room.left ? ["right", "left"] : ["left", "right"]),
-  ];
-
-  return (
-    order.find((dir) => room[dir] >= need[dir]) ??
-    // Nigdzie się nie mieści — bierzemy stronę z największym zapasem.
-    order.sort((a, b) => room[b] / need[b] - room[a] / need[a])[0]
-  );
-}
-
-/**
  * Ustawienie okna wokół kotwicy.
  *
  * Klamrujemy ZNACZEK, nie okno: znaczek ma zostać tam, gdzie go postawiono,
  * także przy samej krawędzi ekranu. Okno układa się wokół niego i to ono
  * ustępuje, gdy brakuje miejsca — a renderer dostaje z powrotem całą
- * geometrię, której sam nie zna: gdzie w oknie wylądował znaczek, gdzie
- * postawić panel i w którą stronę ma wyjść kartka.
+ * geometrię, której sam nie zna: gdzie w oknie wylądował znaczek i w którą
+ * ćwiartkę ma wyjść łuk menu.
  */
-function placeWidget(anchor, view, dirHint = null) {
+function placeWidget(anchor, view) {
   if (!widget || widget.isDestroyed()) return null;
 
   const half = WIDGET_COLLAPSED.width / 2;
@@ -1145,13 +1128,12 @@ function placeWidget(anchor, view, dirHint = null) {
   const cx = Math.min(Math.max(anchor.x, workArea.x + half), workArea.x + workArea.width - half);
   const cy = Math.min(Math.max(anchor.y, workArea.y + half), workArea.y + workArea.height - half);
 
-  const size = widgetPanel(workArea);
   const tray = {
     ...WIDGET_TRAY,
-    // Kolumna idzie w dół, dopóki jest dokąd. Przy dolnej krawędzi ekranu
-    // wychodzi w górę — inaczej cztery kółka wylądowałyby pod pulpitem.
+    // Łuk idzie w dół, dopóki jest dokąd. Przy dolnej krawędzi ekranu
+    // wychodzi w górę — inaczej kółka wylądowałyby pod pulpitem.
     dir: cy + trayReach <= workArea.y + workArea.height ? "down" : "up",
-    // Notatki w bok — w tę stronę, w którą jest miejsce. Przy prawej
+    // I w tę stronę, w którą jest miejsce w poziomie. Przy prawej
     // krawędzi (a tam znaczek stoi domyślnie) w lewo.
     side: cx + traySide <= workArea.x + workArea.width ? "right" : "left",
   };
@@ -1180,24 +1162,17 @@ function placeWidget(anchor, view, dirHint = null) {
       sy: Math.round(cy),
       badge: WIDGET_BADGE,
       tray,
-      panelW: size.width,
-      panelH: size.height,
-      panelX: 0,
-      panelY: 0,
-      // Granice rozciągania uchwytu. Renderer nie ma skąd ich znać, a to on
-      // trzyma mysz — bez nich szyba dałaby się ściągnąć do zera.
-      min: WIDGET_PANEL_MIN,
-      max: WIDGET_PANEL_MAX,
+      arc: arcSlots(tray),
       ...extra,
     };
   };
 
-  /* ══ ZNACZEK I TACA MAJĄ JEDNO OKNO ══
+  /* ══ ZNACZEK I MENU MAJĄ JEDNO OKNO ══
 
      I to jest lekarstwo na przeskok, który było widać przy samym zbliżeniu
      kursora do znaczka. Zwinięty widget był wcześniej oknem 104 na 104
-     piksele, a najechanie rozciągało je do rozmiaru tacy — w te strony,
-     w które taca wychodzi, czyli przy prawej krawędzi ekranu W LEWO.
+     piksele, a najechanie rozciągało je do rozmiaru menu — w te strony,
+     w które łuk wychodzi, czyli przy prawej krawędzi ekranu W LEWO.
      Razem z rozmiarem zmieniało się więc miejsce znaczka WEWNĄTRZ okna
      (--ax skakało z 52 na 190).
 
@@ -1207,91 +1182,25 @@ function placeWidget(anchor, view, dirHint = null) {
      osiem pikseli obok miejsca, w którym stał — i wracał. Dokładnie to
      wyglądało jak szarpnięcie animacji.
 
-     Okno ma więc rozmiar tacy także wtedy, gdy taca jest zwinięta.
-     Nic to nie zasłania: poza znaczkiem jest przezroczyste i przepuszcza
-     kliknięcia na wylot (patrz widget:passthrough), a rozłożenie tacy jest
-     od tej pory samym atrybutem w rendererze — bez ruszania okna, bez
-     zapytania do procesu głównego i bez ani jednej klatki czekania.
+     Okno ma więc rozmiar menu także wtedy, gdy jest zwinięte. Nic to nie
+     zasłania: poza znaczkiem jest przezroczyste i przepuszcza kliknięcia na
+     wylot (patrz widget:passthrough), a rozłożenie łuku jest od tej pory
+     samym atrybutem w rendererze — bez ruszania okna, bez zapytania do
+     procesu głównego i bez ani jednej klatki czekania.
 
-     Okno rośnie WYŁĄCZNIE w te strony, w które taca naprawdę wychodzi —
+     Okno rośnie WYŁĄCZNIE w te strony, w które łuk naprawdę wychodzi —
      po pozostałych zostaje sam znaczek z aureolą. Okno symetryczne byłoby
      o połowę większe i o tę połowę bardziej zasłaniało cudzą pracę. */
-  if (view === "badge" || view === "tray") {
-    /* Po stronie kolumny — jej zasięg. Po przeciwnej tyle, ile potrzeba na
-       dymki rzędu bocznego; nigdy mniej niż połowa pola znaczka, żeby
-       aureola miała gdzie się zmieścić. */
-    const back = Math.max(half, trayBack);
-    const up = tray.dir === "up" ? trayReach : back;
-    const down = tray.dir === "down" ? trayReach : back;
-    const left = tray.side === "left" ? traySide : half;
-    const right = tray.side === "right" ? traySide : half;
-    return settle(
-      { width: Math.round(left + right), height: Math.round(up + down) },
-      { x: left, y: up },
-      { dir: tray.dir },
-    );
-  }
-
-  const dir = dirHint ?? widgetDirection(cx, cy, workArea, size);
-  const sideways = dir === "left" || dir === "right";
-  // Odstęp mierzy się od krawędzi ZNACZKA, nie od krawędzi jego pola w oknie:
-  // pole jest o aureolę szersze i panel odsunąłby się o nią dodatkowo.
-  const rim = WIDGET_BADGE / 2;
-
-  /* OKNO NIE KURCZY SIĘ W TRAKCIE CIĄGNIĘCIA UCHWYTU, tylko po jego
-     puszczeniu. Kurczące się okno ucieka spod kursora: uchwyt siedzi
-     w rogu, a róg jest tym, co się właśnie cofa — po kilkudziesięciu
-     pikselach mysz jest już nad cudzą aplikacją i to ona dostaje resztę
-     ruchu. Szyba zwijała się wtedy w połowie gestu zamiast zmienić rozmiar,
-     a przeciągnięcie trafiało w przypadkowe okno pod spodem.
-
-     W trakcie ruchu okno trzyma więc największy rozmiar, jaki w tym geście
-     miało (`floor`), a szyba jest w nim rysowana mniejsza. Widać dokładnie
-     to samo, bo poza szybą okno jest przezroczyste. */
-  const hull = widgetPanelDrag
-    ? {
-        width: Math.max(size.width, widgetPanelDrag.floorW ?? 0),
-        height: Math.max(size.height, widgetPanelDrag.floorH ?? 0),
-      }
-    : size;
-
-  const frame = sideways
-    ? { width: hull.width + WIDGET_GAP + WIDGET_BADGE + WIDGET_HALO * 2, height: hull.height + WIDGET_HALO * 2 }
-    : { width: hull.width + WIDGET_HALO * 2, height: hull.height + WIDGET_GAP + WIDGET_BADGE + WIDGET_HALO * 2 };
-
-  // Gdzie znaczek siedzi w oknie: zawsze przy tej krawędzi, od której
-  // panel się oddala.
-  const wanted = {
-    up: { x: frame.width / 2, y: frame.height - half },
-    down: { x: frame.width / 2, y: half },
-    left: { x: frame.width - half, y: frame.height / 2 },
-    right: { x: half, y: frame.height / 2 },
-  }[dir];
-
-  const spot = settle(frame, wanted, { dir });
-  widgetDir = dir;
-
-  // Panel liczymy TUTAJ, a nie w CSS-ie: po przyklamrowaniu okna do ekranu
-  // znaczek bywa przesunięty względem swojego miejsca, a wtedy panel liczony
-  // z samej kotwicy wyjechałby poza okno.
-  //
-  // W poprzek szyba stoi na środku OKNA, nie na środku znaczka. To nie jest
-  // to samo: przy krawędzi ekranu okno bywa przesunięte względem znaczka,
-  // a szyba liczona z samej kotwicy wyjeżdżała wtedy poza okno — i uchwyt
-  // w jej rogu lądował poza ekranem. Środek okna działa też wtedy, gdy okno
-  // jest chwilowo większe od szyby (patrz `hull` wyżej).
-  const panel = {
-    x: Math.round((frame.width - size.width) / 2),
-    y: Math.round((frame.height - size.height) / 2),
-  };
-  if (dir === "up") panel.y = widgetAnchorIn.y - rim - WIDGET_GAP - size.height;
-  else if (dir === "down") panel.y = widgetAnchorIn.y + rim + WIDGET_GAP;
-  else if (dir === "left") panel.x = widgetAnchorIn.x - rim - WIDGET_GAP - size.width;
-  else panel.x = widgetAnchorIn.x + rim + WIDGET_GAP;
-
-  spot.panelX = Math.round(panel.x);
-  spot.panelY = Math.round(panel.y);
-  return spot;
+  const back = Math.max(half, trayBack);
+  const up = tray.dir === "up" ? trayReach : back;
+  const down = tray.dir === "down" ? trayReach : back;
+  const left = tray.side === "left" ? traySide : half;
+  const right = tray.side === "right" ? traySide : half;
+  return settle(
+    { width: Math.round(left + right), height: Math.round(up + down) },
+    { x: left, y: up },
+    { dir: tray.dir },
+  );
 }
 
 /** Kotwica w tej chwili — środek znaczka na ekranie. */
@@ -1427,22 +1336,14 @@ function resetWidget() {
 
 /* ── Kartki na pulpicie ───────────────────────────────────────
 
-   Drugi widok widgetu — ten, w którym notatki nie siedzą w jednej szybie
-   przy znaczku, tylko leżą na pulpicie jak Sticky Notes: każda we własnym
-   okienku, każda tam, gdzie się ją położyło.
+   Notatki na wierzchu leżą na pulpicie jak Sticky Notes: każda we własnym
+   okienku, każda tam, gdzie się ją położyło — cały czas widoczne, bo
+   właśnie po to się je tam odłożyło (plan dnia, numer, zdanie do
+   zapamiętania).
 
-   Po co dwa widoki, skoro pokazują to samo. Bo to są dwa różne sposoby
-   pracy, a nie dwa wyglądy jednego:
-
-     KOMPAKTOWY   notatki są schowane i sięga się po jedną. Zajmuje róg
-                  ekranu i znika w całości jednym kliknięciem.
-     PULPIT       notatki są na wierzchu cały czas, bo właśnie po to się je
-                  tam odłożyło — plan dnia, numer, zdanie do zapamiętania
-                  mają być widoczne bez sięgania po cokolwiek.
-
-   Jedno jest wspólne i to jest cała umowa z użytkownikiem: KLIKNIĘCIE
-   W ZNACZEK CHOWA WSZYSTKO. Kartki na pulpicie nie mają się rozmnażać
-   w coś, czego trzeba potem zamykać po kolei — leżą albo ich nie ma.
+   Umowa z użytkownikiem: PODWÓJNE KLIKNIĘCIE W ZNACZEK CHOWA I POKAZUJE
+   WSZYSTKO NARAZ. Kartki na pulpicie nie mają się rozmnażać w coś, czego
+   trzeba potem zamykać po kolei — leżą albo ich nie ma.
 
    Okienka są trzymane w pamięci między jednym a drugim pokazaniem. Nie
    z oszczędności: kartka ma wracać w to samo miejsce i z tym samym
@@ -1541,8 +1442,6 @@ let deckOpen = false;
    znika — ale zanim zdąży zameldować, talia bywa już z powrotem na
    pulpicie. Numer odróżnia meldunek z tego rozdania od spóźnionego. */
 let deckGen = 0;
-
-const deckMode = () => (store.getSettings().widget?.mode ?? "compact") === "desk";
 
 /* Talia leży w osobnych oknach, a znaczek musi wiedzieć, czy leży — to po
    nim widać, że jest co zbierać, i to on decyduje, co zrobi kolejne
@@ -3135,21 +3034,17 @@ function buildAppMenu() {
            nie ma powodu przechodzić przez ekran. */
         { label: `${t("Tekst z obrazka")}…`, click: () => readImageFile() },
         { type: "separator" },
-        /* Ten sam warunek co w tacy paska (patrz refreshTrayMenu): pozycja
-           nie ma prawa wystawiać czegoś, co po kliknięciu powie „nie mam
-           konta". Klawisze pokazujemy bez rejestracji — o samo trzymanie
+        /* Pozycja stoi tu zawsze — Poranek działa też bez konta Google,
+           wypełniając się materiałem lokalnym (patrz gatherBriefing).
+           Klawisze pokazujemy bez rejestracji — o samo trzymanie
            klawiszy dba stały skrót globalny (bindBriefingHotkey), więc menu
            nie ma po co robić tego drugi raz. */
-        ...(briefingMine()
-          ? [
-              {
-                label: `☀️ ${t("Poranek")}`,
-                accelerator: "Command+Alt+B",
-                registerAccelerator: false,
-                click: () => void showBriefing({ force: true }),
-              },
-            ]
-          : []),
+        {
+          label: `☀️ ${t("Poranek")}`,
+          accelerator: "Command+Alt+B",
+          registerAccelerator: false,
+          click: () => void showBriefing({ force: true }),
+        },
         { label: t("Notatnik"), accelerator: "Command+Shift+O", click: () => createNotesWindow() },
         { type: "separator" },
         {
@@ -3211,22 +3106,16 @@ function buildAppMenu() {
               click: () => saveSttPrimary("deepgram", "nova-2"),
             },
             {
-              label: "OpenAI Whisper (whisper-1)",
-              type: "radio",
-              checked: sttCfg.provider === "openai",
-              click: () => saveSttPrimary("openai", "whisper-1"),
-            },
-            {
               label: "Groq LPU (whisper-large-v3-turbo)",
               type: "radio",
               checked: sttCfg.provider === "groq",
               click: () => saveSttPrimary("groq", "whisper-large-v3-turbo"),
             },
             {
-              label: "Google Gemini (gemini-3.1-flash-lite)",
+              label: "Google Gemini Audio (gemini-2.5-flash — Rekomendowany, transkrypcja + czyszczenie w jednym)",
               type: "radio",
               checked: sttCfg.provider === "gemini",
-              click: () => saveSttPrimary("gemini", "gemini-3.1-flash-lite"),
+              click: () => saveSttPrimary("gemini", "gemini-2.5-flash"),
             },
           ],
         },
@@ -3234,28 +3123,22 @@ function buildAppMenu() {
           label: t("Fallback mowy (Zapasowy STT)"),
           submenu: [
             {
-              label: "Fallback 1: OpenAI Whisper (whisper-1)",
-              type: "checkbox",
-              checked: (sttCfg.fallbackModel ?? "whisper-1") === "whisper-1",
-              click: () => saveSttFallback("fallbackModel", "whisper-1"),
-            },
-            {
-              label: "Fallback 2: Groq LPU (whisper-large-v3-turbo)",
+              label: "Fallback 1: Groq LPU (whisper-large-v3-turbo)",
               type: "checkbox",
               checked: (sttCfg.groqModel ?? "whisper-large-v3-turbo") === "whisper-large-v3-turbo",
               click: () => saveSttFallback("groqModel", "whisper-large-v3-turbo"),
             },
             {
-              label: "Fallback 3: Deepgram Nova-2",
+              label: "Fallback 2: Deepgram Nova-2",
               type: "checkbox",
               checked: (sttCfg.deepgramModel ?? "nova-2") === "nova-2",
               click: () => saveSttFallback("deepgramModel", "nova-2"),
             },
             {
-              label: "Fallback 4: Google Gemini 3.1 Flash-Lite",
+              label: "Fallback 3: Google Gemini 2.0 Flash-Lite",
               type: "checkbox",
-              checked: (sttCfg.geminiModel ?? "gemini-3.1-flash-lite") === "gemini-3.1-flash-lite",
-              click: () => saveSttFallback("geminiModel", "gemini-3.1-flash-lite"),
+              checked: (sttCfg.geminiModel ?? "gemini-2.0-flash-lite") === "gemini-2.0-flash-lite",
+              click: () => saveSttFallback("geminiModel", "gemini-2.0-flash-lite"),
             },
           ],
         },
@@ -3270,16 +3153,10 @@ function buildAppMenu() {
               click: () => saveSievePrimary("gemini", "gemini-2.5-flash"),
             },
             {
-              label: "Google Gemini 3.1 Pro (Najdokładniejszy)",
+              label: "Google Gemini 2.5 Pro (Najdokładniejszy)",
               type: "radio",
-              checked: sieveCfg.provider === "gemini" && sieveCfg.model === "gemini-3.1-pro",
-              click: () => saveSievePrimary("gemini", "gemini-3.1-pro"),
-            },
-            {
-              label: "OpenAI GPT-4o mini (Szybki i oszczędny)",
-              type: "radio",
-              checked: sieveCfg.provider === "openai" && (sieveCfg.model === "gpt-4o-mini" || !sieveCfg.model),
-              click: () => saveSievePrimary("openai", "gpt-4o-mini"),
+              checked: sieveCfg.provider === "gemini" && sieveCfg.model === "gemini-2.5-pro",
+              click: () => saveSievePrimary("gemini", "gemini-2.5-pro"),
             },
             {
               label: "Groq LPU (Llama 3.3 70B Versatile)",
@@ -3299,19 +3176,13 @@ function buildAppMenu() {
           label: t("Fallback Sita (Zapasowe czyszczenie)"),
           submenu: [
             {
-              label: "Fallback 1: OpenAI GPT-4o mini",
-              type: "checkbox",
-              checked: (sieveCfg.fallbackModel ?? "gpt-4o-mini") === "gpt-4o-mini",
-              click: () => saveSieveFallback("fallbackModel", "gpt-4o-mini"),
-            },
-            {
-              label: "Fallback 2: Groq Llama 3.3 70B",
+              label: "Fallback 1: Groq Llama 3.3 70B",
               type: "checkbox",
               checked: (sieveCfg.groqModel ?? "llama-3.3-70b-versatile") === "llama-3.3-70b-versatile",
               click: () => saveSieveFallback("groqModel", "llama-3.3-70b-versatile"),
             },
             {
-              label: "Fallback 3: Claude 3.5 Haiku",
+              label: "Fallback 2: Claude 3.5 Haiku",
               type: "checkbox",
               checked: (sieveCfg.anthropicModel ?? "claude-3-5-haiku-20241022") === "claude-3-5-haiku-20241022",
               click: () => saveSieveFallback("anthropicModel", "claude-3-5-haiku-20241022"),
@@ -3383,12 +3254,10 @@ function refreshTrayMenu() {
       meetingMenuItem(t),
       /* Poranek pokazuje się sam raz dziennie, ale bywa zamknięty odruchowo
          razem z resztą okien — a wtedy jedyną drogą z powrotem byłoby
-         czekanie do jutra. Pozycja pojawia się wyłącznie wtedy, gdy poranek
-         jest włączony i podłączony: menu nie ma prawa wystawiać czegoś,
-         co po kliknięciu powie „nie mam konta". */
-      ...(briefingMine()
-        ? [{ label: `☀️ ${t("Poranek")}`, click: () => void showBriefing({ force: true }) }]
-        : []),
+         czekanie do jutra. Pozycja stoi tu zawsze: bez konta Google okno
+         wypełnia się materiałem lokalnym zamiast pocztą (patrz
+         gatherBriefing). */
+      { label: `☀️ ${t("Poranek")}`, click: () => void showBriefing({ force: true }) },
       { label: t("Modele AI i Fallback"), click: () => createMainWindow().webContents.send("view:go", "ai") },
       { label: t("Ustawienia"), click: () => createMainWindow().webContents.send("view:go", "settings") },
       { type: "separator" },
@@ -3570,18 +3439,30 @@ async function gatherBriefing() {
     problems.push(`Kalendarz: ${error.message}`);
   }
 
+  /* Poczta wymaga konta Google — a konta może po prostu nie być. To NIE
+     jest błąd: dawniej brak konta przerywał poranek zanim ten się w ogóle
+     zaczął (patrz showBriefing → briefingMine(), teraz bez tej blokady).
+     Zamiast urwać okno, wypełniamy je tym, co leży na tym komputerze —
+     patrz localBriefingItems niżej. */
+  const googleActive = briefingMine();
   let picks = [];
   let noise = [];
-  try {
-    const mails = await google.mail({ days: 7, max: 15 });
-    picks = briefingSource.needsAttention(mails, {
-      plan,
-      owner: google.snapshot().email ?? config.owner,
-      now,
-    });
-    noise = briefingSource.noiseMails(mails);
-  } catch (error) {
-    problems.push(`Poczta: ${error.message}`);
+  let local = [];
+  if (googleActive) {
+    try {
+      const mails = await google.mail({ days: 7, max: 15 });
+      picks = briefingSource.needsAttention(mails, {
+        plan,
+        owner: google.snapshot().email ?? config.owner,
+        now,
+      });
+      noise = briefingSource.noiseMails(mails);
+    } catch (error) {
+      problems.push(`Poczta: ${error.message}`);
+    }
+  } else {
+    local = localBriefingItems();
+    problems.push("Integracja z Google nieaktywna — uwzględniono notatki lokalne.");
   }
 
   let feeds = [];
@@ -3622,7 +3503,46 @@ async function gatherBriefing() {
     feeds,
     words,
     problems,
+    googleActive,
+    local,
   };
+}
+
+/**
+ * Materiał lokalny na poranek — zastępuje pocztę, gdy Google jest
+ * nieaktywne (patrz gatherBriefing). Trzy źródła, które leżą na tym
+ * komputerze niezależnie od jakiegokolwiek konta: kartki otwarte na
+ * pulpicie, świeże notatki i zadania wypisane w ostatnich spotkaniach.
+ */
+function localBriefingItems() {
+  const notes = store.getNotes();
+  const titleOf = (note) =>
+    (note.title || (note.text ?? "").trim().split("\n")[0] || "").trim().slice(0, 80) || "Bez tytułu";
+
+  const sticky = notes
+    .filter((note) => note.widget === true)
+    .slice(0, 8)
+    .map((note) => ({ kind: "sticky", title: titleOf(note) }));
+
+  const recentNotes = notes
+    .filter((note) => note.kind !== "meeting" && note.widget !== true)
+    .sort((a, b) => new Date(b.updatedAt ?? b.at) - new Date(a.updatedAt ?? a.at))
+    .slice(0, 6)
+    .map((note) => ({ kind: "note", title: titleOf(note) }));
+
+  const meetingTasks = [...store.getMeetings()]
+    .sort((a, b) => new Date(b.at) - new Date(a.at))
+    .slice(0, 5)
+    .flatMap((meeting) =>
+      tasksFrom(meeting.summary).map((task) => ({
+        kind: "task",
+        title: task,
+        from: meeting.title || "Spotkanie",
+      })),
+    )
+    .slice(0, 10);
+
+  return [...sticky, ...recentNotes, ...meetingTasks];
 }
 
 /** Okno poranka. Jedno na raz — drugie byłoby drugim tym samym. */
@@ -3645,7 +3565,7 @@ function openBriefingWindow() {
     x: Math.round(workArea.x + (workArea.width - width) / 2),
     y: Math.round(workArea.y + (workArea.height - height) / 2.6),
     show: false,
-    backgroundColor: "#09101c", // --bg
+    backgroundColor: bgForTheme(resolveTheme()), // --bg
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
@@ -3665,35 +3585,129 @@ function openBriefingWindow() {
 /**
  * Pokazanie poranka.
  *
+ * Konto Google NIE jest warunkiem — gatherBriefing wypełnia się wtedy
+ * materiałem lokalnym (patrz localBriefingItems). Jedyne, co naprawdę
+ * blokuje, to poranek już w toku.
+ *
  * @param {object}  options
- * @param {boolean} [options.force] z menu albo z Ustawień — bez pytania o porę
+ * @param {boolean} [options.force] z menu, z tacy albo z przycisku „Generuj
+ *   teraz" — pomija i porę dnia, i wyłącznik „Pokazuj poranek": to jest
+ *   wyraźne kliknięcie, a nie automat, któremu wyłącznik ma coś zabraniać.
  */
 async function showBriefing({ force = false } = {}) {
   if (briefingBusy) return false;
-  if (!briefingMine()) return false;
   const config = briefingConfig();
-  if (!force && !briefingSource.due({ lastAt: config.lastAt, now: new Date(), notBefore: config.notBefore ?? 4 })) {
-    return false;
+  if (!force) {
+    if (!config.enabled) return false;
+    if (!briefingSource.due({ lastAt: config.lastAt, now: new Date(), notBefore: config.notBefore ?? 4 })) {
+      return false;
+    }
   }
 
   briefingBusy = true;
-  const win = openBriefingWindow();
+  // Kółko w tacy pulsuje od tej chwili do ostatniego `finally` — patrz
+  // api.briefing.onBusy w renderer/js/widget.js.
+  broadcast("briefing:busy", true);
+
+  // Okno próbuje się otworzyć NAJPIERW, żeby zdążyło pokazać własny stan
+  // ładowania, zanim zbieranie materiału się skończy. Gdy się nie da
+  // (np. okno padło przy tworzeniu), poranek i tak ma dokąd trafić —
+  // patrz stickyFromBriefing niżej.
+  let win = null;
+  try {
+    win = openBriefingWindow();
+  } catch {
+    win = null;
+  }
+
   try {
     const data = await gatherBriefing();
-    if (!win.isDestroyed()) win.webContents.send("briefing:data", data);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send("briefing:data", data);
+    } else {
+      stickyFromBriefing(data);
+    }
     /* Datę zapisujemy DOPIERO PO ZEBRANIU materiału. Zapisana wcześniej
        oznaczałaby dzień jako „już pokazany" także wtedy, gdy zbieranie
        padło i człowiek nie zobaczył niczego. */
     store.saveSettings({ briefing: { lastAt: new Date().toISOString() } });
     tellSettings();
   } catch (error) {
-    if (!win.isDestroyed()) {
+    if (win && !win.isDestroyed()) {
       win.webContents.send("briefing:data", { problems: [error.message], picks: [], feeds: [] });
+    } else {
+      stickyFromBriefing({ problems: [error.message], picks: [], feeds: [], plan: null });
     }
   } finally {
     briefingBusy = false;
+    broadcast("briefing:busy", false);
   }
   return true;
+}
+
+/**
+ * Poranek jako tekst — wyłącznie do kartki zastępczej (patrz niżej).
+ * Okno poranka (renderer/briefing.html) ma własny, bogatszy widok tych
+ * samych danych; ten formatuje to samo płasko, bo kartka umie tylko tekst.
+ */
+function briefingText(data) {
+  const when = new Date(data?.at ?? Date.now());
+  const lines = [`# Poranek — ${when.toLocaleDateString("pl-PL")}`];
+
+  const ahead = data?.plan?.ahead ?? [];
+  lines.push("", "## Plan dnia");
+  if (ahead.length) {
+    for (const event of ahead) {
+      const time = new Date(event.from).toLocaleTimeString("pl-PL", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      lines.push(`- ${time} — ${event.title}`);
+    }
+  } else {
+    lines.push("- Nic więcej w kalendarzu.");
+  }
+
+  const picks = data?.picks ?? [];
+  lines.push("", "## Poczta wymaga uwagi");
+  if (picks.length) {
+    for (const mail of picks) {
+      const why = (mail.why ?? []).join(", ");
+      lines.push(`- **${mail.from}** — ${mail.subject}${why ? ` (${why})` : ""}`);
+    }
+  } else {
+    lines.push("- Nic pilnego.");
+  }
+
+  /* Bez konta Google `picks` jest zawsze puste — to co jest do pokazania,
+     leży w `local` (patrz localBriefingItems). */
+  const local = data?.local ?? [];
+  if (local.length) {
+    lines.push("", "## Lokalne źródła");
+    for (const item of local) {
+      const from = item.from ? ` (${item.from})` : "";
+      lines.push(`- ${item.title}${from}`);
+    }
+  }
+
+  const problems = data?.problems ?? [];
+  if (problems.length) {
+    lines.push("", "## Problemy");
+    for (const problem of problems) lines.push(`- ${problem}`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Kartka zamiast okna. Jedyna droga awaryjna, gdy BrowserWindow poranka
+ * nie chce się otworzyć — mechanizm kartek na pulpicie jest sprawdzony
+ * i działa niezależnie od reszty okien (patrz deliverToNewNote).
+ */
+function stickyFromBriefing(data) {
+  const note = store.createNote({ text: briefingText(data), title: "Poranek", kind: "briefing" });
+  broadcast("note:changed", { id: note.id, created: true });
+  openDeck(note.id);
 }
 
 /**
@@ -3946,6 +3960,72 @@ function broadcast(channel, payload) {
 
 aiRegistry.setBroadcaster(broadcast);
 
+/* ── Motyw ────────────────────────────────────────────────────────
+   Jedno źródło prawdy: TYLKO proces główny rozstrzyga, jaki motyw jest
+   aktualnie widoczny. Renderer o nic nie decyduje — dostaje gotową
+   odpowiedź (resolvedTheme) i atrybut na <html>, tak samo jak z ustawieniami
+   (patrz visibleSettings). Dzięki temu okno, które akurat się otwiera,
+   i te, które już stoją, nigdy nie widzą dwóch różnych motywów naraz. */
+const THEME_PREFS = ["light", "dark", "system"];
+
+/** Zapamiętany wybór — 'system' dopóki store nie wczyta czegoś innego. */
+let themePreference = "system";
+
+/** Kolor tła okna, zanim cokolwiek się w nim narysuje — patrz tokens.css. */
+function bgForTheme(resolved) {
+  return resolved === "light" ? "#eef2f6" : "#09101c";
+}
+
+/** 'light' | 'dark' policzone TERAZ z preferencji i (dla 'system') z macOS. */
+function resolveTheme(pref = themePreference) {
+  if (pref === "light" || pref === "dark") return pref;
+  return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+}
+
+/* Okna, które mają nieprzezroczyste tło (patrz backgroundColor przy ich
+   tworzeniu) i mają je zaktualizować NATYCHMIAST po zmianie motywu — bez
+   przeładowania. Okna przezroczyste (szybka notatka, zrzut, kartki na
+   pulpicie, znaczek) rysują własne tło w CSS z tych samych tokenów i nie
+   potrzebują tu nic — atrybut data-theme starczy im sam. */
+function opaqueWindows() {
+  const list = [mainWindow, notesWindow, briefingWindow];
+  list.push(...noteWindows.values());
+  list.push(...meetingWindows.values());
+  return list.filter((win) => win && !win.isDestroyed());
+}
+
+/** Rozgłoszenie aktualnie obowiązującego motywu do każdego otwartego okna. */
+function broadcastTheme() {
+  const resolved = resolveTheme();
+  const bg = bgForTheme(resolved);
+  for (const win of opaqueWindows()) win.setBackgroundColor(bg);
+  broadcast("theme:changed", resolved);
+}
+
+/**
+ * Ustawienie preferencji motywu — z panelu Ustawień albo przy starcie.
+ *
+ * `nativeTheme.themeSource` robi dwie rzeczy naraz: przestawia macOS-owe
+ * `shouldUseDarkColors` (którego słucha 'system' wyżej) ORAZ materiał
+ * szkła (vibrancy) w oknie szybkiej notatki i zrzutu ekranu — oba muszą
+ * wyglądać w tym samym motywie, co reszta aplikacji, inaczej tekst na
+ * jasnym szkle staje się nieczytelny (i odwrotnie).
+ */
+function applyThemePreference(pref, { persist = true } = {}) {
+  themePreference = THEME_PREFS.includes(pref) ? pref : "system";
+  nativeTheme.themeSource = themePreference;
+  if (persist) store.saveSettings({ theme: themePreference });
+  broadcastTheme();
+}
+
+/* Motyw systemowy macOS umie się zmienić, gdy aplikacja już stoi otwarta
+   (np. automatyczne przejście dzień/noc). Liczy się to wyłącznie w trybie
+   'system' — w 'light' i 'dark' wybór użytkownika ma stać bez względu na
+   to, co robi reszta systemu. */
+nativeTheme.on("updated", () => {
+  if (themePreference === "system") broadcastTheme();
+});
+
 /* ── Czyja to instalacja ────────────────────────────────────────
    Krok „Silniki" — dostawca, model, klucz — należy do właściciela i tylko
    on go widzi. Dlaczego akurat tak i czym to NIE jest, mówi nagłówek
@@ -4191,9 +4271,7 @@ function cancelCapture() {
 async function flushRescues() {
   if (rescuing || !store) return;
   const settings = store.getSettings();
-  const hasKey =
-    keyFor(settings.stt.provider, settings) ||
-    (settings.stt.provider === "gemini" && keyFor("openai", settings));
+  const hasKey = keyFor(settings.stt.provider, settings);
   if (settings.stt.provider === "mock" || !hasKey) return;
 
   rescuing = true;
@@ -4297,12 +4375,24 @@ async function runPipeline(audioBuffer, durationMs) {
     let result = { model: "fast-path", refused: false, degraded: false };
     let fastPathed = false;
 
+    /* Gemini jako główny silnik dyktowania transkrybuje i czyści tekst
+       w jednym wywołaniu (patrz geminiTranscribeAudio w main/stt.js).
+       Puszczanie tego wyniku jeszcze raz przez sito byłoby podwójnym
+       przetwarzaniem tego samego tekstu — traktujemy go więc jak Fast-Path
+       i idziemy prosto do dostarczenia. */
+    const geminiCleaned = !!tr.cleaned;
     const fpCheck = fastPath.check(raw, settings, cue);
-    if (fpCheck.eligible) {
+    if (geminiCleaned || fpCheck.eligible) {
       text = cue.body;
       fastPathed = true;
-      result = { model: "fast-path", refused: false, degraded: false };
-      logger.logTask("DYKTOWANIE", "Zastosowano Fast-Path (pominięto LLM dla płynnej mowy)", { reason: fpCheck.reason });
+      result = { model: geminiCleaned ? "gemini-audio" : "fast-path", refused: false, degraded: false };
+      logger.logTask(
+        "DYKTOWANIE",
+        geminiCleaned
+          ? "Pominięto sito — Gemini Audio już oczyściło tekst przy transkrypcji"
+          : "Zastosowano Fast-Path (pominięto LLM dla płynnej mowy)",
+        { reason: geminiCleaned ? "gemini-audio" : fpCheck.reason },
+      );
     } else {
       result = await sift({
         raw: cue.body,
@@ -4322,21 +4412,23 @@ async function runPipeline(audioBuffer, durationMs) {
     const fired = cue.command ?? (result.command ? commandById(settings.commands, result.command) : null);
 
     stage = "czyszczenie";
-    const cleanupStarted = Date.now();
-    const cleanupModel =
-      settings.sieve?.provider === "gemini" && settings.sieve?.model
-        ? settings.sieve.model
-        : STT.gemini.models[0][0];
-    const cleaned = await cleanDictatedText(text, {
-      model: cleanupModel,
-      apiKey: keyFor("gemini", settings),
-    });
-    console.log("[PASTE-PERF]", {
-      originalLength: text.length,
-      cleanLength: cleaned.length,
-      latencyMs: Date.now() - cleanupStarted,
-    });
-    text = cleaned;
+    if (!geminiCleaned) {
+      const cleanupStarted = Date.now();
+      const cleanupModel =
+        settings.sieve?.provider === "gemini" && settings.sieve?.model
+          ? settings.sieve.model
+          : STT.gemini.models[0][0];
+      const cleaned = await cleanDictatedText(text, {
+        model: cleanupModel,
+        apiKey: keyFor("gemini", settings),
+      });
+      console.log("[PASTE-PERF]", {
+        originalLength: text.length,
+        cleanLength: cleaned.length,
+        latencyMs: Date.now() - cleanupStarted,
+      });
+      text = cleaned;
+    }
 
     stage = "dostarczenie";
 
@@ -4454,9 +4546,13 @@ async function runPipeline(audioBuffer, durationMs) {
 /**
  * Dokąd trafia wynik.
  *
- * Dwie zasady, obie o tym samym — żeby tekst nie wylądował tam, gdzie go nie
- * widać:
+ * Trzy zasady, wszystkie o tym samym — żeby tekst nie wylądował tam, gdzie go
+ * nie widać:
  *
+ *   0. Ujście „free-thoughts" (polecenie „do notatki") wygrywa ze wszystkim:
+ *      to jedyne ujście o stałym adresie, ma tam trafiać zawsze, niezależnie
+ *      od tego, gdzie akurat trwa dyktowanie. Trafia tu wyłącznie przez
+ *      dopasowanie dokładne polecenia — patrz zasada 2.
  *   1. Dyktowanie ZAMÓWIONE Z NOTATKI wygrywa z ujściem polecenia. Kto
  *      nacisnął mikrofon w oknie notatki, ten chciał pisać do tej notatki.
  *      Wyjątkiem jest „nowa notatka", bo to nie jest to samo miejsce.
@@ -4466,6 +4562,7 @@ async function runPipeline(audioBuffer, durationMs) {
  */
 function outletFor(command, by, context) {
   const want = by === "exact" ? (command?.outlet ?? "cursor") : "cursor";
+  if (want === "free-thoughts") return "free-thoughts";
   if (want === "new-note") return "new-note";
   if (context.note) return "note";
   if (want === "note") return "new-note"; // nie ma do której dopisać
@@ -4473,6 +4570,7 @@ function outletFor(command, by, context) {
 }
 
 async function deliverBy(outlet, text, context, settings) {
+  if (outlet === "free-thoughts") return deliverToFreeThoughts(text, context.startedAt ?? null);
   if (outlet === "note") return deliverToNote(context.note, text);
   if (outlet === "new-note") return deliverToNewNote(text);
   // Notatka: dopisujemy na jej końcu i kopiujemy do schowka, ale nie
@@ -4486,6 +4584,21 @@ async function deliverToNewNote(text) {
   clipboard.writeText(text);
   scheduleSync();
   broadcast("note:changed", { id: note.id, created: true });
+  syncDeck();
+  return { copied: true, pasted: false, note: true, noteId: note.id };
+}
+
+/**
+ * Ujście „Do notatki" — zawsze Free Thoughts, nigdy notatka, do której akurat
+ * ktoś dyktuje. `sourceId` to `startedAt` nagrania: broni przed podwójnym
+ * blokiem, gdyby to samo dyktowanie przeszło przez dostarczenie dwa razy.
+ */
+async function deliverToFreeThoughts(text, sourceId) {
+  const note = store.appendFreeThought(text, sourceId);
+  if (!note) return { copied: false, pasted: false, note: false, noteId: null };
+  clipboard.writeText(text);
+  scheduleSync();
+  broadcast("note:appended", { id: note.id });
   syncDeck();
   return { copied: true, pasted: false, note: true, noteId: note.id };
 }
@@ -4549,9 +4662,8 @@ function bindHotkeys() {
  *
  * W odróżnieniu od zrzutu i szybkiej notatki ten klawisz jest stały —
  * Poranek to jedno okno raz dziennie i nie ma potrzeby oddawać go pod
- * konfigurację. Sam skrót nic nie robi, gdy Poranek nie jest jeszcze
- * niczyj (patrz showBriefing → briefingMine()): tak jak pozycja w menu,
- * milczy zamiast tłumaczyć się z braku konta.
+ * konfigurację. Działa też bez konta Google — showBriefing wtedy sięga
+ * po materiał lokalny (patrz gatherBriefing → localBriefingItems).
  */
 function bindBriefingHotkey() {
   try {
@@ -4711,6 +4823,22 @@ function registerIpc() {
      mostem (patrz main/owner.js). */
   ipcMain.handle("settings:get", () => visibleSettings());
 
+  /* Motyw. Osobny most od ustawień, bo trzeba do niego dotrzeć raz,
+     SYNCHRONICZNIE, zanim okno narysuje pierwszą klatkę (patrz preload.js)
+     — asynchroniczny settings:get przyszedłby za późno i migoby ciemnym
+     błyskiem w jasnym motywie. */
+  ipcMain.on("theme:getSync", (event) => {
+    event.returnValue = resolveTheme();
+  });
+  ipcMain.handle("theme:get", () => ({
+    preference: themePreference,
+    resolved: resolveTheme(),
+  }));
+  ipcMain.handle("theme:set", (_e, preference) => {
+    applyThemePreference(preference);
+    return { preference: themePreference, resolved: resolveTheme() };
+  });
+
   ipcMain.handle("settings:save", (_e, raw) => {
     // Drugie sito, po stronie zapisu: interfejs tych pól nie pokazuje, ale
     // most jest mostem i przez most da się wysłać cokolwiek.
@@ -4721,10 +4849,6 @@ function registerIpc() {
     // przepinamy wyłącznie wtedy, gdy zmieniły się klawisze.
     if (patch.shot?.hotkey !== undefined) bindHotkeys();
     if (patch.widget?.enabled !== undefined) showWidget(patch.widget.enabled);
-    // Zmiana widoku zbiera to, co zostało po poprzednim: przełączenie na
-    // kompaktowy zdejmuje kartki z pulpitu, przełączenie na pulpit zwija
-    // szybę przy znaczku (robi to sam widget, gdy dostanie nowe ustawienia).
-    if (patch.widget?.mode !== undefined) closeDeck();
     if (patch.showInDock !== undefined) applyDockIcon(patch.showInDock);
     if (patch.spellcheck || patch.language) applySpellcheck(settings);
     // Wykrywanie rusza i staje razem z ustawieniem — a nie dopiero po
@@ -4779,6 +4903,17 @@ function registerIpc() {
     ownerHere() ? { stt: STT, sieve: SIEVE, shot: OCR } : {},
   );
 
+  /* Odświeżenie listy modeli Gemini z Google (`GET /v1beta/models`), na
+     żądanie z Ustawień. Klucz dla danego kroku szuka tą samą drogą co
+     wywołania — bez niego wraca lista rezerwowa (patrz listGeminiModels
+     w main/providers.js). */
+  ipcMain.handle("providers:gemini-models", (_e, _stage) => {
+    if (!ownerHere()) return [];
+    const settings = store.getSettings();
+    const apiKey = keyFor("gemini", settings);
+    return listGeminiModels(apiKey);
+  });
+
   /* Rejestr zapytań do modeli AI — podgląd na żywo wszystkich wywołań */
   ipcMain.handle("ai:registry:list", () => aiRegistry.list());
   ipcMain.handle("ai:registry:clear", () => aiRegistry.clear());
@@ -4806,11 +4941,14 @@ function registerIpc() {
   });
 
   ipcMain.handle("notes:delete", (event, id) => {
+    // Notatka systemowa (np. Free Thoughts) odmawia się skasować w store —
+    // okna i karty zostają nietknięte, a renderer nie dostaje "deleted".
+    const done = store.deleteNote(id);
+    if (!done) return false;
     noteWindows.get(id)?.close();
     stickyWindows.get(id)?.destroy();
     forgetCard(id);
     forgetNotionPage(id);
-    const done = store.deleteNote(id);
     scheduleSync();
     broadcastExcept(event.sender, "note:changed", { id, deleted: true });
     syncDeck();
@@ -4848,6 +4986,71 @@ function registerIpc() {
       form: settings.shot?.form ?? "text",
     };
   });
+  ipcMain.handle("shot:updateImage", (_e, dataUrl) => updateShotImage(dataUrl));
+  ipcMain.handle("shot:copyText", (_e, text) => {
+    if (text) clipboard.writeText(String(text).trim());
+    return { ok: true };
+  });
+  ipcMain.handle("shot:copyImage", (_e, dataUrl = null) => copyShotImage(dataUrl));
+  ipcMain.handle("shot:copyAll", (_e, { text = "", image = null } = {}) => {
+    let img = null;
+    if (image) {
+      img = nativeImage.createFromDataURL(image);
+    } else if (shot?.image) {
+      img = nativeImage.createFromBuffer(shot.image);
+    }
+    const payload = {};
+    if (text) payload.text = String(text).trim();
+    if (img && !img.isEmpty()) payload.image = img;
+    clipboard.write(payload);
+    return { ok: true };
+  });
+  ipcMain.handle("shot:shareAppleNotes", async (_e, { text = "" } = {}) => {
+    try {
+      await toAppleNotes(text);
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+  ipcMain.handle("shot:shareNotion", async (_e, { text = "" } = {}) => {
+    try {
+      if (text) clipboard.writeText(String(text).trim());
+      try {
+        await shell.openExternal("notion://");
+      } catch {
+        await shell.openExternal("https://www.notion.so");
+      }
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+  ipcMain.handle("shot:shareSpark", async (_e, { text = "" } = {}) => {
+    try {
+      const body = encodeURIComponent(String(text).trim());
+      const sparkUrl = `spark://compose?body=${body}`;
+      try {
+        await shell.openExternal(sparkUrl);
+      } catch {
+        await shell.openExternal(`mailto:?body=${body}`);
+      }
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+  ipcMain.handle("shot:shareWhatsApp", async (_e, { text = "" } = {}) => {
+    try {
+      const body = encodeURIComponent(String(text).trim());
+      await shell.openExternal(`whatsapp://send?text=${body}`);
+      return { ok: true };
+    } catch (err) {
+      return { error: err.message };
+    }
+  });
+  ipcMain.handle("shot:saveToDisk", (_e, dataUrl = null) => saveShotToDisk(dataUrl));
+  ipcMain.handle("shot:setWindowSize", (_e, size) => (setShotWindowSize(size), true));
   ipcMain.handle("shot:save", async (_e, choice) => {
     const result = await saveShot(choice ?? {});
     // Chwila na potwierdzenie w oknie — patrz save() w renderer/js/shot.js.
@@ -5070,60 +5273,39 @@ function registerIpc() {
   ipcMain.handle("widget:reset", () => resetWidget());
 
   /* Zmiana stanu widgetu to zmiana rozmiaru OKNA, nie tylko CSS-u. Renderer
-     prosi o stan ("badge", "tray", "panel") i dostaje w odpowiedzi geometrię,
-     której sam nie zna: gdzie w oknie wylądował znaczek, w którą stronę
-     wychodzi taca i gdzie postawić szybę. */
+     prosi o stan ("badge", "tray") i dostaje w odpowiedzi geometrię, której
+     sam nie zna: gdzie w oknie wylądował znaczek i w którą stronę wychodzi
+     łuk menu. */
   ipcMain.handle("widget:layout", (_e, view) =>
-    placeWidget(widgetAnchor(), ["badge", "tray", "panel"].includes(view) ? view : "badge"),
+    placeWidget(widgetAnchor(), view === "tray" ? "tray" : "badge"),
   );
 
-  /* ══ CZYNNOŚCI Z TACY ══
+  /* ══ CZYNNOŚCI Z MENU PO ŁUKU ══
 
      Wszystkie robi się W BIEGU i to jest reguła, nie opis: żadna nie ma
-     prawa wywołać okna aplikacji sama z siebie. Taca rozkłada się pod
-     kursorem, więc jej kółka bywają klikane przez pomyłkę — a okno
+     prawa wywołać okna aplikacji sama z siebie. Menu rozkłada się pod
+     kursorem, więc jego kółka bywają klikane przez pomyłkę — a okno
      wyskakujące na wierzch cudzej pracy jest najgorszą rzeczą, jaką może
-     zrobić pomyłkowe kliknięcie w coś, co miało tylko przełączyć pokrętło.
+     zrobić pomyłkowe kliknięcie.
 
      JEDEN WYJĄTEK jest podpisany wprost i po to został dodany: gniazdo
      „Otwórz Cribro Sift". Okno otwiera się wtedy, gdy ktoś o nie poprosił,
      a nie przy okazji czegoś innego. */
   ipcMain.handle("widget:run", async (_e, action) => {
-    if (action === "dictate") {
-      await toggleCapture("widget");
+    if (action === "quick-note" || action === "quick" || action === "quick-capture") {
+      return quickNote();
+    }
+
+    if (action === "new-sticky" || action === "sticky") {
+      const note = store.createNote({ widget: true, text: "" });
+      scheduleSync();
+      broadcast("note:changed", { id: note.id, created: true });
+      openDeck(note.id);
+      syncDeck();
       return true;
     }
-    if (action === "quick-note") return quickNote();
 
-    /* Tryb rozpoznawania krąży: dwa języki → jeden → automat. */
-    if (action === "language") {
-      const language = normalizeLanguage(store.getSettings().language);
-      const order = ["bilingual", "single", "auto"];
-      const next = order[(order.indexOf(language.mode) + 1) % order.length];
-      const settings = store.saveSettings({ language: { ...language, mode: next } });
-      tellSettings(settings);
-      refreshMenus();
-      return shortLabel(settings.language);
-    }
-    /* Gęstość sita krąży tak samo jak język: zgrubne → średnie → drobne.
-
-       Wcześniej to gniazdo wołało CAŁE OKNO APLIKACJI na widok „Sito"
-       i było jedynym miejscem w tacy, które to robiło — stąd brało się
-       okno wyskakujące „czasem po kliknięciu w widget". Argument za oknem
-       brzmiał: pokrętło ma trzy położenia i opis przy każdym, a to nie
-       mieści się w kółku. Mieści się: położenie widać po gęstości siatki
-       na ikonie, a opis stoi w dymku obok. */
-    if (action === "sieve") {
-      const order = Object.keys(MESH);
-      const now = store.getSettings().mesh;
-      const next = order[(order.indexOf(now) + 1) % order.length] ?? order[0];
-      const settings = store.saveSettings({ mesh: next });
-      tellSettings(settings);
-      refreshMenus();
-      return next;
-    }
-
-    /* Okno aplikacji — jedyna droga z tacy do PEŁNEGO okna. Poza widgetem
+    /* Okno aplikacji — jedyna droga z menu do PEŁNEGO okna. Poza widgetem
        prowadzi tam znaczek w pasku menu; tutaj jest po to, żeby nie trzeba
        było celować w pasek, gdy widget stoi na drugim końcu ekranu. */
     if (action === "app") {
@@ -5131,12 +5313,8 @@ function registerIpc() {
       return true;
     }
 
-    /* Notatnik — osobne okno na wszystkie notatki. Stoi w rzędzie notatek,
-       a nie w kolumnie czynności, bo nie jest czynnością robioną w biegu:
-       „Notatki" obok pokazują kartki leżące na pulpicie, a tutaj otwiera się
-       całość, z szukaniem i szufladami.
-
-       To DRUGIE gniazdo tacy otwierające duże okno i jedyne poza „app".
+    /* Notatnik — osobne okno na wszystkie notatki, z szukaniem i szufladami.
+       To DRUGIE gniazdo menu otwierające duże okno i jedyne poza „app".
        Znaczek nadal nie otwiera żadnego z nich — patrz komentarz przy
        kliknięciu w znaczek w renderer/js/widget.js po powód, dla którego
        to rozróżnienie jest pilnowane. */
@@ -5144,48 +5322,20 @@ function registerIpc() {
       createNotesWindow();
       return true;
     }
+    if (action === "notes") {
+      createNotesWindow();
+      return true;
+    }
 
-    /* Poranek z tacy — trzecie gniazdo otwierające duże okno, obok „app"
-       i „notebook". Milczy tak samo jak skrót i pozycja menu, gdy Poranek
-       nie ma jeszcze konta (patrz showBriefing → briefingMine()): przycisk
-       stoi w tacy zawsze, bo dopiero klik mówi, czy jest do czego wracać. */
+    /* Poranek z menu — trzecie gniazdo otwierające duże okno, obok „app"
+       i „notebook". Działa niezależnie od konta Google: bez niego
+       gatherBriefing wypełnia okno materiałem lokalnym (patrz
+       localBriefingItems w showBriefing). */
     if (action === "briefing") {
       void showBriefing({ force: true });
       return true;
     }
     return false;
-  });
-
-  /* Rozciąganie szyby uchwytem w rogu. Renderer przysyła żądany rozmiar
-     SAMEJ SZYBY, bo tyle widzi; przycięcie do granic i do ekranu, przeliczenie
-     okna wokół kotwicy i zapis należą tutaj (patrz widgetPanel). Zapisujemy
-     dopiero na puszczenie uchwytu — zapis co klatkę pisałby plik ustawień
-     sześćdziesiąt razy na sekundę. */
-  ipcMain.handle("widget:resize", (_e, { width, height, commit } = {}) => {
-    // Podłogę zaczynamy od rozmiaru SPRZED gestu, nie od pierwszego żądania:
-    // inaczej pierwszy ruch do środka od razu kurczyłby okno i cała rzecz,
-    // przed którą podłoga ma chronić, działaby się w pierwszej klatce.
-    const floor = widgetPanelDrag ?? widgetPanel();
-    widgetPanelDrag = {
-      width,
-      height,
-      floorW: Math.max(floor.floorW ?? floor.width, width),
-      floorH: Math.max(floor.floorH ?? floor.height, height),
-    };
-    // Kierunek podajemy z pamięci: przeliczony od nowa mógłby się odwrócić
-    // w połowie gestu, gdy szyba przestanie się mieścić po swojej stronie.
-    const spot = placeWidget(widgetAnchor(), widgetView, widgetView === "panel" ? widgetDir : null);
-    if (commit) {
-      // Zapisujemy to, co naprawdę wyszło po przycięciu — nie to, o co
-      // renderer poprosił. Inaczej rozmiar odrzucony przez klamrę wracałby
-      // przy każdym otwarciu i szyba „skakała" po pierwszym rozwinięciu.
-      store.saveSettings({ widget: { panel: { width: spot.panelW, height: spot.panelH } } });
-      widgetPanelDrag = null;
-      // Drugi przebieg już bez podłogi — dopiero teraz okno kurczy się do
-      // szyby, gdy uchwyt ją zmniejszył.
-      return placeWidget(widgetAnchor(), widgetView, widgetView === "panel" ? widgetDir : null);
-    }
-    return spot;
   });
 
   ipcMain.on("widget:passthrough", (_e, ignore) => {
@@ -6044,7 +6194,6 @@ function registerIpc() {
     const hasKey =
       keyFor(provider, settings) ||
       keyFor("deepgram", settings) ||
-      keyFor("openai", settings) ||
       keyFor("groq", settings) ||
       keyFor("gemini", settings);
     if (!hasKey) {
@@ -6245,17 +6394,34 @@ function registerIpc() {
 
   ipcMain.handle("briefing:show", async () => {
     const shown = await showBriefing({ force: true });
-    if (!shown) {
-      const state = briefingState();
-      if (state.mismatch) {
-        throw new Error(
-          `Podłączone konto to ${state.account.email}, a poranek należy do ${state.owner}.`,
-        );
-      }
-      if (!state.account.signedIn) throw new Error("Konto Google nie jest podłączone.");
-      if (!state.owner) throw new Error("Poranek nie ma właściciela — podłącz konto Google.");
-      throw new Error("Poranek jest wyłączony.");
+    if (!shown) throw new Error("Poranek już się generuje.");
+    return true;
+  });
+
+  /* Poranek osadzony w oknie głównym (patrz BriefingView w renderer/js/app.js):
+     ten sam materiał co briefing:show, ale zwrócony wprost do widoku
+     zamiast wysłany do osobnego okienka. Bez konta Google gatherBriefing
+     sam sięga po materiał lokalny — tu nie ma czego blokować. */
+  ipcMain.handle("briefing:generate", async () => {
+    if (briefingBusy) throw new Error("Poranek już się generuje.");
+    briefingBusy = true;
+    broadcast("briefing:busy", true);
+    try {
+      const data = await gatherBriefing();
+      store.saveSettings({ briefing: { lastAt: new Date().toISOString() } });
+      tellSettings();
+      return data;
+    } finally {
+      briefingBusy = false;
+      broadcast("briefing:busy", false);
     }
+  });
+
+  /* „Wyślij na pulpit jako Sticky Note" w BriefingView: ten sam materiał,
+     który widok właśnie pokazał, trafia na kartkę zamiast zostawać tylko
+     na ekranie. */
+  ipcMain.handle("briefing:toSticky", (_e, data) => {
+    stickyFromBriefing(data ?? {});
     return true;
   });
 
@@ -6304,6 +6470,49 @@ function registerIpc() {
     return briefingState();
   });
 
+  /* ── Raport Skrzynki (Smart Inbox Triage) ───────────────────────
+     Trzy wywołania, trzy różne czynności: POBIERZ nagłówki, OCEŃ je
+     modelem (z pamięcią decyzji jako kontekstem) i, dopiero po
+     zatwierdzeniu w UI, PRZENIEŚ zaznaczone do kosza. Kasowanie nigdy
+     nie jest skutkiem ubocznym oceny — to dwa osobne wywołania. */
+
+  ipcMain.handle("mail:fetchHeaders", async () => mailService.fetchHeaders({ max: 40 }));
+
+  ipcMain.handle("mail:analyze", async () => {
+    const settings = store.getSettings();
+    const [headers, sent] = await Promise.all([
+      mailService.fetchHeaders({ max: 40 }),
+      mailService.fetchSent({ max: 40 }),
+    ]);
+    const triageMemory = store.getTriageMemory();
+    const apiKey = keyFor("gemini", settings);
+
+    const { emails, sent: sentDecisions, sentCandidates, degraded, error } = await inboxTriage.analyzeMail(
+      headers,
+      sent,
+      triageMemory,
+      { apiKey, model: settings.sieve?.provider === "gemini" ? settings.sieve?.model : undefined },
+    );
+
+    return {
+      ...inboxTriage.groupByCategory(headers, emails),
+      awaitingReply: inboxTriage.groupAwaiting(sentCandidates, sentDecisions),
+      degraded,
+      error,
+    };
+  });
+
+  /* Zatwierdzone kasowanie. `items` to [{id, domain}] — dokładnie to,
+     co renderer ma już na ekranie z mail:analyze, więc nie trzeba
+     ponownie odpytywać skrzynki, żeby wiedzieć, z jakiej domeny co szło. */
+  ipcMain.handle("mail:trashSelected", async (_e, items) => {
+    const ids = (items ?? []).map((item) => item.id).filter(Boolean);
+    await mailService.trash(ids);
+    const domains = (items ?? []).map((item) => item.domain).filter(Boolean);
+    const memory = store.recordTriageTrash(domains);
+    return { trashed: ids, memory };
+  });
+
   ipcMain.on("window:minimize", () => mainWindow?.minimize());
   ipcMain.on("window:close", () => mainWindow?.hide());
 }
@@ -6348,7 +6557,7 @@ if (!app.requestSingleInstanceLock()) {
  *   media-src    nagrania spotkań, tą samą drogą co obrazki.
  *   connect-src  'self' i tyle. Renderer nie dzwoni NIGDZIE sam —
  *                sprawdzone, ani jednego `fetch`; wszystkie rozmowy
- *                z Google, OpenAI i Notion prowadzi proces główny,
+ *                z Google, Gemini i Notion prowadzi proces główny,
  *                a okno rozmawia z nim mostem, nie siecią.
  *
  * `file:` w script-src i default-src bierze się stąd, że okna ładują się
@@ -6406,11 +6615,10 @@ function guardWindows() {
 
     guardWindows();
 
-    // Cribro ma jedną paletę i jest nocna. Materiał szkła w oknie szybkiej
-    // notatki (vibrancy) bierze się natomiast od systemu — w jasnym motywie
-    // byłby mleczny i jasny, a na nim jasny tekst notatki zniknąłby zupełnie.
-    // Dlatego mówimy systemowi wprost, w jakim motywie jesteśmy.
-    nativeTheme.themeSource = "dark";
+    // Silnik motywu rusza PRZED pierwszym oknem: nativeTheme.themeSource
+    // musi stać, zanim cokolwiek policzy sobie backgroundColor albo materiał
+    // szkła (vibrancy) — patrz applyThemePreference wyżej.
+    applyThemePreference(store.getSettings().theme ?? "system", { persist: false });
 
     // Okna ładowane z file:// nie dostają mediów automatycznie. Wpuszczamy
     // wyłącznie mikrofon i wyłącznie naszym własnym oknom.

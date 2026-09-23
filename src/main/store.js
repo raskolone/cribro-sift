@@ -40,6 +40,10 @@ const DEFAULTS = {
   // polskie zdanie z angielskim terminem w środku. Szczegóły w languages.js.
   language: { mode: "bilingual", primary: "pl", secondary: "en" },
   uiLanguage: "pl", // język interfejsu: pl | en
+  // Motyw. Jedynym, co go rozstrzyga naprawdę, jest proces główny (main.js,
+  // silnik motywu) — to pole jest tylko jego trwałym zapisem. "system"
+  // znaczy: idź za nativeTheme, czyli za wyglądem macOS.
+  theme: "system", // light | dark | system
   autoPaste: true,
   playSound: true,
   launchAtLogin: false,
@@ -48,20 +52,21 @@ const DEFAULTS = {
   // oba używają tego samego, wystarczy wpisać klucz raz — drugi krok
   // sam go znajdzie (patrz keyFor w providers.js).
   stt: {
-    provider: "deepgram", // deepgram | gemini | openai | groq | mock
-    model: "nova-3",
+    // Gemini Audio jest domyślny: transkrybuje i czyści tekst w jednym
+    // wywołaniu (patrz geminiTranscribeAudio w main/stt.js), więc dyktowanie
+    // pomija osobny krok sita. Deepgram zostaje jako fallback w kodzie —
+    // patrz hierarchia prób w transcribe() (main/stt.js).
+    provider: "gemini", // gemini | deepgram | groq | mock
+    model: "gemini-2.5-flash",
     apiKey: "",
-    fallbackProvider: "openai",
-    fallbackModel: "whisper-1",
-    fallbackApiKey: "",
     groqModel: "whisper-large-v3-turbo",
     groqApiKey: "",
     streaming: true,
     turbo: true,
   },
   sieve: {
-    provider: "gemini", // gemini | openai | anthropic
-    model: "gemini-3.7-flash",
+    provider: "gemini", // gemini | groq | anthropic
+    model: "gemini-2.5-flash",
     apiKey: "",
     customInstruction: "",
   },
@@ -105,29 +110,19 @@ const DEFAULTS = {
   },
 
   /* Widget — jedyne, co aplikacja pokazuje poza swoimi oknami: pływający
-     znaczek z notatkami „na wierzchu" i z tacą czynności robionych w biegu.
+     znaczek z menu po łuku i z notatkami „na wierzchu", każda jako własna
+     kartka na pulpicie, jak Sticky Notes.
 
      `x` i `y` to kotwica, czyli środek znaczka na ekranie; `null` znaczy
      „jeszcze nieprzesunięty" i wtedy widget staje na swoim miejscu
      startowym (patrz widgetHome w main/main.js).
 
-     `mode` mówi, CO robi kliknięcie w znaczek — i to jest jedyna różnica
-     między dwoma widokami:
-
-       "compact"  jedna szyba przy znaczku: lista notatek na wierzchu,
-                  a wybrana wychodzi z niej kartką. Wszystko w jednym oknie,
-                  wszystko znika razem ze znaczkiem.
-       "desk"     każda notatka dostaje własną kartkę na pulpicie, jak
-                  Sticky Notes. Leżą tam, gdzie się je położyło, i chowają
-                  się wszystkie naraz — jednym kliknięciem w znaczek.
-
-     `cards` to miejsce i rozmiar kartek z widoku „desk", notatka po
-     notatce. Kartkę przesuwa się raz i ma tam zostać — także po ponownym
+     `cards` to miejsce i rozmiar kartek na pulpicie, notatka po notatce.
+     Kartkę przesuwa się raz i ma tam zostać — także po ponownym
      uruchomieniu i po odłączeniu monitora, na którym leżała (wtedy wraca
      na ekran ze znaczkiem, patrz deckSpots w main/main.js). */
   widget: {
     enabled: false,
-    mode: "compact",
     x: null,
     y: null,
     /* Wielkość pisma na kartkach: s | m | l | xl.
@@ -138,9 +133,9 @@ const DEFAULTS = {
        dziesięć pikseli, których nie dało się czytać. Kartka skaluje się
        nadal; pismo w niej — już nie. */
     textSize: "m",
-    /* Rozmiar szyby przy znaczku — zmieniany uchwytem w jej rogu.
-       Klamry i przycięcie do ekranu są w widgetPanel w main/main.js. */
-    panel: { width: 256, height: 320 },
+    showQuickTasks: true,
+    showRecentNotes: true,
+    showWeatherRates: true,
     cards: {},
   },
 
@@ -199,10 +194,10 @@ const DEFAULTS = {
      okna, to wklejenie go gdzie indziej. */
   shot: {
     hotkey: null,
-    provider: "openai", // openai | mock
+    provider: "gemini", // gemini | mock
     // Najtańszy z listy. Odczyt jest zadaniem odtwórczym: model ma przepisać
     // cudzy napis, nie zrozumieć go (patrz OCR w main/providers.js).
-    model: "gpt-5.6-luna",
+    model: "gemini-2.0-flash-lite",
     apiKey: "",
     ask: true,
     target: "new", // new | note | cursor
@@ -341,6 +336,22 @@ const CLOUD_STATE = { userId: null, cursor: null, lastSyncAt: null };
  *     zamiast rozbijać listę akapitem (zaznaczone zadanie startuje puste);
  *   — puste dopisanie nie rusza notatki i nie zostawia po sobie pustych linii.
  */
+/* Klucz notatki systemowej „Free Thoughts" — patrz Store#ensureFreeThoughtsNote.
+   Identyfikacja idzie WYŁĄCZNIE po tym polu, nigdy po tytule: zwykła
+   notatka, którą ktoś akurat nazwał tak samo, ma zostać zwykłą notatką. */
+const FREE_THOUGHTS_KEY = "free-thoughts";
+
+/** DD.MM.YYYY, HH:mm — czas lokalny maszyny, niezależny od ustawień języka. */
+function stamp(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()}, ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Blok dopisywany do Free Thoughts: nagłówek z datą, pod nim oczyszczona treść. */
+function freeThoughtBlock(text, date = new Date()) {
+  return `### ${stamp(date)}\n${String(text ?? "").trim()}`;
+}
+
 function joinNote(existing, addition) {
   const text = String(addition ?? "").trim();
   if (!text) return String(existing ?? "");
@@ -372,6 +383,11 @@ class Store {
        kazałyby przepisywać to drugie przy każdej zmianie pierwszego —
        a ten sklep zapisuje całe pliki, synchronicznie. */
     this.meetingsDir = path.join(dir, "spotkania");
+    /* Pamięć segregacji skrzynki (patrz main/inbox-triage.js): jeden prosty
+       słownik domena → ostatnia decyzja i ile razy zapadła. Osobny plik,
+       nie pole w settings — to jest wyuczony stan, nie ustawienie, które
+       ktoś świadomie wybiera. */
+    this.triagePath = path.join(dir, "triage.json");
     const stored = this.#read(this.settingsPath, DEFAULTS);
     const wasSchema = stored.schema ?? 1;
     this.settings = migrate(stored);
@@ -383,6 +399,7 @@ class Store {
     this.notes = this.#read(this.notesPath, []);
     this.cloud = this.#read(this.cloudPath, CLOUD_STATE);
     this.meetings = this.#read(this.meetingsPath, []);
+    this.triageMemory = this.#read(this.triagePath, {});
   }
 
   #read(file, fallback) {
@@ -508,6 +525,27 @@ class Store {
     return before - this.notes.length;
   }
 
+  /* ── Pamięć segregacji skrzynki ─────────────────────────────────
+     { "domena": { action: "trash", count: 3 } } — nic więcej. Rośnie
+     wyłącznie przy zatwierdzonym kasowaniu (patrz recordTriageTrash),
+     nigdy przy samej propozycji sita. */
+
+  getTriageMemory() {
+    return this.triageMemory;
+  }
+
+  /** Zatwierdzone wyrzucenie — jedyne miejsce, które podbija licznik. */
+  recordTriageTrash(domains) {
+    for (const domain of new Set((domains ?? []).filter(Boolean))) {
+      const entry = this.triageMemory[domain] ?? { action: "trash", count: 0 };
+      entry.action = "trash";
+      entry.count += 1;
+      this.triageMemory[domain] = entry;
+    }
+    this.#write(this.triagePath, this.triageMemory);
+    return this.triageMemory;
+  }
+
   /* Kursor synchronizacji leży osobno od ustawień: to nie jest wybór
      użytkownika, tylko zakładka w książce. */
   getCloudState() {
@@ -551,6 +589,9 @@ class Store {
       deletedAt: null,
       // null znaczy „serwer jeszcze tego nie widział".
       syncedAt: null,
+      /* Klucz notatki systemowej (np. "free-thoughts") albo null dla
+         zwykłej notatki użytkownika — patrz FREE_THOUGHTS_KEY wyżej. */
+      system: null,
       ...patch,
     };
     this.notes.unshift(note);
@@ -562,7 +603,11 @@ class Store {
   updateNote(id, patch) {
     const note = this.notes.find((item) => item.id === id && !item.deletedAt);
     if (!note) return null;
-    Object.assign(note, patch, { updatedAt: new Date().toISOString() });
+    /* Notatka systemowa nie zmienia nazwy — `system` jest jej jedyną,
+       nieusuwalną tożsamością, a tytuł ma być stałym drogowskazem do niej.
+       Reszta pól (kolor, szuflada, treść…) rusza się normalnie. */
+    const safePatch = note.system && "title" in patch ? { ...patch, title: note.title } : patch;
+    Object.assign(note, safePatch, { updatedAt: new Date().toISOString() });
     this.#write(this.notesPath, this.notes);
     logger.logChange("NOTATKA", `Zaktualizowano notatkę (id: ${id})`);
     return note;
@@ -580,6 +625,9 @@ class Store {
   deleteNote(id) {
     const note = this.notes.find((item) => item.id === id);
     if (!note) return true;
+    // Notatka systemowa nie znika — to jedyna gwarancja, że „Do notatki"
+    // zawsze ma dokąd pisać.
+    if (note.system) return false;
     note.text = "";
     note.title = null;
     note.previousText = null;
@@ -599,6 +647,49 @@ class Store {
     note.updatedAt = new Date().toISOString();
     this.#write(this.notesPath, this.notes);
     logger.logChange("NOTATKA", `Dopisano tekst do notatki (id: ${id}, znaków: ${text.length})`);
+    return note;
+  }
+
+  /**
+   * Notatka „Free Thoughts" — dokładnie jedna w całej aplikacji, rozpoznawana
+   * po `system`, nigdy po tytule (patrz FREE_THOUGHTS_KEY). Jeśli ktoś już ma
+   * zwykłą notatkę nazwaną tak samo, zostaje nietknięta — to inna notatka.
+   */
+  getFreeThoughtsNote() {
+    return this.notes.find((note) => note.system === FREE_THOUGHTS_KEY && !note.deletedAt) ?? null;
+  }
+
+  /** Tworzy „Free Thoughts" przy pierwszym użyciu; potem zawsze zwraca tę samą. */
+  ensureFreeThoughtsNote() {
+    return this.getFreeThoughtsNote() ?? this.createNote({ title: "Free Thoughts", pinned: true, system: FREE_THOUGHTS_KEY });
+  }
+
+  /**
+   * Dopisanie oczyszczonej wolnej myśli jako osobnego bloku z nagłówkiem
+   * daty i godziny.
+   *
+   * `sourceId` wiąże wpis z konkretnym nagraniem — ponowienie tego samego
+   * dyktowania (np. po błędzie sieci) nie dokłada drugiego bloku. Rejestr
+   * trzyma tylko ostatnie 200 id, bo to zapora na powtórzenie NAJŚWIEŻSZEGO
+   * nagrania, a nie pełna historia.
+   */
+  appendFreeThought(text, sourceId = null) {
+    const clean = String(text ?? "").trim();
+    if (!clean) return null;
+    const note = this.ensureFreeThoughtsNote();
+
+    if (sourceId) {
+      note.freeThoughtLog = Array.isArray(note.freeThoughtLog) ? note.freeThoughtLog : [];
+      if (note.freeThoughtLog.includes(sourceId)) return note;
+      note.freeThoughtLog.push(sourceId);
+      if (note.freeThoughtLog.length > 200) note.freeThoughtLog = note.freeThoughtLog.slice(-200);
+    }
+
+    const block = freeThoughtBlock(clean);
+    note.text = note.text ? `${note.text.trimEnd()}\n\n${block}` : block;
+    note.updatedAt = new Date().toISOString();
+    this.#write(this.notesPath, this.notes);
+    logger.logChange("NOTATKA", `Dopisano wolną myśl do Free Thoughts (znaków: ${clean.length})`);
     return note;
   }
 
@@ -735,8 +826,8 @@ class Store {
  * Cichy błąd 404 przy pierwszym dyktowaniu byłby gorszy niż reset.
  */
 function migrate(settings) {
-  const KNOWN_STT = ["deepgram", "gemini", "openai", "groq", "mock"];
-  const KNOWN_SIEVE = ["gemini", "openai", "groq", "anthropic"];
+  const KNOWN_STT = ["deepgram", "gemini", "groq", "mock"];
+  const KNOWN_SIEVE = ["gemini", "groq", "anthropic"];
 
   // Skrót nie ma już trybów. „hold", „toggle" i „double-tap" były wyborem
   // między gestami, które dziś działają obok siebie; przełącznik hands-off
@@ -753,13 +844,6 @@ function migrate(settings) {
     settings.stt = structuredClone(DEFAULTS.stt);
   }
 
-  // Naprawa niezgodności: jeśli sieve ma klucz OpenAI (sk-proj-...), ale dostawcę „gemini”, przestaw na „openai”
-  if (settings.sieve?.provider === "gemini" && settings.sieve?.apiKey?.startsWith("sk-proj-")) {
-    settings.sieve.provider = "openai";
-    if (settings.sieve.model === "gemini-2.5-flash" || settings.sieve.model === "gemini-3.7-flash") {
-      settings.sieve.model = "gpt-4o-mini";
-    }
-  }
   /* Listwy nad Dockiem nie ma — jej cztery czynności przejęła taca widgetu
      (patrz WIDGET_TRAY w main/main.js). Kto miał listwę włączoną, ten chciał
      mieć te czynności pod ręką: włączamy mu więc widget, zamiast zabierać
@@ -773,11 +857,12 @@ function migrate(settings) {
   // się nigdzie znaleźć — a plik ustawień czyta się także oczami.
   delete settings.floater;
 
-  // Widget dostał drugi widok. Ustawienia sprzed niego nie mają pola `mode`
-  // — a nierozpoznana wartość (z nowszej wersji albo z ręcznej edycji pliku)
-  // zostawiałaby znaczek, który po kliknięciu nie robi nic.
-  if (settings.widget && !["compact", "desk"].includes(settings.widget.mode)) {
-    settings.widget.mode = "compact";
+  // Widget stracił drugi widok — została tylko talia na pulpicie. Pola
+  // sprzed tej zmiany nic już nie robią, ale zostawione w pliku wyglądają
+  // jak ustawienie, którego nie da się nigdzie znaleźć.
+  if (settings.widget) {
+    delete settings.widget.mode;
+    delete settings.widget.panel;
   }
   if (settings.widget && (!settings.widget.cards || typeof settings.widget.cards !== "object")) {
     settings.widget.cards = {};
@@ -810,12 +895,16 @@ function migrate(settings) {
     settings.shot = structuredClone(DEFAULTS.shot);
   } else {
     const shot = settings.shot;
-    if (!["openai", "mock"].includes(shot.provider)) shot.provider = DEFAULTS.shot.provider;
+    if (!["gemini", "mock"].includes(shot.provider)) shot.provider = DEFAULTS.shot.provider;
     if (!shot.model) shot.model = DEFAULTS.shot.model;
     if (!["new", "note", "cursor"].includes(shot.target)) shot.target = DEFAULTS.shot.target;
     if (!["text", "image", "both"].includes(shot.form)) shot.form = DEFAULTS.shot.form;
     if (typeof shot.ask !== "boolean") shot.ask = true;
     if (typeof shot.copy !== "boolean") shot.copy = true;
+  }
+
+  if (!["light", "dark", "system"].includes(settings.theme)) {
+    settings.theme = DEFAULTS.theme;
   }
 
   settings.schema = SCHEMA;
@@ -843,4 +932,4 @@ function deepMerge(base, patch) {
   return base;
 }
 
-module.exports = { Store, DEFAULTS, CLOUD_STATE, joinNote, HISTORY_RETENTION_MS };
+module.exports = { Store, DEFAULTS, CLOUD_STATE, joinNote, HISTORY_RETENTION_MS, FREE_THOUGHTS_KEY };

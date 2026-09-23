@@ -10,7 +10,21 @@ if (!window.cribro) {
     return () => (listeners[channel] = listeners[channel].filter((fn) => fn !== handler));
   };
 
+  const resolveMockTheme = (pref) => {
+    if (pref === "light" || pref === "dark") return pref;
+    return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  };
+
   const minutesAgo = (n) => new Date(Date.now() - n * 60000).toISOString();
+
+  const GEMINI_FALLBACK_MODELS = [
+    ["gemini-2.5-flash", "Gemini 2.5 Flash — szybki, domyślny multimodalny (OCR i Audio)"],
+    ["gemini-2.5-pro", "Gemini 2.5 Pro — zaawansowana analiza tekstu"],
+    ["gemini-2.0-flash", "Gemini 2.0 Flash — alternatywny szybki model ogólny"],
+    ["gemini-2.0-flash-lite", "Gemini 2.0 Flash-Lite — najlżejszy model bazowy"],
+    ["gemini-1.5-flash", "Gemini 1.5 Flash — stabilna wersja LTS"],
+    ["gemini-1.5-pro", "Gemini 1.5 Pro — wersja Pro LTS"],
+  ];
 
   const seed = [
     {
@@ -65,7 +79,7 @@ if (!window.cribro) {
     rawWords: words(entry.raw),
     siftedWords: words(entry.text),
     provider: "demo",
-    model: "gemini-3.7-flash",
+    model: "gemini-2.5-flash",
     pasted: true,
   }));
 
@@ -80,6 +94,7 @@ if (!window.cribro) {
     mesh: "srednie",
     language: { mode: "bilingual", primary: "pl", secondary: "en" },
     uiLanguage: "pl",
+    theme: "system",
     /* Makieta pokazuje to, co widzi ZWYKŁY użytkownik — a ten nie widzi
        kroku „Silniki" wcale (patrz main/owner.js). Do obejrzenia go
        w przeglądarce wystarczy dopisać ?owner do adresu makiety. */
@@ -93,8 +108,8 @@ if (!window.cribro) {
     playSound: true,
     launchAtLogin: false,
     keepRaw: true,
-    stt: { provider: "deepgram", model: "nova-3", apiKey: "", fallbackProvider: "openai", fallbackModel: "whisper-1", fallbackApiKey: "", groqModel: "whisper-large-v3-turbo", groqApiKey: "" },
-    sieve: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "", customInstruction: "", fallbackProvider: "openai", fallbackModel: "gpt-4o-mini", fallbackApiKey: "", groqModel: "llama-3.3-70b-versatile", groqApiKey: "" },
+    stt: { provider: "deepgram", model: "nova-3", apiKey: "", groqModel: "whisper-large-v3-turbo", groqApiKey: "" },
+    sieve: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "", customInstruction: "", groqModel: "llama-3.3-70b-versatile", groqApiKey: "" },
     /* Tekst z ekranu. W przeglądarce nie ma czego zaznaczać, więc atrapa
        stoi na dostawcy „mock" — karta w Ustawieniach ma pokazywać kształt
        wyboru, a nie prosić o cudzy klucz. */
@@ -166,7 +181,7 @@ if (!window.cribro) {
         },
       ],
     },
-    widget: { enabled: false, mode: "compact", x: null, y: null, cards: {} },
+    widget: { enabled: false, x: null, y: null, cards: {} },
     /* Przewodnik w makiecie jest już „pokazany": zrzuty ekranu robi się
        z gotowego okna, a nie z okna zasłoniętego slajdem. Przycisk na dole
        paska działa normalnie i tędy się go otwiera. */
@@ -204,6 +219,71 @@ if (!window.cribro) {
   };
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  /** Dane poranka do makiety — jedno źródło dla onData i dla generate(). */
+  function mockBriefingData() {
+    const hour = 3600e3;
+    const at = new Date();
+    const o = (h, m = 0) => new Date(at.getFullYear(), at.getMonth(), at.getDate(), h, m).getTime();
+    return {
+      at: at.toISOString(),
+      googleActive: true,
+      local: [],
+      plan: {
+        all: [
+          { id: "1", title: "Stand-up zespołu", from: o(9), to: o(9, 15), guests: 5 },
+          { id: "2", title: "Kursant 4 — pierwsze zajęcia", from: o(11, 30), to: o(12, 15), guests: 2 },
+          { id: "3", title: "Przegląd tygodnia z Magdaleną", from: o(14), to: o(15), guests: 4 },
+        ],
+        done: [{ id: "1" }],
+        ahead: [
+          { id: "2", title: "Kursant 4 — pierwsze zajęcia", from: o(11, 30), to: o(12, 15) },
+          { id: "3", title: "Przegląd tygodnia z Magdaleną", from: o(14), to: o(15) },
+        ],
+        next: { id: "2", from: o(11, 30) },
+        minutesToNext: 35,
+      },
+      picks: [
+        {
+          id: "a", threadId: "t1", from: "Magdalena Nowak", address: "magda@example.com",
+          subject: "Grafik zajęć — potwierdzenie",
+          why: ["jest dziś na Twoim spotkaniu", "jest w nim pytanie", "wisi 2 dni"],
+          link: "https://mail.google.com/mail/u/0/#inbox/t1",
+        },
+        {
+          id: "b", threadId: "t2", from: "Tomasz Kaczmarek", address: "tomasz@example.com",
+          subject: "Link do Meet",
+          why: ["napisane wprost do Ciebie", "jest w nim pytanie"],
+          link: "https://mail.google.com/mail/u/0/#inbox/t2",
+        },
+        {
+          id: "c", threadId: "t3", from: "Biuro rachunkowe", address: "biuro@example.com",
+          subject: "Faktura za sierpień",
+          why: ["wisi 4 dni"],
+          link: "https://mail.google.com/mail/u/0/#inbox/t3",
+        },
+      ],
+      feeds: [
+        { source: "Serwis", title: "Nowa wersja Electrona zmienia zasady podpisywania", link: "https://x", at: Date.now() - hour },
+        { source: "Serwis", title: "Apple domyka lukę w EventKit", link: "https://y", at: Date.now() - 3 * hour },
+      ],
+      words: {
+        headline: "Trzy spotkania, dzień zbity po południu — poranek masz wolny.",
+        mail: [
+          "Magdalena Nowak — czeka na potwierdzenie grafiku, pyta wprost i wisi od wtorku.",
+          "Tomasz Kaczmarek — prosi o link do zajęć, które zaczynają się dziś.",
+          "Biuro rachunkowe — faktura za sierpień, nic pilnego poza terminem.",
+        ],
+        day: [
+          "9:00 Stand-up zespołu",
+          "11:30 Kursant 4 — pierwsze zajęcia, Tomasz czeka na link.",
+          "14:00 Przegląd tygodnia z Magdaleną — to tam wróci temat grafiku.",
+        ],
+        world: ["Zmiany w podpisywaniu aplikacji na macOS."],
+      },
+      problems: [],
+    };
+  }
 
   window.cribro = {
     isDesktop: false,
@@ -253,6 +333,24 @@ if (!window.cribro) {
         return structuredClone(settings);
       },
       onChange: on("settings:changed"),
+    },
+
+    /* Atrapa silnika motywu. W przeglądarce nie ma procesu głównego, więc
+       'system' pyta wprost media query — to samo, co w Electronie robi
+       nativeTheme.shouldUseDarkColors. */
+    theme: {
+      get: async () => ({
+        preference: settings.theme,
+        resolved: resolveMockTheme(settings.theme),
+      }),
+      set: async (preference) => {
+        settings.theme = ["light", "dark", "system"].includes(preference) ? preference : "system";
+        const resolved = resolveMockTheme(settings.theme);
+        document.documentElement.setAttribute("data-theme", resolved);
+        emit("theme:changed", resolved);
+        return { preference: settings.theme, resolved };
+      },
+      onChange: on("theme:changed"),
     },
 
     history: {
@@ -677,31 +775,24 @@ if (!window.cribro) {
       show: async () => true,
       settings: async () => ({ enabled: false, x: null, y: null }),
       passthrough: () => {},
-      /* Pokrętła z tacy działają też w makiecie — bo to po nich widać,
-         że kliknięcie w kółko przestawia ustawienie, a nie otwiera okna. */
-      run: async (action) => {
-        if (action !== "sieve") return true;
-        const order = ["zgrubne", "srednie", "drobne", "smart"];
-        settings.mesh = order[(order.indexOf(settings.mesh) + 1) % order.length] ?? order[0];
-        emit("settings:changed", structuredClone(settings));
-        return settings.mesh;
-      },
+      run: async () => true,
       onLevel: on("widget:level"),
       // W przeglądarce nie ma okna do zmieniania rozmiaru, więc oddajemy
       // geometrię, jaką ustawiłby proces główny dla widgetu przy dolnej
-      // krawędzi — tyle wystarczy, żeby układ i animacja miały się od czego
-      // odbić w makiecie.
+      // krawędzi — tyle wystarczy, żeby łuk miał się od czego odbić
+      // w makiecie. Sześć kółek na ćwiartce koła o promieniu 130,
+      // tak jak liczy arcSlots w main/main.js.
       layout: async (view) => ({
         view,
-        dir: "up",
-        ax: view === "panel" ? 150 : 52,
-        ay: view === "panel" ? 386 : 52,
+        ax: 52,
+        ay: 52,
         badge: 60,
-        tray: { dir: "down", side: "right", item: 34, step: 9, gap: 12 },
-        panelW: 256,
-        panelH: 320,
-        panelX: 22,
-        panelY: 22,
+        tray: { dir: "down", side: "right" },
+        arc: Array.from({ length: 6 }, (_, i) => {
+          const deg = (i * 90) / 5;
+          const rad = (deg * Math.PI) / 180;
+          return { dx: Math.round(Math.cos(rad) * 130), dy: Math.round(Math.sin(rad) * 130) };
+        }),
       }),
       /* Przeciąganie znaczka w makiecie nie ma czego przesuwać — okna
          w przeglądarce nie ma. Odpowiadamy „nic się nie ruszyło", żeby
@@ -781,6 +872,16 @@ if (!window.cribro) {
       grab: async () => false,
       ready: async () => null,
       save: async () => ({ error: "Makieta nie robi zrzutów ekranu." }),
+      updateImage: async () => true,
+      copyText: async () => ({ ok: true }),
+      copyImage: async () => ({ ok: true }),
+      copyAll: async () => ({ ok: true }),
+      shareAppleNotes: async () => ({ ok: true }),
+      shareNotion: async () => ({ ok: true }),
+      shareSpark: async () => ({ ok: true }),
+      shareWhatsApp: async () => ({ ok: true }),
+      saveToDisk: async () => ({ saved: true, filePath: "/mock/zrzut.png" }),
+      setWindowSize: async () => true,
       cancel: () => {},
       onText: on("shot:text"),
     },
@@ -864,72 +965,78 @@ if (!window.cribro) {
         mismatch: false,
       }),
       show: async () => true,
+      generate: async () => mockBriefingData(),
+      toSticky: async () => true,
       connect: async () => ({ account: { signedIn: true, email: "ty@example.com" } }),
       disconnect: async () => ({ account: { signedIn: false, email: null } }),
       onData: (handler) => {
-        const hour = 3600e3;
-        const at = new Date();
-        const o = (h, m = 0) => new Date(at.getFullYear(), at.getMonth(), at.getDate(), h, m).getTime();
-        setTimeout(
-          () =>
-            handler({
-              at: at.toISOString(),
-              plan: {
-                all: [
-                  { id: "1", title: "Stand-up zespołu", from: o(9), to: o(9, 15), guests: 5 },
-                  { id: "2", title: "Kursant 4 — pierwsze zajęcia", from: o(11, 30), to: o(12, 15), guests: 2 },
-                  { id: "3", title: "Przegląd tygodnia z Magdaleną", from: o(14), to: o(15), guests: 4 },
-                ],
-                done: [{ id: "1" }],
-                ahead: [{ id: "2" }, { id: "3" }],
-                next: { id: "2", from: o(11, 30) },
-                minutesToNext: 35,
-              },
-              picks: [
-                {
-                  id: "a", threadId: "t1", from: "Magdalena Nowak", address: "magda@example.com",
-                  subject: "Grafik zajęć — potwierdzenie",
-                  why: ["jest dziś na Twoim spotkaniu", "jest w nim pytanie", "wisi 2 dni"],
-                  link: "https://mail.google.com/mail/u/0/#inbox/t1",
-                },
-                {
-                  id: "b", threadId: "t2", from: "Tomasz Kaczmarek", address: "tomasz@example.com",
-                  subject: "Link do Meet",
-                  why: ["napisane wprost do Ciebie", "jest w nim pytanie"],
-                  link: "https://mail.google.com/mail/u/0/#inbox/t2",
-                },
-                {
-                  id: "c", threadId: "t3", from: "Biuro rachunkowe", address: "biuro@example.com",
-                  subject: "Faktura za sierpień",
-                  why: ["wisi 4 dni"],
-                  link: "https://mail.google.com/mail/u/0/#inbox/t3",
-                },
-              ],
-              feeds: [
-                { source: "Serwis", title: "Nowa wersja Electrona zmienia zasady podpisywania", link: "https://x", at: Date.now() - hour },
-                { source: "Serwis", title: "Apple domyka lukę w EventKit", link: "https://y", at: Date.now() - 3 * hour },
-              ],
-              words: {
-                headline: "Trzy spotkania, dzień zbity po południu — poranek masz wolny.",
-                mail: [
-                  "Magdalena Nowak — czeka na potwierdzenie grafiku, pyta wprost i wisi od wtorku.",
-                  "Tomasz Kaczmarek — prosi o link do zajęć, które zaczynają się dziś.",
-                  "Biuro rachunkowe — faktura za sierpień, nic pilnego poza terminem.",
-                ],
-                day: [
-                  "9:00 Stand-up zespołu",
-                  "11:30 Kursant 4 — pierwsze zajęcia, Tomasz czeka na link.",
-                  "14:00 Przegląd tygodnia z Magdaleną — to tam wróci temat grafiku.",
-                ],
-                world: ["Zmiany w podpisywaniu aplikacji na macOS."],
-              },
-              problems: [],
-            }),
-          400,
-        );
+        setTimeout(() => handler(mockBriefingData()), 400);
         return () => {};
       },
+      onBusy: () => () => {},
     },
+
+    /* Raport Skrzynki. Atrapa ma tę samą pamięć decyzji (triageMemory), co
+       prawdziwy store.js, żeby dało się obejrzeć, jak licznik rośnie po
+       kliknięciu „Przenieś zaznaczone do Kosza" — bez tego makieta nie
+       pokazywałaby jedynej rzeczy, która czyni to sito „uczącym się". */
+    mail: (() => {
+      const headers = [
+        { id: "m1", from: "Substack Digest <digest@substack.com>", subject: "Twój tygodniowy przegląd czytelni", snippet: "5 nowych artykułów od autorów, których obserwujesz.", at: minutesAgo(120), unread: true, listUnsubscribe: true },
+        { id: "m2", from: "GitHub <notifications@github.com>", subject: "[cribro/sift] Nowy komentarz w #142", snippet: "maciejw skomentował: „Warto to przetestować na Windows”.", at: minutesAgo(300), unread: true, listUnsubscribe: true },
+        { id: "m3", from: "LinkedIn <notifications-noreply@linkedin.com>", subject: "Masz 3 nowe powiadomienia", snippet: "Zobacz, kto obejrzał Twój profil.", at: minutesAgo(1400), unread: true, listUnsubscribe: true },
+        { id: "m5", from: "GitHub <notifications@github.com>", subject: "Re: [cribro/sift] Pilne: build produkcyjny nie przechodzi", snippet: "Pytanie wprost do Ciebie: czy możesz zerknąć dziś?", at: minutesAgo(40), unread: true, listUnsubscribe: true, isReply: true },
+        { id: "m6", from: "Biuro Rachunkowe Kowalscy <biuro@kowalscy-ksiegowosc.pl>", subject: "Faktura VAT 09/2026", snippet: "W załączniku faktura za wrzesień.", at: minutesAgo(1550) },
+        { id: "m7", from: "Magdalena Nowak <magda@klient-abc.pl>", subject: "Kolejne zajęcia — zmiana godziny?", snippet: "Czy dałoby się przesunąć zajęcia na 17:00?", at: minutesAgo(180) },
+        { id: "m8", from: "Zespół Cribro <no-reply@cribro.app>", subject: "Twoje konto wymaga weryfikacji w ciągu 24h", snippet: "Zauważyliśmy logowanie z nowego urządzenia.", at: minutesAgo(20) },
+        { id: "m10", from: "Tomasz Kaczmarek <tomasz@nowyklient.com>", subject: "Zapytanie o kurs indywidualny", snippet: "Jestem zainteresowany kursem 1:1 — jakie terminy?", at: minutesAgo(360) },
+      ];
+      const memory = { "github.com": { action: "trash", count: 4 }, "substack.com": { action: "trash", count: 7 } };
+      const domainOf = (from) => {
+        const m = String(from).match(/<([^>]+)>/);
+        const address = (m ? m[1] : from).toLowerCase();
+        return address.split("@")[1] ?? "";
+      };
+      const nameOf = (from) => {
+        const m = String(from).match(/^\s*"?([^"<]*?)"?\s*<[^>]+>\s*$/);
+        return m?.[1]?.trim() || from;
+      };
+      const decide = (mail) => {
+        const domain = domainOf(mail.from);
+        const trashed = memory[domain]?.action === "trash" && memory[domain].count >= 1;
+        const odd = mail.isReply || /\?/.test(`${mail.subject} ${mail.snippet}`) || /pilne|faktura/i.test(mail.subject);
+        if ((mail.listUnsubscribe || trashed) && !odd) return ["trashCandidate", trashed ? `Domena, którą zwykle usuwasz (${memory[domain].count}×).` : "Wygląda na newsletter albo powiadomienie."];
+        if ((mail.listUnsubscribe || trashed) && odd) return ["glanceOnly", "Zwykle to usuwasz, ale ten temat wygląda na coś ważnego."];
+        if (odd) return ["requiresAction", "Pytanie wprost albo coś, co wygląda na pilne."];
+        return ["requiresAction", "Nadawca wygląda na osobę, nie na automat."];
+      };
+      const sent = [
+        { id: "s1", to: "Magdalena Nowak", subject: "Re: Kolejne zajęcia — zmiana godziny?", about: "potwierdzenie zmiany godziny i terminu płatności", days: 3, reason: "Brak odpowiedzi od 3 dni." },
+        { id: "s2", to: "Tomasz Kaczmarek", subject: "Oferta kursu indywidualnego 1:1", about: "ofertę kursu 1:1 i dostępne terminy", days: 4, reason: "Brak odpowiedzi od 4 dni." },
+      ];
+      return {
+        fetchHeaders: async () => structuredClone(headers),
+        analyze: async () => {
+          await wait(700);
+          const groups = { trashCandidate: [], glanceOnly: [], requiresAction: [] };
+          for (const mail of headers) {
+            const [bucket, reason] = decide(mail);
+            groups[bucket].push({ id: mail.id, from: nameOf(mail.from), domain: domainOf(mail.from), subject: mail.subject, snippet: mail.snippet, at: mail.at, reason });
+          }
+          return { ...groups, awaitingReply: structuredClone(sent), degraded: false, error: null };
+        },
+        trashSelected: async (items) => {
+          await wait(300);
+          for (const item of items ?? []) {
+            const entry = memory[item.domain] ?? { action: "trash", count: 0 };
+            entry.action = "trash";
+            entry.count += 1;
+            memory[item.domain] = entry;
+          }
+          return { trashed: (items ?? []).map((i) => i.id), memory: structuredClone(memory) };
+        },
+      };
+    })(),
 
     system: {
       copy: async (text) => {
@@ -1014,24 +1121,7 @@ if (!window.cribro) {
             needsKey: true,
             keyHint: "AIza…",
             keyUrl: "https://aistudio.google.com/apikey",
-            models: [
-              ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — domyślny, najluźniejsze limity"],
-              ["gemini-3.7-flash", "Gemini 3.7 Flash — zatłoczony na darmowym poziomie"],
-              ["gemini-3.1-pro", "Gemini 3.1 Pro — dokładniejszy"],
-              ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy"],
-            ],
-          },
-          openai: {
-            label: "OpenAI",
-            needsKey: true,
-            keyHint: "sk-…",
-            keyUrl: "https://platform.openai.com/api-keys",
-            models: [
-              ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
-              ["gpt-transcribe", "GPT Transcribe — najdokładniejszy"],
-              ["gpt-4o-transcribe", "GPT-4o Transcribe"],
-              ["gpt-4o-mini-transcribe", "GPT-4o mini Transcribe"],
-            ],
+            models: GEMINI_FALLBACK_MODELS,
           },
           groq: {
             label: "Groq (LPU — ultra-szybki)",
@@ -1051,24 +1141,7 @@ if (!window.cribro) {
             needsKey: true,
             keyHint: "AIza…",
             keyUrl: "https://aistudio.google.com/apikey",
-            models: [
-              ["gemini-2.5-flash", "Gemini 2.5 Flash — szybki, sprawdzony"],
-              ["gemini-3.7-flash", "Gemini 3.7 Flash — domyślny"],
-              ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — najluźniejsze limity"],
-              ["gemini-3.1-pro", "Gemini 3.1 Pro — najlepsza redakcja"],
-            ],
-          },
-          openai: {
-            label: "OpenAI",
-            needsKey: true,
-            keyHint: "sk-…",
-            keyUrl: "https://platform.openai.com/api-keys",
-            models: [
-              ["gpt-4o-mini", "GPT-4o mini — szybki, tani i dokładny"],
-              ["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"],
-              ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"],
-              ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"],
-            ],
+            models: GEMINI_FALLBACK_MODELS,
           },
           groq: {
             label: "Groq (LPU — ultra-szybki)",
@@ -1093,27 +1166,24 @@ if (!window.cribro) {
           },
         },
         shot: {
-          openai: {
-            label: "OpenAI",
+          gemini: {
+            label: "Google Gemini",
             needsKey: true,
-            keyHint: "sk-…",
-            keyUrl: "https://platform.openai.com/api-keys",
-            models: [
-              ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy, domyślny"],
-              ["gpt-5.6-terra", "GPT-5.6 Terra — pewniejszy przy piśmie odręcznym"],
-              ["gpt-4o-mini", "GPT-4o mini — starszy, tani klasyk"],
-            ],
+            keyHint: "AIza…",
+            keyUrl: "https://aistudio.google.com/apikey",
+            models: GEMINI_FALLBACK_MODELS,
           },
           mock: { label: "Atrapa (bez klucza)", needsKey: false, models: [["mock", "Przykładowy odczyt"]] },
         },
       }),
+      geminiModels: async () => GEMINI_FALLBACK_MODELS,
       testStt: async () => {
         await wait(600);
         return { ok: true, note: `${settings.stt.provider} / ${settings.stt.model} odpowiedział w 312 ms.` };
       },
       testShot: async () => {
         await wait(500);
-        return { ok: true, note: `${settings.shot?.provider ?? "openai"} / ${settings.shot?.model ?? "gpt-5.6-luna"} odczytał tekst z obrazu w 410 ms.` };
+        return { ok: true, note: `${settings.shot?.provider ?? "gemini"} / ${settings.shot?.model ?? "gemini-2.0-flash-lite"} odczytał tekst z obrazu w 410 ms.` };
       },
       testSieve: async () => {
         await wait(900);
@@ -1199,6 +1269,8 @@ if (!window.cribro) {
     onBackend: on("hotkey:backend"),
     onRescue: on("rescue:flushed"),
   };
+
+  document.documentElement.setAttribute("data-theme", resolveMockTheme(settings.theme));
 
   function deepMerge(base, patch) {
     for (const [key, value] of Object.entries(patch ?? {})) {

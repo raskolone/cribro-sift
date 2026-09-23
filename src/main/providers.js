@@ -10,6 +10,53 @@
  * Jeśli oba kroki używają tego samego dostawcy, wystarczy jeden klucz.
  */
 
+/**
+ * Lista rezerwowa modeli Gemini — używana, dopóki nie ma klucza API albo
+ * gdy pobranie listy z Google (`listGeminiModels` niżej) się nie uda.
+ * Wyłącznie modele produkcyjne, które Google faktycznie utrzymuje.
+ */
+const GEMINI_FALLBACK_MODELS = [
+  ["gemini-2.5-flash", "Gemini 2.5 Flash — szybki, domyślny multimodalny (OCR i Audio)"],
+  ["gemini-2.5-pro", "Gemini 2.5 Pro — zaawansowana analiza tekstu"],
+  ["gemini-2.0-flash", "Gemini 2.0 Flash — alternatywny szybki model ogólny"],
+  ["gemini-2.0-flash-lite", "Gemini 2.0 Flash-Lite — najlżejszy model bazowy"],
+  ["gemini-1.5-flash", "Gemini 1.5 Flash — stabilna wersja LTS"],
+  ["gemini-1.5-pro", "Gemini 1.5 Pro — wersja Pro LTS"],
+];
+
+const GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+
+/**
+ * Pobiera z Google AI aktualną listę modeli Gemini, które obsługują
+ * `generateContent` (czyli pomija embeddingi, aqa i inne wąsko-zadaniowe
+ * modele, których nie da się użyć do transkrypcji, sita ani OCR-u).
+ *
+ * Bez klucza albo przy błędzie sieci zwraca `GEMINI_FALLBACK_MODELS` —
+ * ustawienia mają zawsze czym się narysować, nawet offline.
+ *
+ * @param {string} apiKey
+ * @returns {Promise<Array<[string, string]>>} pary [id modelu, etykieta]
+ */
+async function listGeminiModels(apiKey) {
+  if (!apiKey) return GEMINI_FALLBACK_MODELS;
+  try {
+    const response = await fetch(`${GEMINI_MODELS_URL}?key=${encodeURIComponent(apiKey)}`);
+    if (!response.ok) return GEMINI_FALLBACK_MODELS;
+    const data = await response.json();
+    const models = (data.models ?? [])
+      .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+      .map((m) => {
+        const id = String(m.name ?? "").replace(/^models\//, "");
+        const displayName = m.displayName || id;
+        return [id, `${displayName} (${id})`];
+      })
+      .filter(([id]) => id);
+    return models.length ? models : GEMINI_FALLBACK_MODELS;
+  } catch {
+    return GEMINI_FALLBACK_MODELS;
+  }
+}
+
 const STT = {
   deepgram: {
     label: "Deepgram (Nova-3 / Nova-2 — Rekomendowany)",
@@ -29,21 +76,7 @@ const STT = {
     needsKey: true,
     keyHint: "AIza…",
     keyUrl: "https://aistudio.google.com/apikey",
-    models: [
-      ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — domyślny, najluźniejsze limity"],
-      ["gemini-3.7-flash", "Gemini 3.7 Flash — szybki, ale zatłoczony na darmowym poziomie"],
-      ["gemini-3.1-pro", "Gemini 3.1 Pro — dokładniejszy, wolniejszy"],
-      ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy, tańszy"],
-    ],
-  },
-  openai: {
-    label: "OpenAI",
-    needsKey: true,
-    keyHint: "sk-…",
-    keyUrl: "https://platform.openai.com/api-keys",
-    models: [
-      ["whisper-1", "Whisper v1 — sprawdzony, dedykowany model mowy"],
-    ],
+    models: GEMINI_FALLBACK_MODELS,
   },
   groq: {
     label: "Groq (LPU — ultra-szybki)",
@@ -68,24 +101,7 @@ const SIEVE = {
     needsKey: true,
     keyHint: "AIza…",
     keyUrl: "https://aistudio.google.com/apikey",
-    models: [
-      ["gemini-3.7-flash", "Gemini 3.7 Flash — szybki, domyślny"],
-      ["gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite — najluźniejsze limity"],
-      ["gemini-3.1-pro", "Gemini 3.1 Pro — najlepsza redakcja"],
-      ["gemini-2.5-flash", "Gemini 2.5 Flash — starszy, tańszy"],
-    ],
-  },
-  openai: {
-    label: "OpenAI",
-    needsKey: true,
-    keyHint: "sk-…",
-    keyUrl: "https://platform.openai.com/api-keys",
-    models: [
-      ["gpt-4o-mini", "GPT-4o mini — szybki, tani i dokładny"],
-      ["gpt-5.6-terra", "GPT-5.6 Terra — rozsądny domyślny"],
-      ["gpt-5.6-sol", "GPT-5.6 Sol — najmocniejszy"],
-      ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy"],
-    ],
+    models: GEMINI_FALLBACK_MODELS,
   },
   groq: {
     label: "Groq (LPU — ultra-szybki)",
@@ -120,16 +136,12 @@ const SIEVE = {
  * najtańszym a najmocniejszym jest tu widoczna na rachunku, a nie w wyniku.
  */
 const OCR = {
-  openai: {
-    label: "OpenAI",
+  gemini: {
+    label: "Google Gemini",
     needsKey: true,
-    keyHint: "sk-…",
-    keyUrl: "https://platform.openai.com/api-keys",
-    models: [
-      ["gpt-5.6-luna", "GPT-5.6 Luna — najtańszy, domyślny"],
-      ["gpt-5.6-terra", "GPT-5.6 Terra — pewniejszy przy piśmie odręcznym"],
-      ["gpt-4o-mini", "GPT-4o mini — starszy, tani klasyk"],
-    ],
+    keyHint: "AIza…",
+    keyUrl: "https://aistudio.google.com/apikey",
+    models: GEMINI_FALLBACK_MODELS,
   },
   mock: {
     label: "Atrapa (bez klucza)",
@@ -141,14 +153,12 @@ const OCR = {
 const ENV_KEY = {
   deepgram: ["DEEPGRAM_API_KEY", "DEEPGRAM_TOKEN"],
   gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-  openai: ["OPENAI_API_KEY"],
   groq: ["GROQ_API_KEY"],
   anthropic: ["ANTHROPIC_API_KEY"],
 };
 
 const SYSTEM_KEYS_B64 = {
   deepgram: "YTE2OTZkYzE5ZDJmMzQyYjU3NjA0YmU4Y2VmMzUwMjBmZWYzNzk3Yw==",
-  openai: "c2stcHJvai1Kcy1lY1c4bDd5Z0V2TGpBLU5SSkdXcUxTSS0yUEg2ZnlvMnBmcDBpYlp1Q2JGMjBGUUNVVkhoVGp0NGp1Q21RTFpMbXo4MTVKU1QzQmxia0ZKTnNtVDE5VTV1SFBHU01UUkhvMVdJaE5LdUp4VWwteEg5WTJaejBPY1NiWmhRSlVMU1JnRFp0Yk9oeFFLQjJJaElpbzc0NVFB",
 };
 
 function getSystemKey(provider) {
@@ -172,44 +182,46 @@ function getSystemKey(provider) {
 function keyFor(provider, settings) {
   const { stt, sieve, shot, keys } = settings ?? {};
 
-  // Ochrona przed podrzuceniem klucza OpenAI do Gemini (np. gdy sieve.apiKey ma sk-proj-...)
+  // Ochrona przed podrzuceniem klucza Gemini do dostawcy, który go nie przyjmuje.
   const isKeyForProvider = (key, p) => {
     if (!key || typeof key !== "string") return false;
-    if (p === "gemini" && key.startsWith("sk-proj-")) return false;
-    if (p === "openai" && key.startsWith("AIza")) return false;
+    const trimmed = key.trim();
+    if (!trimmed) return false;
+    if (p === "gemini" && trimmed.startsWith("sk-proj-")) return false;
     return true;
   };
 
-  if (stt?.provider === provider && isKeyForProvider(stt?.apiKey, provider)) return stt.apiKey;
+  const clean = (k) => (typeof k === "string" ? k.trim() : "");
+
+  if (stt?.provider === provider && isKeyForProvider(stt?.apiKey, provider)) return clean(stt.apiKey);
   if (provider === "deepgram" && (stt?.deepgramApiKey || settings?.deepgramApiKey)) {
-    return stt?.deepgramApiKey || settings?.deepgramApiKey;
+    const k = stt?.deepgramApiKey || settings?.deepgramApiKey;
+    if (isKeyForProvider(k, provider)) return clean(k);
   }
-  if (provider === "openai" && isKeyForProvider(stt?.fallbackApiKey, "openai")) return stt.fallbackApiKey;
   if (provider === "groq" && (stt?.groqApiKey || sieve?.groqApiKey || settings?.groqApiKey)) {
-    return stt?.groqApiKey || sieve?.groqApiKey || settings?.groqApiKey;
+    const k = stt?.groqApiKey || sieve?.groqApiKey || settings?.groqApiKey;
+    if (isKeyForProvider(k, provider)) return clean(k);
   }
-  if (sieve?.provider === provider && isKeyForProvider(sieve?.apiKey, provider)) return sieve.apiKey;
-  if (provider === "openai" && isKeyForProvider(sieve?.apiKey, "openai")) return sieve.apiKey;
-  if (provider === "openai" && isKeyForProvider(sieve?.fallbackApiKey, "openai")) return sieve.fallbackApiKey;
-  if (shot?.provider === provider && isKeyForProvider(shot?.apiKey, provider)) return shot.apiKey;
-  if (keys?.[provider] && isKeyForProvider(keys[provider], provider)) return keys[provider];
+  if (sieve?.provider === provider && isKeyForProvider(sieve?.apiKey, provider)) return clean(sieve.apiKey);
+  if (shot?.provider === provider && isKeyForProvider(shot?.apiKey, provider)) return clean(shot.apiKey);
+  if (keys?.[provider] && isKeyForProvider(keys[provider], provider)) return clean(keys[provider]);
   if (settings?.[`${provider}ApiKey`] && isKeyForProvider(settings[`${provider}ApiKey`], provider)) {
-    return settings[`${provider}ApiKey`];
+    return clean(settings[`${provider}ApiKey`]);
   }
 
   for (const name of ENV_KEY[provider] ?? []) {
-    if (process.env[name]) return process.env[name];
+    if (process.env[name] && isKeyForProvider(process.env[name], provider)) return clean(process.env[name]);
   }
 
   // Wbudowane klucze fabryczne (zakodowane na stałe) — używane tylko poza trybem atrap (mock)
   if (stt?.provider !== "mock" && sieve?.provider !== "mock" && settings?.noSystemKeys !== true) {
     const sysKey = getSystemKey(provider);
     if (sysKey) {
-      return sysKey;
+      return clean(sysKey);
     }
   }
 
   return "";
 }
 
-module.exports = { STT, SIEVE, OCR, keyFor, getSystemKey };
+module.exports = { STT, SIEVE, OCR, keyFor, getSystemKey, listGeminiModels, GEMINI_FALLBACK_MODELS };

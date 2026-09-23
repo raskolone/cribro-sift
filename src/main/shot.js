@@ -28,7 +28,7 @@ const { describeError } = require("./stt");
  * kończy ją bez pliku — i to jest cała obsługa anulowania.
  */
 
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /* Ponad tyle bajtów obrazek przestaje być zrzutem fragmentu, a zaczyna
    być całym ekranem w skali Retiny. Wysłanie takiego kosztuje kilka razy
@@ -177,26 +177,25 @@ function imageFromFile(filePath) {
   return { buffer, bytes: buffer.length, mime };
 }
 
-/** Żądanie do OpenAI. Osobno od wysyłki, żeby dało się sprawdzić bez sieci. */
+/** Żądanie do Gemini. Osobno od wysyłki, żeby dało się sprawdzić bez sieci. */
 function buildRequest(image, model, mime = "image/png") {
   return {
-    model,
-    messages: [
-      { role: "system", content: READ_PROMPT },
+    systemInstruction: { parts: [{ text: READ_PROMPT }] },
+    contents: [
       {
         role: "user",
-        content: [
-          {
-            type: "image_url",
-            // „high" tnie obrazek na kafle 512 px i czyta każdy z osobna.
-            // Przy zrzucie fragmentu to kilka kafli, czyli grosze — a bez
-            // tego drobny druk (stopka, przypis, kod) wychodzi zgadywanką.
-            image_url: { url: `data:${mime};base64,${image.toString("base64")}`, detail: "high" },
-          },
-        ],
+        parts: [{ inlineData: { mimeType: mime, data: image.toString("base64") } }],
       },
     ],
-    max_completion_tokens: 4000,
+    /* thinkingBudget: 0 wyłącza bufor myślenia — odczyt zrzutu jest zadaniem
+       odtwórczym (przepisz, co widać), więc rozumowanie modelu tylko dokłada
+       opóźnienie bez poprawy wyniku. temperature: 0.1 dla maksymalnej
+       wierności znaków. */
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 4000,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
   };
 }
 
@@ -211,15 +210,15 @@ function buildRequest(image, model, mime = "image/png") {
  */
 async function readText(image, settings, { mime = "image/png" } = {}) {
   const config = settings.shot ?? {};
-  const provider = config.provider ?? "openai";
-  const model = config.model || "gpt-5.6-luna";
+  const provider = config.provider ?? "gemini";
+  const model = config.model || "gemini-2.0-flash-lite";
 
   if (provider === "mock") {
     await wait(500);
     return { text: MOCK_TEXT, provider, model: "mock" };
   }
 
-  if (provider !== "openai") throw new Error(`Nieznany dostawca odczytu: ${provider}`);
+  if (provider !== "gemini") throw new Error(`Nieznany dostawca odczytu: ${provider}`);
 
   const apiKey = keyFor(provider, settings);
   if (!apiKey) return { text: "", provider, model, missingKey: true };
@@ -230,22 +229,20 @@ async function readText(image, settings, { mime = "image/png" } = {}) {
     );
   }
 
-  const response = await fetch(OPENAI_URL, {
+  const response = await fetch(`${GEMINI_URL}/${model}:generateContent`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { "x-goog-api-key": apiKey, "Content-Type": "application/json" },
     body: JSON.stringify(buildRequest(image, model, mime)),
   });
 
-  if (!response.ok) throw new Error(await describeError(response, "OpenAI"));
+  if (!response.ok) throw new Error(await describeError(response, "Gemini"));
 
   const data = await response.json();
-  const choice = data.choices?.[0];
-  return {
-    text: clean(choice?.message?.content ?? ""),
-    provider,
-    model,
-    refused: choice?.finish_reason === "content_filter",
-  };
+  if (data.promptFeedback?.blockReason) {
+    return { text: "", provider, model, refused: true };
+  }
+  const text = (data.candidates?.[0]?.content?.parts ?? []).map((part) => part.text ?? "").join("");
+  return { text: clean(text), provider, model, refused: false };
 }
 
 /**

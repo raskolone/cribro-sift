@@ -19,7 +19,7 @@ global.fetch = async (url, init) => {
     json: async () =>
       url.includes("googleapis")
         ? { candidates: [{ content: { parts: [{ text: "odpowiedź gemini" }] } }] }
-        : { choices: [{ message: { content: "odpowiedź openai" }, finish_reason: "stop" }], text: "odpowiedź openai" },
+        : { choices: [{ message: { content: "odpowiedź groq" }, finish_reason: "stop" }], text: "odpowiedź groq" },
   };
 };
 function tryJson(body) {
@@ -30,58 +30,60 @@ const base = {
   mesh: "srednie",
   language: "auto",
   grains: ["Cribro", "Hostinger"],
-  stt: { provider: "gemini", model: "gemini-3.7-flash", apiKey: "AIza-test" },
-  sieve: { provider: "gemini", model: "gemini-3.1-pro", apiKey: "", customInstruction: "" },
+  stt: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "AIza-test" },
+  sieve: { provider: "gemini", model: "gemini-2.5-pro", apiKey: "", customInstruction: "" },
 };
 const audio = Buffer.from("RIFFfake");
 
 (async () => {
-  /* 1. Gemini: transkrypcja */
+  /* 1. Gemini jako główny silnik dyktowania: transkrypcja + czyszczenie w jednym
+        (geminiTranscribeAudio — patrz main/stt.js) */
   calls.length = 0;
   let out = await transcribe(audio, base);
   let call = calls[0];
-  assert.ok(call.url.includes("/models/gemini-3.7-flash:generateContent"), "zły URL modelu");
+  assert.ok(call.url.includes("/models/gemini-2.5-flash:generateContent"), "zły URL modelu");
   assert.equal(call.init.headers["x-goog-api-key"], "AIza-test", "brak nagłówka z kluczem");
-  assert.ok(call.body.contents[0].parts[1].inlineData.mimeType === "audio/wav", "zły mime audio");
+  assert.ok(call.body.contents[0].parts[0].inlineData.mimeType === "audio/wav", "zły mime audio");
+  assert.ok(call.body.systemInstruction.parts[0].text.includes("transkrypcji mowy"), "brak system prompta Gemini Audio");
   assert.equal(call.body.generationConfig?.maxOutputTokens, 4096, "brak limitu maxOutputTokens");
-  assert.equal(call.body.generationConfig?.presencePenalty, 0.3, "brak kary presencePenalty");
-  assert.equal(call.body.generationConfig?.frequencyPenalty, 0.3, "brak kary frequencyPenalty");
+  assert.equal(call.body.generationConfig?.thinkingConfig?.thinkingBudget, 0, "brak wyłączenia bufora myślenia");
   assert.equal(out.text, "odpowiedź gemini");
-  console.log("✓ Gemini transkrypcja: URL, nagłówek, audio/wav i kary za zapętlenie");
+  assert.equal(out.cleaned, true, "Gemini Audio powinno oznaczyć wynik jako już oczyszczony");
+  console.log("✓ Gemini Audio (główny STT): URL, nagłówek, audio/wav, prompt i thinkingConfig");
 
   /* 2. Wspólny klucz: sito nie ma własnego, ale ten sam dostawca co krok 1 */
   calls.length = 0;
   out = await sift({ raw: "yyy to to znaczy działa", settings: base });
   call = calls[0];
   assert.equal(call.init.headers["x-goog-api-key"], "AIza-test", "klucz nie został współdzielony");
-  assert.ok(call.url.includes("gemini-3.1-pro"), "sito użyło modelu transkrypcji");
+  assert.ok(call.url.includes("gemini-2.5-pro"), "sito użyło modelu transkrypcji");
   assert.ok(call.body.systemInstruction.parts[0].text.includes("NIE ODPOWIADASZ"), "brak kontraktu w systemInstruction");
   assert.equal(out.text, "odpowiedź gemini");
   console.log("✓ Sito Gemini: wspólny klucz, własny model, prompt systemowy");
 
-  /* 3. OpenAI po obu stronach */
+  /* 3. Groq po obu stronach */
   calls.length = 0;
-  const openai = {
+  const groq = {
     ...base,
-    stt: { provider: "openai", model: "gpt-transcribe", apiKey: "sk-test" },
-    sieve: { provider: "openai", model: "gpt-5.6-terra", apiKey: "", customInstruction: "" },
+    stt: { provider: "groq", model: "whisper-large-v3-turbo", apiKey: "gsk-test" },
+    sieve: { provider: "groq", model: "llama-3.3-70b-versatile", apiKey: "", customInstruction: "" },
   };
-  await transcribe(audio, openai);
-  assert.ok(calls[0].url.includes("/v1/audio/transcriptions"), "zły endpoint STT OpenAI");
-  assert.equal(calls[0].init.headers.Authorization, "Bearer sk-test");
+  await transcribe(audio, groq);
+  assert.ok(calls[0].url.includes("/v1/audio/transcriptions"), "zły endpoint STT Groq");
+  assert.equal(calls[0].init.headers.Authorization, "Bearer gsk-test");
 
   calls.length = 0;
-  await sift({ raw: "test", settings: openai });
-  assert.ok(calls[0].url.includes("/v1/chat/completions"), "zły endpoint sita OpenAI");
-  assert.equal(calls[0].body.model, "gpt-5.6-terra");
+  await sift({ raw: "test", settings: groq });
+  assert.ok(calls[0].url.includes("/v1/chat/completions"), "zły endpoint sita Groq");
+  assert.equal(calls[0].body.model, "llama-3.3-70b-versatile");
   assert.equal(calls[0].body.messages[0].role, "system");
-  console.log("✓ OpenAI: transkrypcja i sito na właściwych endpointach");
+  console.log("✓ Groq: transkrypcja i sito na właściwych endpointach");
 
   /* 4. Brak klucza → surowy tekst, bez wyjątku */
   const noKey = {
     ...base,
     stt: { provider: "mock", model: "mock", apiKey: "" },
-    sieve: { provider: "gemini", model: "gemini-3.7-flash", apiKey: "", customInstruction: "" },
+    sieve: { provider: "gemini", model: "gemini-2.5-flash", apiKey: "", customInstruction: "" },
   };
   const raw = "yyy no wiesz to działa";
   out = await sift({ raw, settings: noKey });
@@ -101,7 +103,7 @@ const audio = Buffer.from("RIFFfake");
   const bilingual = {
     ...base,
     language: { mode: "bilingual", primary: "pl", secondary: "en" },
-    stt: { provider: "openai", model: "whisper-1", apiKey: "sk-test" },
+    stt: { provider: "groq", model: "whisper-large-v3-turbo", apiKey: "gsk-test" },
   };
 
   calls.length = 0;
@@ -213,6 +215,26 @@ const audio = Buffer.from("RIFFfake");
     assert.equal(isTransient(error), true, "zapętlenie ma prawo do powtórki");
     assert.equal(isTransient(new Error("Brak klucza API")), false, "zły klucz powtórki nie dostaje");
     console.log("✓ Zapętlenie jest ponawiane raz, a błąd klucza nie");
+  }
+
+  /* 12. Bezpiecznik usuwający znaczniki czasu (sanitizeTranscript) */
+  {
+    const { sanitizeTranscript } = require("../src/main/stt");
+
+    const sampleWithTimestamps = "To jest test 0:03-0:10 transkrypcji [1:23] oraz (0:45-1:02) z czasem 2:15 . Kolejne zdanie.";
+    const cleaned = sanitizeTranscript(sampleWithTimestamps);
+    assert.equal(cleaned, "To jest test transkrypcji oraz z czasem. Kolejne zdanie.");
+
+    const standalone = "0:00-0:10 Dzień dobry 1:39-1:58 wszystkim zebranym.";
+    assert.equal(sanitizeTranscript(standalone), "Dzień dobry wszystkim zebranym.");
+
+    const brackets = "Początek [00:15] treść (12:30-13:45) koniec.";
+    assert.equal(sanitizeTranscript(brackets), "Początek treść koniec.");
+
+    assert.equal(sanitizeTranscript(""), "");
+    assert.equal(sanitizeTranscript(null), "");
+
+    console.log("✓ Sanitizer transkrypcji (sanitizeTranscript) usuwa znaczniki czasu i normalizuje spacje");
   }
 
   console.log("\nWszystkie sprawdzenia przeszły.");

@@ -24,7 +24,7 @@
 const MARKER = /^[ \t]*⟦[ \t]*polecenie[ \t]*:[ \t]*([\p{L}\p{N}_-]+)[ \t]*⟧[ \t]*\r?\n?/u;
 
 /** Dokąd trafia wynik. Nazwy są też kluczami etykiet w interfejsie. */
-const OUTLETS = ["cursor", "note", "new-note", "clipboard"];
+const OUTLETS = ["cursor", "note", "new-note", "clipboard", "free-thoughts"];
 
 /** Gdzie wolno stać wywołaniu. Nigdy w środku zdania — patrz `detect`. */
 const PLACES = ["edge", "start", "end"];
@@ -84,6 +84,24 @@ piszesz „Cześć," i nie podpisujesz się w niczyim imieniu.
 Ton uprzejmy i rzeczowy. Żadnych ustaleń, terminów ani obietnic, których nie było.`,
     mesh: "drobne",
     outlet: "cursor",
+  },
+  {
+    id: "c-free-thoughts",
+    name: "Do notatki",
+    enabled: true,
+    builtin: true,
+    /* Tylko początek — wolna myśl rzucona w środku zdania to nie wywołanie,
+       tylko relacja o tej notatce (patrz analogiczne uzasadnienie przy
+       atEnd wyżej). */
+    where: "start",
+    triggers: ["do notatki"],
+    rules: `Zostaw naturalną, swobodną formę wolnej myśli — bez list, bez nagłówków, bez zmiany struktury zdań.
+To jest luźny zapis myśli, ma brzmieć jak zwykła wypowiedź, tylko oczyszczona z szumu.`,
+    mesh: null,
+    // Ujście jest specjalne: zawsze ląduje w notatce „Free Thoughts",
+    // niezależnie od tego, gdzie akurat trwa dyktowanie — patrz outletFor
+    // i deliverToFreeThoughts w main.js.
+    outlet: "free-thoughts",
   },
 ];
 

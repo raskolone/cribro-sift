@@ -82,7 +82,10 @@
         inset: 0;
         display: flex;
         flex-direction: column;
-        border-radius: var(--r-lg);
+        /* Osiem pikseli, nie szesnaście jak `--r-lg` reszty aplikacji —
+           kartka ma zaokrąglony róg prawdziwej karteczki, nie panelu
+           szklanej aplikacji. */
+        border-radius: 8px;
         overflow: hidden;
         /* Do pierwszej klatki animacji kartki nie widać. Okno pokazuje się
            zanim renderer zdąży cokolwiek narysować — bez tego przez jedną
@@ -354,6 +357,20 @@
         padding: 3px 6px;
         border-bottom: 1px solid var(--line-soft);
         background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+        /* Ukryty do momentu, w którym ktoś naprawdę sięga po formatowanie —
+           papierowa karteczka ma wyglądać jak karteczka, nie jak aplikacja
+           z paskiem narzędzi. Krycie, nie `display`: przełączanie go
+           przesuwałoby treść pod kursorem w chwili najechania, a to
+           dokładnie ten rodzaj skoku, którego kartka ma unikać. Ten sam
+           wzór co przy #grip niżej. */
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--t);
+      }
+      #card:hover .tools,
+      .tools:focus-within {
+        opacity: 1;
+        pointer-events: auto;
       }
       .tools__sep {
         flex: none;
@@ -402,13 +419,80 @@
         border-color: var(--accent-30);
       }
 
+      /* ── Kolor tekstu ──
+         Kropka w znaczku niesie sam kolor przez zmienną, nie przez klasę
+         na kolor — tak samo jak próbka koloru kartki (.swatch--dot), tylko
+         bez pośrednictwa `--paper-tint`: to inna paleta, więc dostaje
+         własną zmienną. */
+      #textColorDot {
+        display: block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--text-color-dot, #0f172a);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+      }
+      .text-colors {
+        position: absolute;
+        top: 68px;
+        left: 8px;
+        z-index: 3;
+        display: flex;
+        gap: 7px;
+        padding: 7px 8px;
+        border-radius: var(--r-sm);
+        border: 1px solid var(--line-strong);
+        background: var(--paper-sink);
+        box-shadow: var(--shadow-md);
+        animation: palette-in 0.18s var(--ease) both;
+      }
+      .text-colors[hidden] {
+        display: none;
+      }
+      .text-colors button {
+        flex: none;
+        line-height: 0;
+        padding: 3px;
+        border: 1.5px solid transparent;
+        background: none;
+        cursor: pointer;
+        border-radius: 50%;
+        transition: transform var(--t-fast), border-color var(--t-fast);
+      }
+      .text-colors button:hover {
+        transform: scale(1.15);
+      }
+      .text-colors button[aria-pressed="true"] {
+        border-color: var(--accent);
+      }
+      .text-colors .dot {
+        display: block;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--text-color-dot, #0f172a);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+      }
+
+      /* Kolory zaznaczonego tekstu — czytelne wyłącznie na jasnym papierze,
+         więc żyją tu, a nie w prose.css: tamten arkusz obsługuje też
+         Notatnik, który bywa ciemny, i te same barwy zginęłyby tam tak
+         samo, jak ginął przedtem cały tekst kartki (patrz body.sticky-window
+         w css/tokens.css). */
+      #text.prose span[data-color="navy"]   { color: #1e3a8a; }
+      #text.prose span[data-color="maroon"] { color: #991b1b; }
+      #text.prose span[data-color="forest"] { color: #166534; }
+      #text.prose span[data-color="slate"]  { color: #475569; }
+
       /* ── Treść ── */
 
       .body {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        padding: 12px 14px 14px;
+        /* Szesnaście dokoła: tekst ma oddech od krawędzi papieru, nie
+           dotyka ramki tak, jak dotykałby jej brzeg zeszytu. */
+        padding: 16px;
       }
       .body::-webkit-scrollbar {
         width: 7px;
@@ -667,7 +751,7 @@
     </style>
   </head>
 
-  <body>
+  <body class="sticky-window">
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
         <symbol id="s-close" viewBox="0 0 24 24">
@@ -721,6 +805,19 @@
                     aria-label="Kursywa" aria-pressed="false">
               <svg><use href="#i-italic" /></svg>
             </button>
+            <span class="tools__sep"></span>
+            <!-- Kolor zaznaczonego tekstu. Znaczek nie jest literą „A" z
+                 kropką pod spodem, tylko samą kropką — pasek jest wąski
+                 na dwieście dziesięć pikseli i litera zabierałaby miejsce
+                 bez niczego nie mówiąc więcej niż kropka. Kropka NIESIE
+                 aktualny kolor (patrz #textColorDot w js/sticky.js), więc
+                 przycisk odpowiada od razu na pytanie „w jakim kolorze
+                 stoi kursor", bez otwierania popovera. -->
+            <button class="tool-btn" id="textColor" title="Kolor tekstu"
+                    aria-label="Kolor tekstu" aria-haspopup="true" aria-expanded="false">
+              <span class="dot" id="textColorDot"></span>
+            </button>
+            <div class="text-colors" id="textColors" hidden data-i18n="skip"></div>
             <span class="tools__sep"></span>
             <button class="tool-btn" data-format="bullet" title="Lista (⌘⇧8)"
                     aria-label="Lista" aria-pressed="false">

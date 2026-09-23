@@ -10,21 +10,12 @@
     <link rel="stylesheet" href="css/tokens.css" />
     <style>
       /* ─────────────────────────────────────────────────────────
-         Poranek — jedno okno raz dziennie.
-
-         Czyta się je RAZ i po to, żeby wiedzieć, od czego zacząć. Stąd
-         trzy decyzje, wszystkie przeciwko dokładaniu czegokolwiek:
-
-           JEDNA KOLUMNA   nie ma tu nic do porównywania obok siebie.
-                           Czyta się z góry na dół i kończy na dole.
-           BEZ AKCJI       poza otwarciem maila i zamknięciem okna nie ma
-                           tu żadnego przycisku. To nie jest skrzynka
-                           i nie ma udawać, że nią jest.
-           POWÓD PRZY MAILU  „wisi 3 dni · jest w nim pytanie" stoi obok
-                           tematu, bo po tym widać, czy reguła się nie
-                           pomyliła — i dlatego to reguły dają powody,
-                           a nie ocenę w procentach.
+         Nowoczesny Daily Briefing — Dark Glassmorphic Design
          ───────────────────────────────────────────────────────── */
+
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
 
       html,
       body {
@@ -32,106 +23,296 @@
         margin: 0;
       }
       body {
-        background: var(--bg);
+        background: radial-gradient(circle at 50% 0%, rgba(229, 185, 104, 0.08) 0%, transparent 60%), var(--bg);
         color: var(--text);
         font-family: var(--font-body);
         overflow: hidden;
       }
 
-      /* Pas na światła okna. Cały jest uchwytem — okno bez ramki nie ma
-         za co złapać. */
       #bar {
-        height: 34px;
+        height: 38px;
         -webkit-app-region: drag;
       }
 
       #sheet {
-        height: calc(100% - 34px);
+        height: calc(100% - 38px);
         overflow-y: auto;
-        /* W poziomie nie ma czego przewijać i nie ma prawa być czego:
-           wiersze poczty wychodzą poza kolumnę tekstu o własny margines
-           (żeby podświetlenie sięgało poza literę) i bez tego dokładały
-           pasek przewijania na dole okna. */
         overflow-x: hidden;
-        padding: 0 var(--s-8) var(--s-9);
-        max-width: 46rem;
+        padding: 0 var(--s-6) var(--s-8);
+        max-width: 52rem;
         margin: 0 auto;
       }
 
-      /* Pasek przewijania jak w reszcie aplikacji — cienki i ciemny.
-         Arkusz okna głównego (css/app.css) tu nie dochodzi, bo poranek
-         nie potrzebuje niczego poza tokenami. */
       #sheet::-webkit-scrollbar {
-        width: 8px;
+        width: 6px;
       }
       #sheet::-webkit-scrollbar-thumb {
         background: var(--line-strong);
-        border-radius: 4px;
+        border-radius: var(--r-pill);
       }
       #sheet::-webkit-scrollbar-track {
         background: transparent;
       }
 
       /* ── Nagłówek ── */
-
       .head {
-        padding: var(--s-2) 0 var(--s-6);
+        padding: var(--s-2) 0 var(--s-5);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
       }
-      .date {
+      .date-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
         font-family: var(--font-mono);
         font-size: var(--fs-label);
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: var(--text-mute);
+        color: var(--accent);
+      }
+      .date-badge::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 8px var(--accent-55);
       }
       .head h1 {
         font-family: var(--font-display);
         font-weight: 700;
-        font-size: var(--fs-h1);
-        line-height: var(--lh-tight);
-        letter-spacing: -0.015em;
-        margin: var(--s-2) 0 0;
+        font-size: 32px;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        margin: 0;
         color: var(--text-hi);
       }
       .head p {
-        margin: var(--s-3) 0 0;
+        margin: 0;
         font-size: var(--fs-sm);
-        line-height: 1.6;
+        line-height: 1.5;
         color: var(--text-2);
       }
 
-      /* ── Sekcja ── */
-
-      section {
-        margin-top: var(--s-8);
+      /* ── Widgety Poranka: Kursy i Pogoda ── */
+      .briefing-widgets {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--s-3);
+        margin-bottom: var(--s-5);
       }
-      h2 {
-        margin: 0 0 var(--s-4);
+      @media (max-width: 680px) {
+        .briefing-widgets {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .widget-card {
+        padding: var(--s-4);
+        border: 1px solid var(--glass-edge);
+        border-radius: var(--r-lg);
+        background: var(--glass-fill);
+        backdrop-filter: var(--glass-blur);
+        -webkit-backdrop-filter: var(--glass-blur);
+        box-shadow: var(--glass-sheen), 0 4px 20px rgba(0, 0, 0, 0.25);
+        display: flex;
+        flex-direction: column;
+        gap: var(--s-3);
+        position: relative;
+        overflow: hidden;
+      }
+      .widget-card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+        pointer-events: none;
+      }
+
+      .widget-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         font-family: var(--font-mono);
-        font-size: var(--fs-label);
-        font-weight: 500;
-        letter-spacing: 0.14em;
+        font-size: 10px;
+        letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--text-mute);
+      }
+      .widget-header svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accent);
+      }
+
+      /* Kursy Walut */
+      .rates-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .rate-pill {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px;
+        border-radius: var(--r-md);
+        background: var(--surface-2);
+        border: 1px solid var(--line-soft);
+      }
+      .rate-pill__code {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-hi);
+      }
+      .rate-pill__val {
+        font-family: var(--font-body);
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--text-hi);
+      }
+      .rate-pill__change {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        font-weight: 500;
+      }
+      .rate-pill__change--up {
+        color: var(--success);
+      }
+      .rate-pill__change--down {
+        color: var(--danger);
+      }
+
+      /* Pogoda */
+      .weather-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--s-3);
+      }
+      .weather-main {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .weather-temp {
+        font-family: var(--font-body);
+        font-size: 28px;
+        font-weight: 700;
+        color: var(--text-hi);
+        line-height: 1;
+      }
+      .weather-condition {
+        font-size: var(--fs-xs);
+        color: var(--text-2);
+      }
+      .weather-details {
+        text-align: right;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text-mute);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      /* ── Accordion sekcji ── */
+      .acc {
+        margin-top: var(--s-4);
+        border: 1px solid var(--line-strong);
+        border-radius: var(--r-lg);
+        background: var(--glass-fill);
+        -webkit-backdrop-filter: var(--glass-blur);
+        backdrop-filter: var(--glass-blur);
+        box-shadow: var(--glass-sheen);
+        overflow: hidden;
+      }
+      .acc:first-of-type {
+        margin-top: 0;
+      }
+      .acc__head {
         display: flex;
         align-items: center;
         gap: var(--s-3);
+        padding: var(--s-4) var(--s-5);
+        cursor: pointer;
+        list-style: none;
+        user-select: none;
+        transition: background var(--t);
       }
-      /* Kreska dociągająca nazwę sekcji do prawej krawędzi — sekcje mają
-         się od siebie odcinać bez ramek i bez tła. */
-      h2::after {
-        content: "";
-        flex: 1;
-        height: 1px;
-        background: var(--line);
+      .acc__head::-webkit-details-marker {
+        display: none;
+      }
+      .acc__head:hover {
+        background: var(--wash-4);
+      }
+      .acc__dot {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+      .acc__dot--calendar { background: var(--accent); box-shadow: 0 0 10px var(--accent-30); }
+      .acc__dot--urgent { background: var(--danger); box-shadow: 0 0 10px var(--danger-30); }
+      .acc__dot--waiting { background: var(--info); box-shadow: 0 0 10px rgba(111, 168, 240, 0.3); }
+      .acc__dot--glance { background: var(--sun); box-shadow: 0 0 10px rgba(245, 158, 11, 0.3); }
+      .acc__dot--trash { background: var(--text-faint); }
+
+      .acc__title {
+        font-family: var(--font-body);
+        font-weight: 700;
+        font-size: var(--fs-sm);
+        color: var(--text-hi);
+      }
+      .acc__sub {
+        display: block;
+        margin-top: 1px;
+        font-size: var(--fs-xs);
+        font-weight: 400;
+        color: var(--text-mute);
+      }
+      .acc__titles {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .acc__count {
+        margin-left: auto;
+        flex: none;
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        color: var(--text-faint);
+        padding: 2px 8px;
+        border-radius: var(--r-pill);
+        background: var(--wash-5);
+      }
+      .acc__chev {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-right: 1.5px solid var(--text-faint);
+        border-bottom: 1.5px solid var(--text-faint);
+        transform: rotate(-45deg);
+        transition: transform var(--t-fast);
+        margin-left: 2px;
+      }
+      details[open] > .acc__head .acc__chev {
+        transform: rotate(45deg);
       }
 
-      /* ── Poczta ── */
+      .acc__body {
+        padding: 0 var(--s-5) var(--s-4);
+        border-top: 1px solid var(--line-soft);
+        padding-top: var(--s-4);
+      }
 
+      /* ── Poczta / Elementy ── */
       .mail {
         display: block;
-        padding: var(--s-4) var(--s-4) var(--s-4) var(--s-5);
-        margin: 0 calc(var(--s-4) * -1) var(--s-1);
+        padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+        margin: 0 calc(var(--s-3) * -1) var(--s-1);
         border-radius: var(--r-sm);
         border-left: 2px solid transparent;
         color: inherit;
@@ -139,7 +320,7 @@
         transition: background var(--t-fast), border-color var(--t-fast);
       }
       .mail:hover {
-        background: var(--surface-2);
+        background: var(--wash-4);
         border-left-color: var(--accent-55);
       }
       .mail__from {
@@ -158,8 +339,6 @@
         line-height: 1.55;
         color: var(--text-2);
       }
-      /* Powody. Monospace i drobno, bo to jest metryka, a nie zdanie —
-         czyta się je wtedy, gdy wybór wygląda na pomyłkę. */
       .mail__why {
         margin-top: var(--s-2);
         font-family: var(--font-mono);
@@ -168,21 +347,98 @@
         color: var(--text-faint);
       }
 
-      /* ── Szum ── */
+      .subhead {
+        margin: var(--s-4) 0 var(--s-2);
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-faint);
+      }
+      .subhead:first-child {
+        margin-top: 0;
+      }
 
-      /* Sama informacja, że coś przyszło i że można to zignorować —
-         stąd bez podświetlenia przy najechaniu i bez linku, w odróżnieniu
-         od .mail, które prowadzi do wątku wymagającego odpowiedzi. */
-      .mail--noise {
+      .row {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--s-3);
+        padding: var(--s-2) var(--s-2);
+        margin: 0 calc(var(--s-2) * -1);
+        border-radius: var(--r-sm);
+        transition: background var(--t-fast);
+      }
+      .row:hover {
+        background: var(--wash-4);
+      }
+      .row__box {
+        flex: none;
+        margin-top: 3px;
+        width: 15px;
+        height: 15px;
+        accent-color: var(--accent);
+      }
+      .row__body {
+        min-width: 0;
+        display: block;
+      }
+      .row__line {
+        display: block;
+      }
+      .row__from {
+        font-weight: 700;
+        font-size: var(--fs-xs);
+        color: var(--text-hi);
+      }
+      .row__subject {
+        margin-left: var(--s-2);
+        font-size: var(--fs-xs);
+        color: var(--text-2);
+      }
+      .row__reason {
+        display: block;
+        margin-top: 1px;
+        font-size: var(--fs-xs);
+        color: var(--text-faint);
+      }
+      .row__days {
+        flex: none;
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        color: var(--warn);
+        padding-top: 1px;
+      }
+
+      .bulk-act {
+        margin-top: var(--s-4);
+        width: 100%;
+        padding: var(--s-3) var(--s-4);
+        border: 1px solid var(--danger-30);
+        border-radius: var(--r-md);
+        background: var(--danger-12);
+        color: var(--danger);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        font-weight: 700;
+        cursor: pointer;
+        transition: background var(--t-fast);
+      }
+      .bulk-act:hover:not(:disabled) {
+        background: var(--danger-30);
+      }
+      .bulk-act:disabled {
         opacity: 0.6;
-      }
-      .mail--noise:hover {
-        background: none;
-        border-left-color: transparent;
+        cursor: default;
       }
 
-      /* ── Plan dnia ── */
+      .triage__note {
+        margin: 0 0 var(--s-3);
+        font-family: var(--font-mono);
+        font-size: var(--fs-label);
+        color: var(--warn);
+      }
 
+      /* ── Harmonogram dnia (Kalendarz) ── */
       .slot {
         display: flex;
         gap: var(--s-4);
@@ -207,23 +463,22 @@
       .slot__title {
         font-size: var(--fs-sm);
         color: var(--text-hi);
+        font-weight: 500;
       }
       .slot__note {
         margin: 2px 0 0;
         font-size: var(--fs-label);
         color: var(--text-2);
       }
-      /* To, co już było, zostaje w oknie, ale blednie: dzień czyta się
-         wtedy jako całość, a nie jako lista rzeczy do zrobienia. */
       .slot[data-done="true"] .slot__at,
       .slot[data-done="true"] .slot__title {
         color: var(--text-faint);
         text-decoration: line-through;
         text-decoration-color: var(--line-strong);
       }
-      /* Najbliższa rzecz — jedyna, która się w tym oknie wyróżnia. */
       .slot[data-next="true"] .slot__at {
         color: var(--accent);
+        font-weight: 700;
       }
       .slot__soon {
         display: inline-block;
@@ -236,8 +491,6 @@
         font-family: var(--font-mono);
         font-size: var(--fs-label);
       }
-
-      /* ── Świat ── */
 
       .feed {
         display: block;
@@ -258,16 +511,11 @@
         margin-right: var(--s-3);
       }
 
-      /* ── Pusto, czekanie, kłopoty ── */
-
       .empty {
         font-size: var(--fs-sm);
         color: var(--text-mute);
         padding: var(--s-2) 0;
       }
-      /* Czekanie mówi, na co się czeka. „Ładowanie…" nie mówi nic,
-         a poranek zbiera z trzech miejsc naraz i każde może być tym,
-         które trwa. */
       .wait {
         display: flex;
         align-items: center;
@@ -276,11 +524,6 @@
         font-size: var(--fs-sm);
         color: var(--text-mute);
       }
-      /* `hidden` musi naprawdę chować. Atrybut daje `display: none`
-         z arkusza przeglądarki, a KAŻDA reguła autorska z własnością
-         `display` go bije — także ta wyżej, dająca czekaniu `flex`.
-         Bez tej linijki napis „Zbieram pocztę…" zostawał nad gotowym
-         podsumowaniem. */
       .wait[hidden] {
         display: none;
       }
@@ -293,33 +536,13 @@
         animation: pulse 1.4s ease-in-out infinite;
       }
       @keyframes pulse {
-        0%,
-        100% {
-          opacity: 0.25;
-          transform: scale(0.8);
-        }
-        50% {
-          opacity: 1;
-          transform: scale(1);
-        }
+        0%, 100% { opacity: 0.25; transform: scale(0.8); }
+        50% { opacity: 1; transform: scale(1); }
       }
-      @media (prefers-reduced-motion: reduce) {
-        /* `hidden` musi naprawdę chować. Atrybut daje `display: none`
-         z arkusza przeglądarki, a KAŻDA reguła autorska z własnością
-         `display` go bije — także ta wyżej, dająca czekaniu `flex`.
-         Bez tej linijki napis „Zbieram pocztę…" zostawał nad gotowym
-         podsumowaniem. */
-      .wait[hidden] {
+      #stage[hidden] {
         display: none;
       }
-      .wait::before {
-          animation: none;
-          opacity: 0.7;
-        }
-      }
 
-      /* Kłopoty stoją na dole i są drobne: poranek z padniętym kanałem RSS
-         jest nadal porankiem, a nie awarią. */
       .trouble {
         margin-top: var(--s-8);
         padding-top: var(--s-4);
@@ -335,8 +558,138 @@
   <body>
     <div id="bar"></div>
     <main id="sheet">
+      <header class="head">
+        <div class="date-badge" id="date"></div>
+        <h1 id="greeting">Dzień dobry.</h1>
+        <p id="headline" hidden></p>
+      </header>
+
+      <!-- Pasek Kursów Walut & Pogoda -->
+      <section class="briefing-widgets">
+        <!-- Kursy Walut -->
+        <div class="widget-card">
+          <div class="widget-header">
+            <span>Kursy walut (NBP / Ref)</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+            </svg>
+          </div>
+          <div class="rates-grid" id="ratesGrid">
+            <div class="rate-pill">
+              <span class="rate-pill__code">EUR/PLN</span>
+              <span class="rate-pill__val" id="rateEur">4.28 zł</span>
+              <span class="rate-pill__change rate-pill__change--up" id="changeEur">+0.12%</span>
+            </div>
+            <div class="rate-pill">
+              <span class="rate-pill__code">USD/PLN</span>
+              <span class="rate-pill__val" id="rateUsd">3.96 zł</span>
+              <span class="rate-pill__change rate-pill__change--down" id="changeUsd">-0.05%</span>
+            </div>
+            <div class="rate-pill">
+              <span class="rate-pill__code">GBP/PLN</span>
+              <span class="rate-pill__val" id="rateGbp">5.12 zł</span>
+              <span class="rate-pill__change rate-pill__change--up" id="changeGbp">+0.18%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pogoda -->
+        <div class="widget-card">
+          <div class="widget-header">
+            <span>Pogoda na dziś</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="5" />
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            </svg>
+          </div>
+          <div class="weather-content" id="weatherContent">
+            <div class="weather-main">
+              <span class="weather-temp" id="weatherTemp">21°C</span>
+              <span class="weather-condition" id="weatherCondition">Słonecznie z przejaśnieniami</span>
+            </div>
+            <div class="weather-details" id="weatherDetails">
+              <span>Min: 14° · Max: 23°</span>
+              <span>Opady: 0% · Wiatr: 11 km/h</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div class="wait" id="wait">Zbieram pocztę, kalendarz i kanały…</div>
-      <div id="stage"></div>
+
+      <div id="stage" hidden>
+        <!-- Agenda dnia (Harmonogram / Kalendarz) -->
+        <details class="acc acc--calendar" open data-section="calendar">
+          <summary class="acc__head">
+            <span class="acc__dot acc__dot--calendar"></span>
+            <span class="acc__titles">
+              <span class="acc__title">📅 Agenda i harmonogram dnia</span>
+              <span class="acc__sub">Zaplanowane spotkania, terminy i przegląd dnia.</span>
+            </span>
+            <span class="acc__count" id="count-calendar">0</span>
+            <span class="acc__chev"></span>
+          </summary>
+          <div class="acc__body" id="body-calendar"></div>
+        </details>
+
+        <!-- Pilne i ważne (Inbox / Spark Priority) -->
+        <details class="acc acc--urgent" open data-section="urgent">
+          <summary class="acc__head">
+            <span class="acc__dot acc__dot--urgent"></span>
+            <span class="acc__titles">
+              <span class="acc__title">🔴 Pilne i ważne</span>
+              <span class="acc__sub">Klienci wymagający natychmiastowej odpowiedzi i kluczowe maile.</span>
+            </span>
+            <span class="acc__count" id="count-urgent">0</span>
+            <span class="acc__chev"></span>
+          </summary>
+          <div class="acc__body" id="body-urgent"></div>
+        </details>
+
+        <!-- Oczekujące na odpowiedź -->
+        <details class="acc acc--waiting" open data-section="waiting">
+          <summary class="acc__head">
+            <span class="acc__dot acc__dot--waiting"></span>
+            <span class="acc__titles">
+              <span class="acc__title">⏳ Oczekujące na odpowiedź</span>
+              <span class="acc__sub">Twoje wysłane maile, na które nikt jeszcze nie odpisał (48h+).</span>
+            </span>
+            <span class="acc__count" id="count-waiting">0</span>
+            <span class="acc__chev"></span>
+          </summary>
+          <div class="acc__body" id="body-waiting"></div>
+        </details>
+
+        <!-- Do rzutu okiem -->
+        <details class="acc acc--glance" data-section="glance">
+          <summary class="acc__head">
+            <span class="acc__dot acc__dot--glance"></span>
+            <span class="acc__titles">
+              <span class="acc__title">🟡 Do rzutu okiem</span>
+              <span class="acc__sub">Zgłoszenia systemowe, powiadomienia, newslettery.</span>
+            </span>
+            <span class="acc__count" id="count-glance">0</span>
+            <span class="acc__chev"></span>
+          </summary>
+          <div class="acc__body" id="body-glance"></div>
+        </details>
+
+        <!-- Auto-trash -->
+        <details class="acc acc--trash" data-section="trash">
+          <summary class="acc__head">
+            <span class="acc__dot acc__dot--trash"></span>
+            <span class="acc__titles">
+              <span class="acc__title">🧹 Auto-trash i rozsyłki</span>
+              <span class="acc__sub">Powiadomienia i rozsyłki gotowe do hurtowego usunięcia.</span>
+            </span>
+            <span class="acc__count" id="count-trash">0</span>
+            <span class="acc__chev"></span>
+          </summary>
+          <div class="acc__body" id="body-trash"></div>
+        </details>
+      </div>
+
+      <div id="trouble"></div>
     </main>
 
     <script src="../shared/strings.js"></script>

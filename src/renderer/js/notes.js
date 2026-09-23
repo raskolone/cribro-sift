@@ -28,7 +28,6 @@ const {
   cleanTag,
   foldersOf,
   folderColorOf,
-  NOTE_COLORS,
   renameInPlace,
   dateStamp,
   ensureIcons,
@@ -67,9 +66,6 @@ const state = {
   renaming: null,
   // Wybrana szuflada albo null („wszystkie") — preferencja tego okna.
   folder: localStorage.getItem("cribro:notepad-folder") || null,
-  /* Czy lista pokazuje siatkę szuflad zamiast kafli notatek. Preferencja
-     widoku, nie stan trwały — otwiera się pusta przy każdym starcie. */
-  foldersOpen: false,
   // Do koloru szuflad — patrz folderColorOf w notes-core.js.
   settings: null,
 };
@@ -90,15 +86,7 @@ function renderList() {
   // kursor — przebudowa listy zabrałaby go w połowie słowa.
   if (state.renaming) return;
 
-  renderFolders();
-
-  /* Siatka szuflad zajmuje to samo miejsce co kafle notatek, nie stoi
-     obok nich — patrz folderGrid() niżej i ten sam wzorzec w notes-view.js. */
-  if (state.foldersOpen) {
-    $("#count").textContent = t("{n} szuflad", { n: foldersOf(state.notes).length });
-    $("#items").innerHTML = folderGrid();
-    return;
-  }
+  renderFolderRail();
 
   const query = state.query.trim();
   // `state.folder === null` znaczy „nic nie wybrano" (wszystkie notatki).
@@ -120,13 +108,12 @@ function renderList() {
       <div class="note" role="button" tabindex="0" data-id="${note.id}"
            aria-selected="${note.id === state.selected}"
            title="Podwójne kliknięcie otwiera notatkę w osobnym okienku">
-        <div class="note__title" data-i18n="skip" title="Podwójne kliknięcie zmienia tytuł">${highlight(titleOf(note), query)}</div>
-        ${tagRow(note)}
-        <div class="note__when">
-          <span>${escape(when(note.updatedAt))}</span>
-          <span>·</span>
-          <span>${t("{n} sł.", { n: countWords(note.text) })}</span>
+        <div class="note__head">
+          <div class="note__title" data-i18n="skip" title="Podwójne kliknięcie zmienia tytuł">${highlight(titleOf(note), query)}</div>
+          <span class="note__date" data-i18n="skip">${escape(when(note.updatedAt))}</span>
         </div>
+        <div class="note__snippet" data-i18n="skip">${escape(previewOf(note, 90) || t("pusta"))}</div>
+        ${tagRow(note)}
         <button class="note__pin" data-note-pin="${note.id}" aria-pressed="${!!note.pinned}"
                 title="${note.pinned ? "Odepnij" : "Przypnij"}">
           <svg><use href="#i-pin" /></svg>
@@ -186,7 +173,7 @@ async function togglePin(id) {
  */
 function startRename(element) {
   const note = state.notes.find((item) => item.id === element.closest(".note")?.dataset.id);
-  if (!note || state.renaming) return;
+  if (!note || state.renaming || note.system) return;
 
   state.renaming = note.id;
   const before = rawTitle(note);
@@ -281,75 +268,41 @@ function tagRow(note) {
 }
 
 /**
- * Pasek nad listą — zawsze widoczny, tak jak w zakładce Notatki (patrz
- * renderFolders w notes-view.js, ten sam wzorzec). Przycisk „Szuflady"
- * otwiera siatkę (folderGrid); wewnątrz szuflady pasek zamienia się
- * w drogę powrotną.
+ * Szuflada — trzecia, najwęższa kolumna okna, zawsze widoczna: „Wszystkie",
+ * potem każda szuflada, na końcu „Bez szuflady". Klik filtruje środkową
+ * kolumnę od razu — to nie jest osobny widok, do którego się „wchodzi"
+ * i z którego trzeba wracać, tylko stały spis, jak w Notatkach systemowych.
  */
-function renderFolders() {
-  const rail = $("#folders");
+function renderFolderRail() {
+  const rail = $("#folderRail");
   if (!rail) return;
 
-  // Ścisłe `!== null`: „Bez szuflady" to `state.folder === ""`, realny
-  // wybór — `if (state.folder)` pomyliłby go z „nic nie wybrano".
-  if (state.folder !== null) {
-    rail.innerHTML = `
-      <button class="folder-chip folder-chip--back" data-act="folder-back"
-              title="${escape(t("Wróć do szuflad"))}">
-        <svg><use href="#i-chevron" /></svg>
-        <span data-i18n="skip">${escape(state.folder || t("Bez szuflady"))}</span>
-      </button>`;
-    return;
-  }
-
-  const count = foldersOf(state.notes).length;
-  rail.innerHTML = `
-    <button class="folder-chip folder-chip--toggle" data-act="folders-toggle"
-            aria-pressed="${state.foldersOpen}" title="${escape(t("Szuflady — jak foldery, wchodzi się w nie"))}">
-      <svg><use href="#i-folder" /></svg>
-      <span>${escape(t("Szuflady"))}</span>
-      ${count ? `<b data-i18n="skip">${count}</b>` : ""}
-    </button>`;
-}
-
-/**
- * Siatka szuflad — patrz folderGrid w notes-view.js, ten sam wzorzec co
- * tam (i te same powody: karta jest `<div role="button">`, nie
- * `<button>`, bo w środku siedzi rząd przycisków zmiany koloru).
- */
-function folderGrid() {
   const folders = foldersOf(state.notes);
   const withoutFolder = state.notes.filter((note) => !folderOf(note)).length;
 
-  if (!folders.length && !withoutFolder) {
-    return `<p class="notes__nothing">${escape(
-      t("Nie masz jeszcze żadnej szuflady — załóż ją przy notatce, w metryczce pod paskiem narzędzi."),
-    )}</p>`;
-  }
+  // `label` jest gotowym, przetłumaczonym tekstem dla „Wszystkie" i „Bez
+  // szuflady"; nazwa realnej szuflady idzie surowa, bo tłumaczenia nie ma.
+  const row = ({ folder, label, name, count }) => `
+    <button class="folder-rail__item" data-act="pick-folder"
+            ${folder !== undefined ? `data-folder="${escape(folder)}"` : ""}
+            aria-pressed="${state.folder === (folder ?? null)}">
+      ${name ? `<span class="swatch" data-color="${folderColorOf(name, state.settings)}"></span>` : ""}
+      <span class="folder-rail__name" data-i18n="${label ? "" : "skip"}">${escape(label ?? name)}</span>
+      <span class="folder-rail__count" data-i18n="skip">${count}</span>
+    </button>`;
 
-  const swatches = (name) =>
-    NOTE_COLORS.map(
-      ([key, label]) => `
-        <button class="folder-card__swatch" data-act="folder-color"
-                data-folder="${escape(name)}" data-color-pick="${key}"
-                title="${escape(label)}" aria-pressed="${folderColorOf(name, state.settings) === key}">
-          <span class="swatch" data-color="${key}"></span>
-        </button>`,
-    ).join("");
-
-  const card = (name, count) => `
-    <div class="folder-card" role="button" tabindex="0" data-act="pick-folder"
-         data-folder="${escape(name ?? "")}" data-color="${folderColorOf(name, state.settings)}">
-      <span class="folder-card__icon"><svg><use href="#i-folder" /></svg></span>
-      <span class="folder-card__name" data-i18n="skip">${escape(name ?? t("Bez szuflady"))}</span>
-      <span class="folder-card__count" data-i18n="skip">${t("{n} notatek", { n: count })}</span>
-      ${name ? `<div class="folder-card__colors">${swatches(name)}</div>` : ""}
-    </div>`;
-
-  return `<div class="folder-grid">
-    ${folders.map((name) => card(name, state.notes.filter((note) => folderOf(note) === name).length)).join("")}
-    ${withoutFolder ? card(null, withoutFolder) : ""}
-  </div>`;
+  rail.innerHTML = [
+    { label: t("Wszystkie"), count: state.notes.length },
+    ...folders.map((name) => ({
+      folder: name,
+      name,
+      count: state.notes.filter((note) => folderOf(note) === name).length,
+    })),
+    withoutFolder ? { folder: "", label: t("Bez szuflady"), count: withoutFolder } : null,
+  ]
+    .filter(Boolean)
+    .map(row)
+    .join("");
 }
 
 /** Metryczka otwartej notatki: w której szufladzie leży i czego dotyczy. */
@@ -571,41 +524,15 @@ document.addEventListener("click", async (event) => {
   // i nic poza tym — inaczej zabrałoby sobie samo zaznaczenie.
   if (state.renaming && event.target.closest(".note__title")) return;
 
-  /* Szuflady i etykiety — przed kaflem, bo obie rzeczy w nim siedzą,
-     a żadna nie ma przy okazji przerzucać edytora na inną notatkę.
+  /* Szuflada — przed kaflem, bo rząd w niej siedzi w osobnej kolumnie
+     i klik w nią nie ma przy okazji przerzucać edytora na inną notatkę.
 
-     `state.folder === null` znaczy „nic nie wybrano". `""` jest realnym
-     wyborem — „Bez szuflady" — więc wszędzie tu stoi to rozróżnienie,
-     a nie sama prawdziwość (ten sam powód, co w renderList/renderFolders). */
-  if (event.target.closest('[data-act="folders-toggle"]')) {
-    state.foldersOpen = !state.foldersOpen;
-    state.folder = null;
-    renderList();
-    translateTree();
-    return;
-  }
-  if (event.target.closest('[data-act="folder-back"]')) {
-    state.folder = null;
-    state.foldersOpen = true;
-    localStorage.removeItem("cribro:notepad-folder");
-    renderList();
-    translateTree();
-    return;
-  }
-  const colorPick = event.target.closest('[data-act="folder-color"]');
-  if (colorPick) {
-    const name = colorPick.dataset.folder;
-    const key = colorPick.dataset.colorPick;
-    if (name && key) await api.settings.save({ notesFolderColors: { [name.trim().toLowerCase()]: key } });
-    renderList();
-    return;
-  }
+     `state.folder === null` znaczy „nic nie wybrano — wszystkie". `""` jest
+     realnym wyborem — „Bez szuflady" — więc wszędzie tu stoi to
+     rozróżnienie, a nie sama prawdziwość (ten sam powód, co w renderList). */
   const railed = event.target.closest('[data-act="pick-folder"]');
   if (railed) {
-    // Klik w kartę WCHODZI do szuflady, zawsze — wyjście ma własny
-    // przycisk (folder-back), tak jak w prawdziwym folderze.
     state.folder = railed.dataset.folder ?? null;
-    state.foldersOpen = false;
     if (state.folder) localStorage.setItem("cribro:notepad-folder", state.folder);
     else localStorage.removeItem("cribro:notepad-folder");
     renderList();
@@ -1002,8 +929,8 @@ api.onState(({ state: next }) => {
 /* Podyktowany fragment dopisany przez proces główny — przeładowujemy
    notatkę z dysku, żeby okno i plik nigdy się nie rozjechały. */
 api.notes.onAppended(async ({ id }) => {
-  const fresh = await api.notes.get();
-  state.notes = fresh;
+  const fresh = (await api.notes.get()) ?? [];
+  state.notes = fresh.filter((note) => note?.kind !== "meeting" || (state.solo && note.id === soloId));
   // W osobnym okienku zostajemy przy swojej notatce; w pełnym oknie
   // przeskakujemy do tej, do której właśnie mówiono.
   if (id && !state.solo) state.selected = id;
@@ -1016,8 +943,8 @@ api.notes.onAppended(async ({ id }) => {
 /* Ta sama notatka bywa otwarta w kilku oknach naraz — zmiana w jednym
    ma dojść do pozostałych, zamiast czekać na ponowne otwarcie. */
 api.notes.onChanged?.(async ({ id }) => {
-  const fresh = await api.notes.get();
-  state.notes = fresh;
+  const fresh = (await api.notes.get()) ?? [];
+  state.notes = fresh.filter((note) => note?.kind !== "meeting" || (state.solo && note.id === soloId));
   // `id` puste znaczy „zmieniło się nie wiadomo co" — tak wraca
   // synchronizacja z chmury. Wtedy przerysowujemy zawsze, bo pominięcie
   // dotyczyłoby akurat tej notatki, na którą ktoś patrzy.
@@ -1050,7 +977,8 @@ function applySpellcheck(settings) {
     render();
   });
 
-  state.notes = await api.notes.get();
+  const allNotes = (await api.notes.get()) ?? [];
+  state.notes = allNotes.filter((note) => note?.kind !== "meeting" || (state.solo && note.id === soloId));
 
   if (state.solo) {
     // Notatka mogła zniknąć, zanim okno zdążyło się otworzyć.

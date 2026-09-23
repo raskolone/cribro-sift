@@ -33,7 +33,6 @@ const { describeError } = require("./stt");
  */
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 
 /** Ile znaków zapisu wpuszczamy do jednego wywołania. Godzina rozmowy to
     około 45 tysięcy znaków — mieści się z zapasem u każdego dostawcy. */
@@ -316,24 +315,6 @@ async function send({ provider, model, apiKey, system, user }) {
       throw new Error(`Gemini odmówił podsumowania (${data.promptFeedback.blockReason}).`);
     }
     return (data.candidates?.[0]?.content?.parts ?? []).map((part) => part.text ?? "").join("");
-  }
-
-  if (provider === "openai") {
-    const response = await fetch(OPENAI_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        max_completion_tokens: 4000,
-      }),
-    });
-    if (!response.ok) throw new Error(await describeError(response, "OpenAI"));
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content ?? "";
   }
 
   if (provider === "anthropic") {

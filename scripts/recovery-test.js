@@ -102,7 +102,7 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-recovery-"));
       onError: (msg) => errors.push(msg),
       transcribe: async (_wav, _settings, about) => {
         if (!online) {
-          throw new Error("fetch failed: ENOTFOUND api.openai.com");
+          throw new Error("fetch failed: ENOTFOUND generativelanguage.googleapis.com");
         }
         return { text: `[${about.lane} ${Math.round(about.from)}]` };
       },
@@ -175,7 +175,7 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "cribro-recovery-"));
   {
     const { isRateLimit } = require("../src/main/stt");
     check("isRateLimit rozpoznaje HTTP 429", isRateLimit(new Error("Gemini: przekroczony limit zapytań (429).")));
-    check("isRateLimit rozpoznaje kod 429", isRateLimit(new Error("OpenAI zwrócił błąd 429: Rate limit reached")));
+    check("isRateLimit rozpoznaje kod 429", isRateLimit(new Error("Groq zwrócił błąd 429: Rate limit reached")));
     check("isRateLimit rozpoznaje RESOURCE_EXHAUSTED", isRateLimit(new Error("RESOURCE_EXHAUSTED: quota exceeded")));
     check("isRateLimit nie myli zwykłych błędów sieciowych z 429", !isRateLimit(new Error("fetch failed: ECONNRESET")));
     check("Meetings.isRateLimit działa tak samo", Meetings.isRateLimit(new Error("429 Too Many Requests")));

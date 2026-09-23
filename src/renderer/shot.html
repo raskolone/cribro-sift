@@ -10,11 +10,8 @@
     <link rel="stylesheet" href="css/tokens.css" />
     <style>
       /* ─────────────────────────────────────────────────────────
-         Tekst z ekranu — okno z jednym pytaniem: dokąd i w jakiej
-         formie. Staje przed oczami zaraz po zaznaczeniu obszaru,
-         więc musi dać się przeczytać w sekundę i zamknąć jednym
-         klawiszem. Stąd wszystko jest widoczne naraz, bez zakładek
-         i bez zwijanych sekcji: podgląd, odczyt, dwa wybory.
+         Tekst z ekranu — okno z pytaniem: dokąd i w jakiej formie
+         oraz wbudowany edytor graficzny Markup (Canvas).
          ───────────────────────────────────────────────────────── */
 
       html,
@@ -25,10 +22,6 @@
         background: transparent;
       }
 
-      /* Ta sama szyba co w szybkiej notatce: rozmycie tego, co ZA oknem,
-         robi system (vibrancy „under-window"), a dokument dokłada tylko
-         cienką warstwę i krawędź. Gęste tło zakryłoby to rozmycie
-         i zostałaby matowa płytka zamiast szkła. */
       #shell {
         height: 100%;
         display: flex;
@@ -79,7 +72,7 @@
         background: rgba(255, 255, 255, 0.07);
       }
 
-      main {
+      #mainView {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
@@ -89,9 +82,6 @@
         gap: var(--s-4);
       }
 
-      /* Ten sam pasek przewijania co w oknie głównym (patrz css/app.css).
-         Systemowy, szary, wchodzi w środek szyby i widać go z daleka —
-         a w tym oknie przewija się rzadko i tylko o kilka linijek. */
       ::-webkit-scrollbar {
         width: 10px;
         height: 10px;
@@ -107,9 +97,13 @@
         background-clip: content-box;
       }
 
-      /* Podgląd jest dowodem, że złapało się to, co trzeba — i tylko tym.
-         Dlatego niski pas z obrazkiem wpisanym w całości, a nie kadr:
-         przycięty zrzut kazałby zgadywać, co zostało poza oknem. */
+      /* Kontener podglądu z nakładką edycji */
+      .preview-box {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s-2);
+      }
+
       #preview {
         flex: none;
         position: relative;
@@ -118,16 +112,14 @@
         border-radius: var(--r-md);
         background: var(--ink-2);
         overflow: hidden;
+        cursor: pointer;
+        transition: border-color var(--t), box-shadow var(--t);
       }
-      /* Obrazek wyjęty z układu i rozpięty na ramce.
+      #preview:hover {
+        border-color: var(--accent-55);
+        box-shadow: 0 0 16px var(--accent-15);
+      }
 
-         Wyglądałoby na przesadę, gdyby nie to, że prostsze zapisy tutaj
-         nie działają: `max-height: 100%` liczy się od wysokości, której
-         siatka nie zna z góry, więc przy szerokim zrzucie wychodził on
-         poza ramkę o kilkanaście pikseli — dokładnie tyle, żeby uciąć
-         ostatnią linijkę tekstu na podglądzie. Rozpięcie na `inset`
-         daje ramce wymiar, którego obrazek nie ma prawa przekroczyć,
-         a `object-fit` mieści w niej i wąski pasek tekstu, i całe okno. */
       #preview img {
         position: absolute;
         inset: var(--s-2);
@@ -135,6 +127,85 @@
         height: calc(100% - 2 * var(--s-2));
         object-fit: contain;
         border-radius: var(--r-sm);
+      }
+
+      .preview-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(14, 14, 18, 0.45);
+        backdrop-filter: blur(2px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--s-2);
+        opacity: 0;
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        font-weight: 500;
+        transition: opacity var(--t);
+        border-radius: var(--r-md);
+      }
+      #preview:hover .preview-overlay {
+        opacity: 1;
+      }
+      .preview-overlay svg {
+        width: 16px;
+        height: 16px;
+        color: var(--accent);
+      }
+
+      .preview-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--s-2);
+      }
+      .preview-actions-left {
+        display: flex;
+        align-items: center;
+        gap: var(--s-2);
+      }
+
+      .preview-action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-pill);
+        background: var(--surface-2);
+        color: var(--text-mute);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        cursor: pointer;
+        transition: color var(--t), background var(--t), border-color var(--t);
+      }
+      .preview-action-btn:hover {
+        color: var(--text);
+        border-color: var(--line-strong);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .preview-action-btn svg {
+        width: 13px;
+        height: 13px;
+        color: currentColor;
+      }
+      .preview-action-btn.active {
+        color: var(--accent);
+        border-color: var(--accent-25);
+      }
+
+      .copy-feedback {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--accent);
+        letter-spacing: 0.04em;
+        animation: fadeIn 0.2s ease-out;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(2px); }
+        to { opacity: 1; transform: translateY(0); }
       }
 
       .group {
@@ -160,9 +231,6 @@
         color: var(--text-faint);
       }
 
-      /* Pole odczytu bierze całe miejsce, które zostało — bo to ono jest
-         tu treścią, a reszta okna tylko o nią pyta. Przy krótkim zrzucie
-         urośnie, przy długim i tak przewinie się w środku. */
       .group--read {
         flex: 1;
         min-height: 0;
@@ -191,9 +259,6 @@
         color: var(--text-faint);
       }
 
-      /* Wybór jest przełącznikiem, nie listą: trzy możliwości mieszczą się
-         obok siebie, więc nie ma powodu chować dwóch z nich pod rozwijanym
-         polem. Widać od razu, co się wybrało i co się przez to odrzuciło. */
       .seg {
         display: flex;
         gap: 4px;
@@ -213,6 +278,7 @@
         font-size: var(--fs-xs);
         cursor: pointer;
         transition: color var(--t), background var(--t), border-color var(--t);
+        white-space: nowrap;
       }
       .seg button:hover:not([aria-pressed="true"]):not(:disabled) {
         color: var(--text);
@@ -223,6 +289,49 @@
         border-color: var(--accent-25);
         background: linear-gradient(135deg, var(--accent-15), var(--accent-04));
       }
+      .action-grid {
+        display: grid;
+        gap: 6px;
+      }
+      .action-grid--3 {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .action-grid--4 {
+        grid-template-columns: repeat(4, 1fr);
+      }
+      .action-card-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 7px 8px;
+        border: 1px solid var(--line);
+        border-radius: var(--r-md);
+        background: var(--surface-2);
+        color: var(--text-2);
+        font-family: var(--font-body);
+        font-size: var(--fs-xs);
+        font-weight: 500;
+        cursor: pointer;
+        transition: color var(--t), background var(--t), border-color var(--t), transform var(--t-fast);
+        white-space: nowrap;
+      }
+      .action-card-btn:hover {
+        color: var(--text-hi);
+        border-color: var(--accent-55);
+        background: var(--wash-4);
+        transform: translateY(-1px);
+      }
+      .action-card-btn:active {
+        transform: translateY(0);
+      }
+      .action-card-btn svg {
+        width: 14px;
+        height: 14px;
+        color: var(--accent);
+        flex-shrink: 0;
+      }
+
       .seg button:disabled {
         color: var(--text-faint);
         cursor: not-allowed;
@@ -246,8 +355,6 @@
         display: none !important;
       }
 
-      /* Komunikat zajmuje miejsce dopiero wtedy, gdy jest co powiedzieć —
-         okno bez błędu nie może być wyższe o pustą linijkę. */
       #note {
         padding: var(--s-2) var(--s-3);
         border-radius: var(--r-sm);
@@ -314,9 +421,168 @@
         box-shadow: none;
         color: var(--text);
       }
+
+      /* ─────────────────────────────────────────────────────────
+         WIDOK EDYTORA MARKUP / CANVAS
+         ───────────────────────────────────────────────────────── */
+      #markupView {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        background: var(--ink-2);
+        overflow: hidden;
+      }
+
+      .markup-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface-2);
+        -webkit-app-region: no-drag;
+      }
+
+      .markup-tool-group {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--r-pill);
+        background: var(--ink);
+        border: 1px solid var(--line);
+      }
+
+      .tool-btn {
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        border: 1px solid transparent;
+        border-radius: 50%;
+        background: none;
+        color: var(--text-mute);
+        cursor: pointer;
+        transition: color var(--t), background var(--t), border-color var(--t);
+        padding: 0;
+      }
+      .tool-btn:hover:not(:disabled) {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .tool-btn[aria-pressed="true"],
+      .tool-btn.active {
+        color: var(--accent);
+        border-color: var(--accent-25);
+        background: linear-gradient(135deg, var(--accent-15), var(--accent-04));
+      }
+      .tool-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+      .tool-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      .markup-palette {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 6px;
+        border-radius: var(--r-pill);
+        background: var(--ink);
+        border: 1px solid var(--line);
+      }
+
+      .color-dot {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        cursor: pointer;
+        transition: transform var(--t), border-color var(--t);
+        padding: 0;
+      }
+      .color-dot:hover {
+        transform: scale(1.15);
+      }
+      .color-dot.active {
+        border-color: #ffffff;
+        box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+        transform: scale(1.1);
+      }
+
+      .stroke-seg {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 2px;
+        border-radius: var(--r-pill);
+        background: var(--ink);
+        border: 1px solid var(--line);
+      }
+      .stroke-btn {
+        padding: 4px 8px;
+        font-family: var(--font-body);
+        font-size: 10px;
+        border: 1px solid transparent;
+        border-radius: var(--r-pill);
+        background: none;
+        color: var(--text-mute);
+        cursor: pointer;
+      }
+      .stroke-btn.active {
+        color: var(--accent);
+        border-color: var(--accent-25);
+        background: var(--accent-15);
+      }
+
+      .markup-actions {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .markup-viewport {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        place-items: center;
+        position: relative;
+        padding: 12px;
+        overflow: auto;
+        background:
+          radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 16px 16px,
+          var(--ink-2);
+      }
+
+      #markupCanvas {
+        display: block;
+        border-radius: var(--r-sm);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--glass-edge);
+        cursor: crosshair;
+        background: transparent;
+      }
+
+      .markup-hint-bar {
+        padding: 6px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--surface-2);
+        border-top: 1px solid var(--line);
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--text-mute);
+      }
     </style>
   </head>
   <body>
+    <!-- Biblioteka ikon SVG -->
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
         <symbol id="s-frame" viewBox="0 0 24 24">
@@ -328,6 +594,86 @@
             stroke-linecap="round"
           />
         </symbol>
+        <symbol id="s-crop" viewBox="0 0 24 24">
+          <path
+            d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          />
+        </symbol>
+        <symbol id="s-highlighter" viewBox="0 0 24 24">
+          <path
+            d="M14 3l7 7-9.5 9.5a2.5 2.5 0 0 1-1.77.73H5v-4.73a2.5 2.5 0 0 1 .73-1.77L14 3zM18 14l-6-6M3 21h18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="s-rect" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
+        </symbol>
+        <symbol id="s-circle" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
+        </symbol>
+        <symbol id="s-triangle" viewBox="0 0 24 24">
+          <path d="M12 3L2 21h20L12 3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="s-line" viewBox="0 0 24 24">
+          <path d="M4 20L20 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </symbol>
+        <symbol id="s-arrow" viewBox="0 0 24 24">
+          <path d="M5 19L19 5M10 5h9v9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="s-bubble" viewBox="0 0 24 24">
+          <path
+            d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </symbol>
+        <symbol id="s-text" viewBox="0 0 24 24">
+          <path d="M4 7V4h16v3M9 20h6M12 4v16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+        </symbol>
+        <symbol id="s-select" viewBox="0 0 24 24">
+          <path d="M3 3l7 18 3-7 7-3L3 3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="s-undo" viewBox="0 0 24 24">
+          <path d="M3 7v6h6M3 13a9 9 0 0 1 15.36-6.36A9 9 0 0 1 21 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </symbol>
+        <symbol id="s-redo" viewBox="0 0 24 24">
+          <path d="M21 7v6h-6M21 13a9 9 0 0 0-15.36-6.36A9 9 0 0 0 3 17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </symbol>
+        <symbol id="s-trash" viewBox="0 0 24 24">
+          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </symbol>
+        <symbol id="s-copy" viewBox="0 0 24 24">
+          <rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </symbol>
+        <symbol id="s-edit" viewBox="0 0 24 24">
+          <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="s-apple-notes" viewBox="0 0 24 24">
+          <path d="M4 4h16v16H4z" fill="none" stroke="currentColor" stroke-width="1.8" rx="3" />
+          <path d="M8 8h8M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </symbol>
+        <symbol id="s-notion" viewBox="0 0 24 24">
+          <path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5z" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <path d="M8 7v10l8-10v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="s-spark" viewBox="0 0 24 24">
+          <path d="M3 8l9 6 9-6M3 6h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
+        <symbol id="s-whatsapp" viewBox="0 0 24 24">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </symbol>
       </defs>
     </svg>
 
@@ -338,8 +684,31 @@
         <button id="close" aria-label="Zamknij">×</button>
       </header>
 
-      <main>
-        <div id="preview"><img id="shotImage" alt="Zaznaczony fragment ekranu" /></div>
+      <!-- Widok główny (Standardowy) -->
+      <main id="mainView">
+        <div class="preview-box">
+          <div id="preview" title="Kliknij, aby edytować zrzut (Markup)">
+            <img id="shotImage" alt="Zaznaczony fragment ekranu" />
+            <div class="preview-overlay">
+              <svg><use href="#s-edit" /></svg>
+              <span>Edytuj zrzut (Markup)</span>
+            </div>
+          </div>
+
+          <div class="preview-actions">
+            <div class="preview-actions-left">
+              <button type="button" class="preview-action-btn" id="copyImageBtn">
+                <svg><use href="#s-copy" /></svg>
+                <span>Kopiuj obraz</span>
+              </button>
+              <button type="button" class="preview-action-btn" id="openMarkupBtn">
+                <svg><use href="#s-edit" /></svg>
+                <span>Edytor graficzny</span>
+              </button>
+            </div>
+            <span id="copyFeedback" class="copy-feedback" hidden>✓ Skopiowano</span>
+          </div>
+        </div>
 
         <div id="note" hidden></div>
 
@@ -355,7 +724,7 @@
           <div class="seg" id="target">
             <button data-value="new" aria-pressed="true">Nowa notatka</button>
             <button data-value="note" aria-pressed="false">Do notatki</button>
-            <button data-value="cursor" aria-pressed="false">Pod kursor</button>
+            <button data-value="disk" aria-pressed="false">Zapisz na dysk</button>
           </div>
           <select id="noteId" hidden></select>
         </div>
@@ -370,18 +739,125 @@
             <button data-value="both" aria-pressed="false">Oba</button>
           </div>
         </div>
+
+        <div class="group">
+          <div class="group__label">Do schowka</div>
+          <div class="action-grid action-grid--3">
+            <button type="button" class="action-card-btn" id="copyTextBtn" title="Kopiuj odczytany tekst">
+              <svg><use href="#s-text" /></svg>
+              <span>Tekst</span>
+            </button>
+            <button type="button" class="action-card-btn" id="copyShotImgBtn" title="Kopiuj zrzut ekranu">
+              <svg><use href="#s-frame" /></svg>
+              <span>Screenshot</span>
+            </button>
+            <button type="button" class="action-card-btn" id="copyAllBtn" title="Kopiuj tekst i obraz">
+              <svg><use href="#s-copy" /></svg>
+              <span>Wszystko</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="group__label">Udostępnij</div>
+          <div class="action-grid action-grid--4">
+            <button type="button" class="action-card-btn" id="shareAppleNotesBtn" title="Notatki Apple">
+              <svg><use href="#s-apple-notes" /></svg>
+              <span>Notatki</span>
+            </button>
+            <button type="button" class="action-card-btn" id="shareNotionBtn" title="Notion">
+              <svg><use href="#s-notion" /></svg>
+              <span>Notion</span>
+            </button>
+            <button type="button" class="action-card-btn" id="shareSparkBtn" title="Spark Mail">
+              <svg><use href="#s-spark" /></svg>
+              <span>Spark</span>
+            </button>
+            <button type="button" class="action-card-btn" id="shareWhatsAppBtn" title="WhatsApp">
+              <svg><use href="#s-whatsapp" /></svg>
+              <span>WhatsApp</span>
+            </button>
+          </div>
+        </div>
       </main>
 
-      <footer>
+      <footer id="mainFooter">
         <span id="hint">⌘⏎ zapisuje · Esc zamyka</span>
         <button class="act act--quiet" id="cancel">Anuluj</button>
         <button class="act" id="save">Zapisz</button>
       </footer>
+
+      <!-- Widok edytora graficznego (Markup Canvas) -->
+      <div id="markupView" hidden>
+        <div class="markup-toolbar">
+          <!-- Narzędzia wyboru i kształtów -->
+          <div class="markup-tool-group">
+            <button class="tool-btn active" data-tool="select" title="Zaznacz i przekształć"><svg><use href="#s-select" /></svg></button>
+            <button class="tool-btn" data-tool="crop" title="Kadrowanie (Crop)"><svg><use href="#s-crop" /></svg></button>
+            <button class="tool-btn" data-tool="highlighter" title="Zakreślacz"><svg><use href="#s-highlighter" /></svg></button>
+            <button class="tool-btn" data-tool="rectangle" title="Prostokąt / Ramka"><svg><use href="#s-rect" /></svg></button>
+            <button class="tool-btn" data-tool="ellipse" title="Okrąg / Elipsa"><svg><use href="#s-circle" /></svg></button>
+            <button class="tool-btn" data-tool="triangle" title="Trójkąt"><svg><use href="#s-triangle" /></svg></button>
+            <button class="tool-btn" data-tool="line" title="Linia prosta"><svg><use href="#s-line" /></svg></button>
+            <button class="tool-btn" data-tool="arrow" title="Strzałka"><svg><use href="#s-arrow" /></svg></button>
+            <button class="tool-btn" data-tool="bubble" title="Dymek dialogowy"><svg><use href="#s-bubble" /></svg></button>
+            <button class="tool-btn" data-tool="text" title="Zwykły tekst"><svg><use href="#s-text" /></svg></button>
+          </div>
+
+          <!-- Paleta kolorów -->
+          <div class="markup-palette">
+            <button class="color-dot active" data-color="#ef4444" style="background: #ef4444" title="Czerwony"></button>
+            <button class="color-dot" data-color="#eab308" style="background: #eab308" title="Żółty"></button>
+            <button class="color-dot" data-color="#22c55e" style="background: #22c55e" title="Zielony"></button>
+            <button class="color-dot" data-color="#3b82f6" style="background: #3b82f6" title="Niebieski"></button>
+            <button class="color-dot" data-color="#e5b968" style="background: #e5b968" title="Złoty"></button>
+            <button class="color-dot" data-color="#ffffff" style="background: #ffffff" title="Biały"></button>
+            <button class="color-dot" data-color="#1e1e1e" style="background: #1e1e1e; border-color: #444;" title="Ciemny"></button>
+          </div>
+
+          <!-- Grubość linii -->
+          <div class="stroke-seg">
+            <button class="stroke-btn" data-width="2">2px</button>
+            <button class="stroke-btn active" data-width="4">4px</button>
+            <button class="stroke-btn" data-width="8">8px</button>
+          </div>
+
+          <!-- Rozmiar tekstu -->
+          <div class="stroke-seg" id="fontSeg" style="display: none;">
+            <button class="stroke-btn" data-size="16">S</button>
+            <button class="stroke-btn active" data-size="24">M</button>
+            <button class="stroke-btn" data-size="36">L</button>
+            <button class="stroke-btn" data-size="48">XL</button>
+          </div>
+
+          <!-- Historia i akcje -->
+          <div class="markup-tool-group">
+            <button class="tool-btn" id="markupUndo" title="Cofnij (⌘Z)" disabled><svg><use href="#s-undo" /></svg></button>
+            <button class="tool-btn" id="markupRedo" title="Ponów (⌘⇧Z)" disabled><svg><use href="#s-redo" /></svg></button>
+            <button class="tool-btn" id="markupDelete" title="Usuń zaznaczony (Backspace)" disabled><svg><use href="#s-trash" /></svg></button>
+          </div>
+
+          <div class="markup-actions">
+            <button class="act act--quiet" id="markupCancel">Anuluj</button>
+            <button class="act" id="markupDone">Gotowe</button>
+          </div>
+        </div>
+
+        <div class="markup-viewport">
+          <canvas id="markupCanvas"></canvas>
+        </div>
+
+        <div class="markup-hint-bar">
+          <span>Podwójne kliknięcie edytuje tekst · Przeciągnij uchwyty, aby zmienić rozmiar</span>
+          <span>Esc anuluje · ⌘⏎ zatwierdza</span>
+        </div>
+      </div>
     </div>
 
     <script src="../shared/strings.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/mock-bridge.js"></script>
+    <script src="js/markup.js"></script>
     <script src="js/shot.js"></script>
   </body>
 </html>

@@ -259,7 +259,7 @@
     // `""` jest realnym wyborem — „Bez szuflady" — więc porównanie musi
     // być ścisłe, nie zwykłą prawdziwością (patrz komentarz przy onClick).
     const inFolder = (note) => state.folder === null || folderOf(note) === (state.folder || null);
-    const visible = state.notes.filter((note) => inFolder(note) && matches(note, query));
+    const visible = state.notes.filter((note) => note?.kind !== "meeting" && inFolder(note) && matches(note, query));
     const { groups, divided } = groupNotes(visible);
 
     $("#noteCount").textContent = query
@@ -552,7 +552,7 @@
     const note = state.notes.find(
       (item) => item.id === element.closest(".note-card")?.dataset.id,
     );
-    if (!note || state.renaming) return;
+    if (!note || state.renaming || note.system) return;
 
     state.renaming = note.id;
     const before = rawTitle(note);
@@ -740,7 +740,8 @@
   }
 
   async function reload(keepSelection = true) {
-    state.notes = await api.notes.get();
+    const raw = (await api.notes.get()) ?? [];
+    state.notes = raw.filter((note) => note?.kind !== "meeting");
     const stillThere = state.notes.some((note) => note.id === state.selected);
     if (!keepSelection || !stillThere) {
       state.selected = state.notes.length ? sortNotes(state.notes)[0].id : null;
