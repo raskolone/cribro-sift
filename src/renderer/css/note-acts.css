@@ -132,6 +132,19 @@
   .note-acts__slot:last-child .note-act:focus-visible::after {
     transform: translateX(0) translateY(0);
   }
+
+  /* Gdy menu czynności (np. „Udostępnij”) jest otwarte, dymek tooltipa nie może wisieć na przycisku */
+  .note-acts__slot:has(.note-acts__menu:not([hidden])) .note-act::after,
+  .note-acts__slot:has(.note-acts__menu:not([hidden])) .note-act:hover::after,
+  .note-acts__slot:has(.note-acts__menu:not([hidden])) .note-act:focus-visible::after,
+  .note-act[aria-expanded="true"]::after,
+  .note-act[aria-expanded="true"]:hover::after,
+  .note-act[aria-expanded="true"]:focus-visible::after {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
 }
 
 /* Dymek wychodzi POZA przycisk i poza slot — obu trzeba to pozwolić,
@@ -254,50 +267,48 @@
 .note-acts__menu {
   position: absolute;
   right: 0;
-  bottom: calc(100% + 8px);
-  min-width: 218px;
-  padding: 5px;
-  border-radius: var(--r-md);
-  background-color: var(--glass);
-  background-image: var(--glass-fill);
-  border: 1px solid var(--glass-edge);
-  box-shadow: var(--glass-sheen), var(--glass-drop);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  z-index: 30;
+  bottom: calc(100% + 6px);
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.25);
+  z-index: 9999;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 .note-acts__menu[hidden] {
-  display: none;
+  display: none !important;
 }
 .note-acts__menu button {
   display: flex;
   align-items: center;
   text-align: left;
-  padding: 9px 11px;
+  padding: 6px 10px;
   border: none;
-  border-radius: var(--r-sm);
-  background: none;
-  color: var(--text-2);
+  border-radius: 8px;
+  background: transparent;
+  color: #f4f4f5;
   font-family: var(--font-body);
-  font-size: var(--fs-xs);
+  font-size: 13px;
+  font-weight: 500;
   letter-spacing: normal;
   text-transform: none;
   cursor: pointer;
-  transition:
-    background var(--t),
-    color var(--t);
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 .note-acts__menu button:hover {
-  background: var(--accent-08);
-  color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 .note-acts__sep {
   height: 1px;
-  margin: 4px 8px;
-  background: var(--line-soft);
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.10);
+  border: none;
 }
 
 /* ── Znaki specjalne ─────────────────────────────────────────────

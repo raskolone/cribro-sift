@@ -553,7 +553,12 @@
     const act = event.target.closest("[data-act]")?.dataset.act;
     if (act === "share") {
       const menu = document.querySelector('[data-acts-menu="share"]');
-      if (menu) menu.hidden = !menu.hidden;
+      const btn = event.target.closest('[data-act="share"]');
+      if (menu) {
+        const willOpen = menu.hidden;
+        menu.hidden = !menu.hidden;
+        btn?.setAttribute("aria-expanded", String(willOpen));
+      }
       /* Kartka bywa węższa niż samo menu — tu domknięcie do krawędzi jest
          potrzebne najbardziej z całej trójki okien. */
       fitMenu(menu);
@@ -582,6 +587,7 @@
   function closeShare() {
     const menu = document.querySelector('[data-acts-menu="share"]');
     if (menu) menu.hidden = true;
+    document.querySelector('[data-act="share"]')?.setAttribute("aria-expanded", "false");
   }
 
   /* ── „Zwiń w stosik" ─────────────────────────────────────────────

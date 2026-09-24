@@ -765,6 +765,7 @@
       const menu = root.querySelector(id);
       if (menu) menu.hidden = true;
     }
+    root.querySelector('[data-act="share"]')?.setAttribute("aria-expanded", "false");
   }
 
   function toggleMenu(id) {
@@ -773,6 +774,9 @@
     const open = menu.hidden;
     closeMenus(id);
     menu.hidden = !open;
+    if (id === '[data-acts-menu="share"]') {
+      root.querySelector('[data-act="share"]')?.setAttribute("aria-expanded", String(open));
+    }
   }
 
   /* Wysyłka siedzi w js/notes-core.js — tam, gdzie pasek czynności, który
