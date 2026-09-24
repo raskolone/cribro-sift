@@ -240,13 +240,19 @@ contextBridge.exposeInMainWorld("cribro", {
     // tylko kiedy i z jakim opóźnieniem, a kartka melduje, gdy skończy.
     onFold: on("sticky:fold"),
     onScale: on("sticky:scale"),
-    // Zwinięcie talii w fizyczny stosik kart w rogu ekranu.
-    stack: (stacked = true) => ipcRenderer.invoke("deck:stack", stacked),
-    unstack: () => ipcRenderer.invoke("deck:unstack"),
+    // Zwinięcie talii w fizyczny stosik kart w miejscu wywołującej notatki.
+    stack: (stacked = true, originId = null) => ipcRenderer.invoke("deck:stack", stacked, originId),
+    unstack: (originId = null) => ipcRenderer.invoke("deck:unstack", originId),
     onStack: on("sticky:stack"),
+    showStackMenu: (pos) => ipcRenderer.invoke("deck:stack-menu", pos),
+    closeStackMenu: () => ipcRenderer.invoke("deck:stack-menu-close"),
+    stackAction: (action) => ipcRenderer.invoke("deck:stack-action", action),
     // „Masz tu pisać" — kartka założona plusikiem dostaje kursor od razu.
     onWrite: on("sticky:write"),
     folded: (gen) => ipcRenderer.send("deck:folded", { gen }),
+    /* Kartka powiadamia o utracie fokusu — proces główny decyduje, czy
+       złożyć wszystkie kartki w stosik (tylko gdy żadna nie ma fokusu). */
+    stickyBlurred: () => ipcRenderer.send("sticky:blurred"),
   },
 
   /* Spotkania — nagranie rozmowy, nie dyktowanie.
@@ -376,6 +382,12 @@ contextBridge.exposeInMainWorld("cribro", {
     cancelCapture: () => ipcRenderer.invoke("capture:cancel"),
     minimize: () => ipcRenderer.send("window:minimize"),
     close: () => ipcRenderer.send("window:close"),
+  },
+
+  /* Pobieranie metadanych linku (Open Graph) — używane przez kartki linków
+     w Stickies. Most jest tutaj, bo renderer nie może sam otwierać połączeń. */
+  links: {
+    fetchPreview: (url) => ipcRenderer.invoke("links:fetch-preview", url),
   },
 
   onState: on("state"),

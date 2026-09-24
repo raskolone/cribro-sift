@@ -887,3 +887,36 @@ input.tag-input:focus {
   border-style: solid;
   border-color: var(--accent-30);
 }
+
+/* ── Light Mode Enhancements for Notes Window ── */
+[data-theme="light"] #list {
+  background: #f8fafc;
+  border-right: 1px solid #e2e8f0;
+}
+
+[data-theme="light"] #editor {
+  background: #ffffff;
+}
+
+[data-theme="light"] .note-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+[data-theme="light"] .note-card:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+[data-theme="light"] .note-card[aria-selected="true"] {
+  border-color: #047857;
+  background: #f0fdf4;
+}
+
+[data-theme="light"] .list__head,
+[data-theme="light"] .editor__head,
+[data-theme="light"] .editor__foot {
+  border-bottom: 1px solid #e2e8f0;
+}
+

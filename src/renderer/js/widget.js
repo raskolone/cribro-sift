@@ -425,6 +425,17 @@
      na pulpicie, i to jest teraz CAŁA jego treść. */
   badge.addEventListener("dblclick", () => void toggleDeck());
 
+  /* ── Prawy przycisk myszy na widżet → główne okno ───────────────────────
+     Kontekstowe menu przeglądarki nie ma tu sensu (okno jest bez ramki,
+     bez wyboru tekstu), więc prawy klik w znaczek staje się skrótem do
+     głównego okna aplikacji. Klik poza znaczkiem nie jest obsługiwany —
+     tam przepuszczamy zdarzenia na wylot i contextmenu i tak nie dochodzi. */
+  badge.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void api.widget.run("app");
+  });
+
   /* Klik gdziekolwiek indziej na pulpicie odklika znaczek — a to samo robi
      utrata fokusu okna i zejście kursorem, patrz mousemove/mouseleave
      wyżej. Bez tego wciśnięty znaczek zostawałby wciśnięty, kiedy uwaga

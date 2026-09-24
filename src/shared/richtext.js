@@ -119,6 +119,7 @@
       );
       return `${SLOT}${images.length - 1}${SLOT}`;
     });
+    out = out.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a class="prose-link" href="$2" target="_blank" rel="noopener">$1</a>');
     out = out.replace(/`([^`\n]+)`/g, "<code>$1</code>");
     out = out.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
     // Kursywa tylko wtedy, gdy gwiazdka albo podkreślenie stoi przy granicy
@@ -298,6 +299,13 @@
 
     const inner = childrenOf(node).map(inlineToMarkdown).join("");
 
+    if (tag === "a") {
+      const href = attr(node, "href") || attr(node, "data-url");
+      if (!href) return inner;
+      if (inner.trim() === href.trim()) return href;
+      return `[${inner}](${href})`;
+    }
+
     if (tag === "span") {
       const color = attr(node, "data-color");
       if (!color || !COLOR_KEYS.includes(color) || !inner.trim()) return inner;
@@ -345,6 +353,17 @@
     if (isText(node)) return String(node.nodeValue ?? "").trim();
 
     const tag = tagOf(node);
+
+    if (tag === "figure") {
+      const url = attr(node, "data-url");
+      if (url) return url;
+      const innerA = childrenOf(node).find((c) => tagOf(c) === "a");
+      if (innerA) {
+        const u = attr(innerA, "data-url") || attr(innerA, "href");
+        if (u) return u;
+      }
+    }
+
     const text = childrenOf(node).map(inlineToMarkdown).join("").trim();
 
     if (tag === "ul" || tag === "ol") return listToMarkdown(node, 0);

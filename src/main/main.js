@@ -479,17 +479,16 @@ function createShotWindow() {
      z którego przed chwilą coś zaznaczono. Na drugim monitorze wyglądałoby
      to jak zgubiony zrzut. */
   const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const width = 460;
-  /* Wysokość dobrana tak, żeby wszystko było widać naraz: podgląd, odczyt
-     i oba wybory. Okno, w którym trzeba przewijać, żeby znaleźć „Zapisz",
-     byłoby wolniejsze niż wklejenie tekstu ręcznie. */
-  const height = 640;
+  const width = 640;
+  /* Przestronne okno z czytelnym układem pionowym: podgląd, odczyt OCR,
+     wybór celu i formatu oraz szybkie akcje schowka i udostępniania. */
+  const height = 760;
 
   shotWindow = new BrowserWindow({
     width,
     height,
     x: Math.round(workArea.x + (workArea.width - width) / 2),
-    y: Math.round(workArea.y + Math.max(24, (workArea.height - height) / 2 - 40)),
+    y: Math.round(workArea.y + Math.max(20, (workArea.height - height) / 2 - 15)),
     show: false,
     frame: false,
     resizable: false,
@@ -770,8 +769,8 @@ function copyShotImage(dataUrl = null) {
 
 function setShotWindowSize(size = {}) {
   if (!shotWindow || shotWindow.isDestroyed()) return;
-  const width = size.width ?? 460;
-  const height = size.height ?? 640;
+  const width = size.width ?? 640;
+  const height = size.height ?? 760;
   const bounds = shotWindow.getBounds();
   const newX = Math.round(bounds.x - (width - bounds.width) / 2);
   const newY = Math.round(bounds.y - (height - bounds.height) / 2);
@@ -1355,7 +1354,7 @@ function resetWidget() {
    To nie jest zaokrąglenie w górę „na zapas": oba pasy zabierają kartce
    dokładnie tyle wysokości, ile same mają, a kartka ma zostać kartką —
    miejscem na kilka linijek, a nie ramką z guzikami i szparą na tekst. */
-const STICKY_CARD = { width: 268, height: 340 };
+const STICKY_CARD = { width: 300, height: 340 };
 /* Granice ręcznej zmiany rozmiaru, PRZY SKALI 1. Skala z ekranu daje kartce
    rozmiar startowy, ale ostatnie słowo ma człowiek: jedna notatka to numer
    telefonu, druga to plan dnia i te dwie nie potrzebują tego samego
@@ -1997,6 +1996,7 @@ function openDeck(focusId = null) {
  * ekranie; inaczej talia gasłaby w jednej klatce, a wychodziła płynnie.
  */
 function hideDeck() {
+  closeStackMenu();
   const gen = ++deckGen;
   deckOpen = false;
   deckStacked = false;
@@ -2022,18 +2022,125 @@ function hideDeck() {
 
 const toggleDeck = () => (deckOpen ? hideDeck() : openDeck());
 
-/* ══ ANIMACJA I ZWIJANIE W STOSIK — GENIE EFFECT ══
-   Płynny efekt zasysania kartki w dół z krzywą cubic-bezier(0.2, 0.9, 0.3, 1)
-   oraz sprężystym rozwinięciem z lekkim overshootingiem (bounce-back). */
+/* ══ ANIMACJA I ZWIJANIE W STOSIK — FIZYCZNA KASKADA KART ══
+   Płynna, luksusowa animacja zwijania do miejsca wywołującej notatki
+   ze sprężystą krzywą, asymetrycznym układem kaskadowym i obsługą przeciągania. */
 let stackAnimTimer = null;
+let stackMenuWin = null;
 
-function easeGenieDown(t) {
-  const cx = 3 * 0.2;
-  const bx = 3 * (0.3 - 0.2) - cx;
+function closeStackMenu() {
+  if (stackMenuWin && !stackMenuWin.isDestroyed()) {
+    stackMenuWin.hide();
+  }
+}
+
+function openStackMenu({ screenX, screenY }) {
+  if (!deckStacked) return;
+  const MENU_W = 230;
+  const MENU_H = 175;
+
+  const currentDisplay = screen.getDisplayNearestPoint({ x: Math.round(screenX), y: Math.round(screenY) });
+  const { workArea } = currentDisplay;
+
+  let x = Math.round(screenX);
+  let y = Math.round(screenY);
+
+  if (x + MENU_W > workArea.x + workArea.width - 8) {
+    x = Math.round(screenX - MENU_W);
+  }
+  if (y + MENU_H > workArea.y + workArea.height - 8) {
+    y = Math.round(screenY - MENU_H);
+  }
+  x = Math.max(workArea.x + 8, x);
+  y = Math.max(workArea.y + 8, y);
+
+  if (!stackMenuWin || stackMenuWin.isDestroyed()) {
+    stackMenuWin = new BrowserWindow({
+      width: MENU_W,
+      height: MENU_H,
+      x,
+      y,
+      show: false,
+      frame: false,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      alwaysOnTop: true,
+      transparent: true,
+      backgroundColor: "#00000000",
+      vibrancy: "under-window",
+      visualEffectState: "active",
+      skipTaskbar: true,
+      hasShadow: false,
+      webPreferences: {
+        preload: path.join(__dirname, "..", "preload", "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    stackMenuWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    stackMenuWin.loadFile(path.join(__dirname, "..", "renderer", "stack-menu.html"));
+    stackMenuWin.on("blur", () => closeStackMenu());
+  } else {
+    stackMenuWin.setBounds({ x, y, width: MENU_W, height: MENU_H });
+  }
+
+  stackMenuWin.show();
+  stackMenuWin.focus();
+}
+
+function handleStackAction(action) {
+  closeStackMenu();
+  const notes = deckNotes();
+  if (action === "copy") {
+    const text = notes
+      .map((n) => {
+        const title = (n.title || "").trim();
+        const body = (n.text || "").trim();
+        return title ? `### ${title}\n${body}` : body;
+      })
+      .filter(Boolean)
+      .join("\n\n---\n\n");
+    clipboard.writeText(text);
+    broadcast("hud:show", { text: "Skopiowano zawartość stosiku" });
+  } else if (action === "hide") {
+    hideDeck();
+  } else if (action === "delete") {
+    for (const note of notes) {
+      store.updateNote(note.id, { widget: false });
+      stickyWindows.get(note.id)?.destroy();
+      stickyWindows.delete(note.id);
+      forgetCard(note.id);
+    }
+    scheduleSync();
+    deckOpen = false;
+    deckStacked = false;
+    tellDeck();
+    broadcast("hud:show", { text: "Usunięto stosik notatek" });
+  } else if (action === "share") {
+    const text = notes
+      .map((n) => {
+        const title = (n.title || "").trim();
+        const body = (n.text || "").trim();
+        return title ? `### ${title}\n${body}` : body;
+      })
+      .filter(Boolean)
+      .join("\n\n---\n\n");
+    clipboard.writeText(text);
+    broadcast("hud:show", { text: "Skopiowano notatki do wysłania" });
+  }
+}
+
+function easeCollapse(t) {
+  // Ultra-płynna krzywa cubic-bezier(0.16, 1, 0.3, 1) — miękkie zassanie kart w stosik
+  const cx = 3 * 0.16;
+  const bx = 3 * (0.3 - 0.16) - cx;
   const ax = 1 - cx - bx;
 
-  const cy = 3 * 0.9;
-  const by = 3 * (1 - 0.9) - cy;
+  const cy = 3 * 1.0;
+  const by = 3 * (1.0 - 1.0) - cy;
   const ay = 1 - cy - by;
 
   function sampleCurveX(u) { return ((ax * u + bx) * u + cx) * u; }
@@ -2055,14 +2162,16 @@ function easeGenieDown(t) {
   return sampleCurveY(solveCurveX(t));
 }
 
-function easeGenieUp(t) {
-  const c1 = 0.45;
-  const c3 = c1 + 1;
-  const tm = t - 1;
-  return 1 + c3 * Math.pow(tm, 3) + c1 * Math.pow(tm, 2);
+function easeExpand(t) {
+  // Miękkie, organiczne rozwijanie ze sprężystym odbiciem (stiffness: 260, damping: 24)
+  const omega = 16.1245;
+  const zeta = 0.7442;
+  const decay = Math.exp(-zeta * omega * t);
+  const omegaD = omega * Math.sqrt(1 - zeta * zeta);
+  return 1 - decay * (Math.cos(omegaD * t) + (zeta / Math.sqrt(1 - zeta * zeta)) * Math.sin(omegaD * t));
 }
 
-function animateWindowBounds(targets, duration = 650, easeFn = easeGenieDown) {
+function animateWindowBounds(targets, duration = 490, easeFn = easeCollapse) {
   if (stackAnimTimer) {
     clearInterval(stackAnimTimer);
     stackAnimTimer = null;
@@ -2100,11 +2209,12 @@ function animateWindowBounds(targets, duration = 650, easeFn = easeGenieDown) {
   }, 16);
 }
 
-function stackDeck(toStack = true) {
+function stackDeck(toStack = true, originId = null) {
   if (!deckOpen) return false;
   const windows = [...stickyWindows.entries()].filter(([_id, win]) => !win.isDestroyed() && win.isVisible());
   if (!windows.length) return false;
 
+  closeStackMenu();
   deckStacked = !!toStack;
   tellDeck();
 
@@ -2112,42 +2222,93 @@ function stackDeck(toStack = true) {
   const N = windows.length;
 
   if (deckStacked) {
-    const STACK_W = 126 + STICKY_HALO * 2;
-    const STACK_H = 154 + STICKY_HALO * 2;
-    const stackBaseX = workArea.x + workArea.width - STACK_W - 24;
-    const stackBaseY = workArea.y + workArea.height - STACK_H - 24;
+    // Zmniejszony rozmiar stosiku (-30% względem 0.65 -> skala 0.46, dając zwarty bloczek ~100px szerokości)
+    const STACK_SCALE = 0.46;
+    const STACK_W = Math.round(STICKY_CARD.width * STACK_SCALE) + STICKY_HALO * 2;
+    const STACK_H = Math.round(STICKY_CARD.height * STACK_SCALE) + STICKY_HALO * 2;
 
-    const targets = windows.map(([id, win], index) => {
+    // Znajdź notatkę wywołującą (Notatka A), która staje się kotwicą stosika
+    let targetWin = null;
+    let targetId = originId;
+    if (targetId && stickyWindows.has(targetId)) {
+      targetWin = stickyWindows.get(targetId);
+    }
+    if (!targetWin || targetWin.isDestroyed()) {
+      targetWin = BrowserWindow.getFocusedWindow() || windows[0][1];
+      targetId = windows.find(([, win]) => win === targetWin)?.[0] || windows[0][0];
+    }
+
+    const ob = targetWin.getBounds();
+    let stackBaseX = Math.round(ob.x + (ob.width - STACK_W) / 2);
+    let stackBaseY = Math.round(ob.y + (ob.height - STACK_H) / 2);
+
+    // Bezpieczne utrzymanie stosika w granicach widocznego pulpitu
+    stackBaseX = Math.max(workArea.x + 8, Math.min(stackBaseX, workArea.x + workArea.width - STACK_W - 8));
+    stackBaseY = Math.max(workArea.y + 8, Math.min(stackBaseY, workArea.y + workArea.height - STACK_H - 8));
+
+    // Uporządkuj okna tak, aby wywołująca notatka wylądowała na wierzchu (TOP)
+    const otherEntries = windows.filter(([id]) => id !== targetId);
+    const orderedEntries = [...otherEntries, [targetId, targetWin]];
+
+    const targets = orderedEntries.map(([id, win], index) => {
       if (!win._unstackedBounds) {
         win._unstackedBounds = win.getBounds();
       }
-      const rot = N <= 1 ? 0 : (index / (N - 1)) * 6 - 3; // -3deg do +3deg
-      const offsetX = N <= 1 ? 0 : Math.round((index - (N - 1) / 2) * 4);
-      const offsetY = N <= 1 ? 0 : Math.round((index - (N - 1) / 2) * -3);
+
+      const isTop = index === orderedEntries.length - 1;
+      let rot = 0;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (!isTop) {
+        // Asymetryczna kaskada kart:
+        // Karta wierzchnia (distFromTop = 0): wyśrodkowana, rot 0
+        // Karta środkowa (distFromTop = 1): w lewo/dół, rot -2.5deg
+        // Karta spodnia (distFromTop = 2): w prawo/górę, rot +3.5deg
+        const distFromTop = orderedEntries.length - 1 - index;
+        const cascadeSteps = [
+          { dx: -10, dy: 8, rot: -2.5 },   // karta środkowa (tuż pod wierzchnią)
+          { dx: 14, dy: -12, rot: 3.5 },   // karta spodnia (fioletowa/ciemniejsza)
+          { dx: -14, dy: 14, rot: -3.8 },
+          { dx: 18, dy: -16, rot: 4.2 },
+          { dx: -8, dy: -6, rot: -1.8 },
+        ];
+        const step = cascadeSteps[(distFromTop - 1) % cascadeSteps.length];
+        offsetX = step.dx;
+        offsetY = step.dy;
+        rot = step.rot;
+      }
+
       const to = {
         x: Math.round(stackBaseX + offsetX),
         y: Math.round(stackBaseY + offsetY),
         width: STACK_W,
         height: STACK_H,
       };
-      // Obniż podłogę okna, aby mogło przyjąć kompaktowy rozmiar stosiku
+
       win.setMinimumSize(STACK_W - STICKY_HALO * 2, STACK_H - STICKY_HALO * 2);
-      win.webContents.send("sticky:stack", { stacked: true, rot, index, count: N });
+      win.webContents.send("sticky:stack", { stacked: true, rot, isTop, index, count: N });
+
+      // Przenieś okna na przód w kolejności, aby Notatka A była na samej górze
+      try {
+        win.moveTop();
+      } catch {}
+
       return { win, to };
     });
 
-    animateWindowBounds(targets, 650, easeGenieDown);
+    animateWindowBounds(targets, 490, easeCollapse);
   } else {
     const spots = deckSpots(N, workArea);
     const targets = windows.map(([id, win], index) => {
       const savedBounds = win._unstackedBounds || deckPlace(id, spots[index], workArea);
       win._unstackedBounds = null;
       clampCard(win, !!store.getSettings().widget?.cards?.[id]?.rolled, win.deckScale ?? deckScaleAt(savedBounds));
-      win.webContents.send("sticky:stack", { stacked: false, rot: 0, index, count: N });
+      win.webContents.send("sticky:stack", { stacked: false, rot: 0, isTop: false, index, count: N });
       return { win, to: savedBounds };
     });
 
-    animateWindowBounds(targets, 650, easeGenieUp);
+    animateWindowBounds(targets, 510, easeExpand);
   }
   return true;
 }
@@ -2156,6 +2317,7 @@ const toggleStackDeck = () => stackDeck(!deckStacked);
 
 /** Talia znika na dobre — przy wyłączeniu widgetu albo zmianie widoku. */
 function closeDeck() {
+  closeStackMenu();
   deckGen += 1;
   deckOpen = false;
   deckStacked = false;
@@ -3947,6 +4109,7 @@ function applySpellcheck(settings) {
  */
 function attachContextMenu(win) {
   win.webContents.on("context-menu", (_event, params) => {
+    if (deckStacked && [...stickyWindows.values()].includes(win)) return;
     const t = translator(store.getSettings().uiLanguage);
     const items = [];
 
@@ -5032,6 +5195,99 @@ function registerIpc() {
     return true;
   });
 
+  /* ── Podgląd linku (Open Graph / oEmbed) ────────────────────────────────
+     Pobiera tytuł, miniaturkę, favicon i nazwę domeny dla podanego URL.
+     YouTube: miniatura wychodzi bezpośrednio z img.youtube.com — bez
+     zbędnego HTTP-round-tripu do strony.
+     Timeout 5s i ciche fallbacki: brak internetu = null (czysty link). */
+  ipcMain.handle("links:fetch-preview", async (_e, url) => {
+    if (!/^https?:\/\//.test(url)) return null;
+    try {
+      const parsedUrl = new URL(url);
+      const domain = parsedUrl.hostname.replace(/^www\./, "");
+
+      /* YouTube: ID wideo wyciągamy z URL, nie z HTML. */
+      const ytMatch = url.match(
+        /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/
+      );
+      if (ytMatch) {
+        const id = ytMatch[1];
+        let title = null;
+        try {
+          const ytController = new AbortController();
+          const ytTimeout = setTimeout(() => ytController.abort(), 2000);
+          const ytResp = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, {
+            signal: ytController.signal,
+          });
+          clearTimeout(ytTimeout);
+          if (ytResp.ok) {
+            const data = await ytResp.json();
+            title = data.title || null;
+          }
+        } catch {}
+        return {
+          url,
+          domain: "youtube.com",
+          title: title || "YouTube Video",
+          image: `https://img.youtube.com/vi/${id}/hqdefault.jpg`,
+          favicon: "https://www.youtube.com/favicon.ico",
+        };
+      }
+
+      /* Inne strony: pobieramy HTML i szukamy Open Graph. */
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      let html = "";
+      try {
+        const resp = await fetch(url, {
+          signal: controller.signal,
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; CribroSift/1.0)" },
+        });
+        if (!resp.ok) return null;
+        /* Czytamy tylko tyle, ile zmieści się meta — całe HTML bywa megabajtem. */
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let bytes = 0;
+        while (bytes < 65536) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          html += decoder.decode(value, { stream: true });
+          bytes += value.byteLength;
+          /* Szukamy zamknięcia <head>. */
+          if (html.includes("</head>") || html.includes("<body")) break;
+        }
+        reader.cancel();
+      } finally {
+        clearTimeout(timeout);
+      }
+
+      const og = (prop) => {
+        const m = html.match(
+          new RegExp(`<meta[^>]+(?:property|name)=["\']og:${prop}["\'][^>]+content=["\']([^"\']*)["\']`, "i")
+        ) || html.match(
+          new RegExp(`<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']og:${prop}["\']`, "i")
+        );
+        return m?.[1] ?? null;
+      };
+
+      const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
+      const title = og("title") || (titleMatch?.[1]?.trim() ?? null);
+      const image = og("image") || null;
+      const faviconMatch = html.match(/<link[^>]+rel=["\'](?:shortcut )?icon["\'][^>]+href=["\']([^"\']+)["\']/) ||
+        html.match(/<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\'](?:shortcut )?icon["\'][^>]/);
+      let favicon = faviconMatch?.[1] ?? null;
+      if (favicon && !favicon.startsWith("http")) {
+        favicon = new URL(favicon, url).href;
+      }
+      if (!favicon) favicon = `https://${parsedUrl.hostname}/favicon.ico`;
+
+      return { url, domain, title, image, favicon };
+    } catch {
+      return null;
+    }
+  });
+
+
   /* Katalog dostawców — nazwy modeli i adresy, spod których bierze się
      klucze. Dla zwykłego użytkownika pusty, i to nie na niby: pusty
      katalog znaczy, że renderer nie ma czym narysować kroku „Silniki",
@@ -5593,8 +5849,27 @@ function registerIpc() {
      żeby znaczek nie musiał trzymać własnej kopii tego stanu. */
   ipcMain.handle("deck:toggle", () => toggleDeck());
   ipcMain.handle("deck:show", (_e, show) => (show ? openDeck() : hideDeck()));
-  ipcMain.handle("deck:stack", (_e, stacked) => (typeof stacked === "boolean" ? stackDeck(stacked) : toggleStackDeck()));
+  ipcMain.handle("deck:stack", (_e, stacked, originId) => {
+    if (typeof stacked === "object" && stacked !== null) {
+      return stackDeck(stacked.stacked !== false, stacked.originId ?? null);
+    }
+    return typeof stacked === "boolean" ? stackDeck(stacked, originId) : toggleStackDeck();
+  });
   ipcMain.handle("deck:unstack", () => stackDeck(false));
+  ipcMain.handle("deck:stack-menu", (_e, pos) => {
+    if (pos && typeof pos.screenX === "number" && typeof pos.screenY === "number") {
+      openStackMenu(pos);
+    }
+    return true;
+  });
+  ipcMain.handle("deck:stack-menu-close", () => {
+    closeStackMenu();
+    return true;
+  });
+  ipcMain.handle("deck:stack-action", (_e, action) => {
+    handleStackAction(action);
+    return true;
+  });
   /* Wyłożenie talii z kartką WSKAZANĄ na wierzchu i pod kursorem. Woła to
      plusik: notatka właśnie powstała i ma się pojawić na pulpicie gotowa
      do pisania, a nie czekać, aż ktoś ją odszuka. */
@@ -5607,6 +5882,7 @@ function registerIpc() {
   ipcMain.handle("deck:escape", () => {
     if (!deckOpen) return false;
     if (deckStacked) {
+      closeStackMenu();
       stackDeck(false);
       return true;
     }
@@ -5621,6 +5897,34 @@ function registerIpc() {
     if (gen !== deckGen || deckOpen) return;
     BrowserWindow.fromWebContents(event.sender)?.hide();
   });
+
+  /* ── Zwijanie w stosik przy kliknięciu poza notatką ────────────────────────
+     Kartka powiadamia, że straciła fokus. Sprawdzamy z krótkim opóźnieniem
+     (150 ms), czy ŻADNA kartka nie ma teraz fokusu — jeśli tak, zwijamy.
+     Opóźnienie pozwala na propagację zdarzenia focus do następnego okna
+     (np. innej kartki), zanim podejmiemy decyzję.
+     Ignorujemy sytuacje:
+       - talia zwinięta (deckStacked) — już jest stosik, nie zwijaj
+       - talia zamknięta (deckOpen false) — nie ma co zwijać
+       - inne okno aplikacji (main, notes, briefing) ma fokus — zachowaj kartki */
+  let stickyBlurTimer = null;
+  ipcMain.on("sticky:blurred", () => {
+    if (!deckOpen || deckStacked) return;
+    clearTimeout(stickyBlurTimer);
+    stickyBlurTimer = setTimeout(() => {
+      // Jeśli którakolwiek kartka ma fokus — nic nie rób.
+      const stickyHasFocus = [...stickyWindows.values()].some(
+        (w) => !w.isDestroyed() && w.isFocused()
+      );
+      if (stickyHasFocus) return;
+      // Jeśli jakiekolwiek okno aplikacji ma fokus — nie zwijaj kartek.
+      // „Okno aplikacji" to każde okno z wyjątkiem obcych (null = brak fokusu).
+      const focused = BrowserWindow.getFocusedWindow();
+      if (focused) return; // jakieś okno Electrona ma fokus — zachowaj kartki
+      stackDeck(true);
+    }, 150);
+  });
+
 
   /* Zamknięcie jednej kartki zdejmuje notatkę z wierzchu — bo to jest to,
      co użytkownik właśnie powiedział. Samo schowanie okna zostawiałoby
@@ -5645,25 +5949,66 @@ function registerIpc() {
   ipcMain.on("deck:focus", (event) => BrowserWindow.fromWebContents(event.sender)?.focus());
 
   /* Przesuwanie kartki liczy renderer, bo tylko on widzi kursor — tak samo
-     jak przy znaczku.
-
-     Dlaczego nie systemowym `-webkit-app-region: drag`, skoro kartka ma
-     pasek u góry i to by wystarczyło: bo obszar przeciągania POŁYKA
-     kliknięcia. Tytuł leży właśnie w nim, a ma się dać przepisać podwójnym
-     kliknięciem — z app-region podwójne kliknięcie nigdy do niego nie
-     dochodzi. Własne przeciąganie z progiem ruchu godzi jedno z drugim:
-     ruch przesuwa kartkę, samo kliknięcie zostaje kliknięciem. */
+     jak przy znaczku. Gdy karty są w trybie stosiku (deckStacked), chwycenie
+     za dowolną kartę płynnie przesuwa CAŁY stosik ze wszystkimi oknami. */
   ipcMain.on("deck:move", (event, point) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    if (win && !win.isDestroyed()) win.setPosition(Math.round(point.x), Math.round(point.y));
+    if (!win || win.isDestroyed()) return;
+    const targetX = Math.round(point.x);
+    const targetY = Math.round(point.y);
+
+    if (deckStacked) {
+      if (stackAnimTimer) {
+        clearInterval(stackAnimTimer);
+        stackAnimTimer = null;
+      }
+      closeStackMenu();
+      const [curX, curY] = win.getPosition();
+      const dx = targetX - curX;
+      const dy = targetY - curY;
+      if (dx === 0 && dy === 0) return;
+
+      for (const [_id, w] of stickyWindows.entries()) {
+        if (!w || w.isDestroyed()) continue;
+        if (w === win) {
+          w.setPosition(targetX, targetY);
+        } else {
+          const [wx, wy] = w.getPosition();
+          w.setPosition(wx + dx, wy + dy);
+        }
+        if (w._unstackedBounds) {
+          w._unstackedBounds.x += dx;
+          w._unstackedBounds.y += dy;
+        }
+      }
+    } else {
+      win.setPosition(targetX, targetY);
+    }
   });
 
   ipcMain.on("deck:drop", (event, id) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;
-    // Ustawienie z kodu nie zawsze wywołuje „moved", więc zapisujemy sami.
-    retuneCard(win);
-    if (id) rememberCard(id, win);
+    if (deckStacked) {
+      try {
+        const { workArea } = screen.getDisplayNearestPoint(win.getBounds());
+        for (const [_noteId, w] of stickyWindows.entries()) {
+          if (!w || w.isDestroyed() || !w._unstackedBounds) continue;
+          w._unstackedBounds.x = Math.max(
+            workArea.x + 8,
+            Math.min(w._unstackedBounds.x, workArea.x + workArea.width - w._unstackedBounds.width - 8)
+          );
+          w._unstackedBounds.y = Math.max(
+            workArea.y + 8,
+            Math.min(w._unstackedBounds.y, workArea.y + workArea.height - w._unstackedBounds.height - 8)
+          );
+        }
+      } catch {}
+    } else {
+      // Ustawienie z kodu nie zawsze wywołuje „moved", więc zapisujemy sami.
+      retuneCard(win);
+      if (id) rememberCard(id, win);
+    }
   });
 
   /* Rozciąganie kartki uchwytem w jej rogu.

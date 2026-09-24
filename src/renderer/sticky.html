@@ -77,67 +77,96 @@
 
       /* ── Kartka ── */
 
+      /* ══ ZAZNACZANIE TEKSTU I KURSOR ══
+         Jaskrawozielony ::selection z tokenów (:root) znika na jasnym papierze
+         karteczki — nadpisujemy eleganckim, wysokim kontrastem. */
+      ::selection {
+        background: rgba(15, 23, 42, 0.15);
+        color: #0f172a;
+      }
+
       #card {
         position: absolute;
         inset: 0;
         display: flex;
         flex-direction: column;
-        border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+        border-radius: 12px;
+        border: 1px solid var(--paper-edge, rgba(0, 0, 0, 0.07));
         overflow: hidden;
-        /* Do pierwszej klatki animacji kartki nie widać. Okno pokazuje się
-           zanim renderer zdąży cokolwiek narysować — bez tego przez jedną
-           klatkę mrugałby gotowy prostokąt, a dopiero potem rozwijałby się
-           od zera. */
         opacity: 0;
         transform-origin: 50% 50%;
         will-change: transform, opacity, box-shadow;
+        box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
         transition:
-          transform 0.65s cubic-bezier(0.2, 0.9, 0.3, 1),
-          box-shadow 0.65s cubic-bezier(0.2, 0.9, 0.3, 1),
-          border-radius 0.65s cubic-bezier(0.2, 0.9, 0.3, 1),
-          opacity 0.65s cubic-bezier(0.2, 0.9, 0.3, 1);
+          transform 0.49s cubic-bezier(0.16, 1, 0.3, 1),
+          box-shadow 0.49s cubic-bezier(0.16, 1, 0.3, 1),
+          border-radius 0.49s cubic-bezier(0.16, 1, 0.3, 1),
+          opacity 0.49s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      /* ══ KARTKA ZWINIĘTA W STOSIK (GENIE EFFECT) ══ */
+      /* ══ PULSAR — delikatna poświata wokół aktywnej kartki ══
+         Miękki, pulsujący indygo gdy edytor ma fokus. Wygasa płynnie przy
+         utracie fokusu (transition: box-shadow 0.3s ease na #card). */
+      @keyframes pulsar-glow {
+        0%, 100% {
+          box-shadow:
+            0 4px 20px -2px rgba(0, 0, 0, 0.08),
+            0 2px 6px -1px rgba(0, 0, 0, 0.04),
+            0 0 0 2px rgba(99, 102, 241, 0.08),
+            0 0 18px 4px rgba(99, 102, 241, 0.15);
+        }
+        50% {
+          box-shadow:
+            0 4px 20px -2px rgba(0, 0, 0, 0.10),
+            0 2px 6px -1px rgba(0, 0, 0, 0.06),
+            0 0 0 2.5px rgba(99, 102, 241, 0.22),
+            0 0 28px 8px rgba(99, 102, 241, 0.30);
+        }
+      }
+      #card.sticky-focused {
+        animation: pulsar-glow 2.4s ease-in-out infinite;
+      }
+      #card.sticky-focused[data-stacked="true"] {
+        animation: none;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        #card {
+          transition: none !important;
+        }
+      }
+
+      /* ══ KARTKA ZWINIĘTA W STOSIK (Kompaktowy stosik pastelowych karteczek) ══ */
       #card[data-stacked="true"] {
-        transform: perspective(700px) rotate(var(--stack-rot, 0deg));
-        opacity: 0.88;
-        border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
-        box-shadow: 0 16px 36px -8px rgba(35, 25, 10, 0.38), 0 4px 14px -3px rgba(35, 25, 10, 0.24);
-        cursor: pointer;
+        transform: rotate(var(--stack-rot, 0deg));
+        opacity: 0.98;
+        border-radius: 14px;
+        box-shadow: 0 8px 20px -2px rgba(0, 0, 0, 0.18), 0 3px 8px -1px rgba(0, 0, 0, 0.10);
+        cursor: grab;
         user-select: none;
         -webkit-user-select: none;
+        will-change: transform, box-shadow;
       }
-      #card[data-stacked="true"] .head {
-        cursor: pointer;
-        padding: 7px 9px 6px;
+      #card[data-stacked="true"][data-stacked-top="true"] {
+        box-shadow:
+          0 20px 38px -6px rgba(0, 0, 0, 0.32),
+          0 10px 18px -4px rgba(0, 0, 0, 0.18),
+          0 2px 6px 0 rgba(0, 0, 0, 0.12);
       }
-      #card[data-stacked="true"] .head .ico {
-        display: none;
+      #card[data-stacked="true"][data-drag="true"] {
+        cursor: grabbing !important;
       }
-      #card[data-stacked="true"] .head__title {
-        font-size: 11px;
-        font-weight: 700;
-        pointer-events: none;
-      }
-      #card[data-stacked="true"] .body {
-        padding: 6px 9px;
-        pointer-events: none;
-        overflow: hidden;
-      }
-      #card[data-stacked="true"] #text.prose {
-        font-size: 9.5px;
-        line-height: 1.35;
-        padding-left: 0;
-        --grip-gutter: 0px;
-      }
+      #card[data-stacked="true"] .head,
+      #card[data-stacked="true"] .body,
       #card[data-stacked="true"] .tools,
       #card[data-stacked="true"] .foot,
       #card[data-stacked="true"] .deck-off,
       #card[data-stacked="true"] #grip,
       #card[data-stacked="true"] .palette,
       #card[data-stacked="true"] .text-colors {
-        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        transition: opacity 0.15s ease;
       }
 
       /* Rozwinięcie: kartka odchyla się od górnej krawędzi, jak kartka
@@ -201,20 +230,21 @@
          dać przepisać podwójnym kliknięciem. Z app-region to kliknięcie
          nigdy do niego nie dochodziło. Własne przeciąganie ma próg ruchu,
          więc jedno nie wyklucza drugiego. */
+      /* ── Drag Handle (w-8 h-1 rounded-full bg-black/10 mb-6) ── */
       .drag-pill {
         position: absolute;
-        top: 3px;
+        top: 6px;
         left: 50%;
         transform: translateX(-50%);
         width: 32px;
-        height: 3px;
+        height: 4px;
         border-radius: 9999px;
-        background: rgba(0, 0, 0, 0.12);
+        background: rgba(0, 0, 0, 0.10);
         pointer-events: none;
-        transition: opacity var(--t-fast);
+        transition: background var(--t-fast);
       }
       .head:hover .drag-pill {
-        background: rgba(0, 0, 0, 0.22);
+        background: rgba(0, 0, 0, 0.20);
       }
       .head {
         position: relative;
@@ -222,9 +252,9 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 10px 8px 8px 12px;
-        border-bottom: 1px solid var(--paper-head-border, var(--line-soft));
-        background: linear-gradient(180deg, var(--paper-head-bg, rgba(0, 0, 0, 0.04)), transparent);
+        padding: 14px 12px 6px 16px;
+        border-bottom: 1px solid var(--paper-head-border, rgba(0, 0, 0, 0.04));
+        background: transparent;
         cursor: grab;
       }
       .head[data-drag="true"] {
@@ -262,7 +292,7 @@
         font-size: 15px;
         font-weight: 700;
         letter-spacing: -0.015em;
-        color: var(--paper-head-text, #0f172a);
+        color: var(--paper-head-text, #09090b);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -300,7 +330,7 @@
         border: 0;
         border-radius: 8px;
         background: transparent;
-        color: var(--paper-head-text, #0f172a);
+        color: var(--paper-head-text, #09090b);
         opacity: 0.85;
         cursor: pointer;
         transition:
@@ -548,18 +578,16 @@
       #text.prose span[data-color="forest"] { color: #166534; }
       #text.prose span[data-color="slate"]  { color: #475569; }
 
-      /* ── Treść ── */
+      /* ── Treść (Padding 24px, System Font 16px, Kolor #1a1a1a, leading-relaxed) ── */
 
       .body {
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        /* Szesnaście dokoła: tekst ma oddech od krawędzi papieru, nie
-           dotyka ramki tak, jak dotykałby jej brzeg zeszytu. */
-        padding: 16px;
+        padding: 18px 24px;
       }
       .body::-webkit-scrollbar {
-        width: 7px;
+        width: 6px;
       }
       .body::-webkit-scrollbar-thumb {
         background: var(--line-strong);
@@ -569,31 +597,63 @@
         background: transparent;
       }
 
-      /* Ten sam arkusz co w Notatniku (css/prose.css), tylko o stopień
-         ciaśniej — kartka jest mniejsza od okna, a nie ma być innym
-         dokumentem. */
-      /* Wielkość pisma podstawia js/sticky.js z ustawień (widget.textSize) —
-         NIE bierze się ze skali kartki. Skala ciągnie za sobą całą geometrię
-         (transform: scale wyżej), więc pismo malało razem z ekranem; na
-         mniejszym monitorze zostawało dziesięć pikseli. */
       #text.prose {
-        font-size: var(--sticky-fs, 13.5px);
-        font-weight: 500;
-        line-height: 1.72;
-        color: var(--text, #0f172a);
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: var(--sticky-fs, 16px);
+        font-weight: 400;
+        line-height: 1.625;
+        color: var(--text, #1a1a1a);
         min-height: 100%;
         user-select: text;
         -webkit-user-select: text;
         -webkit-font-smoothing: subpixel-antialiased;
         -moz-osx-font-smoothing: auto;
         font-smooth: always;
-        /* Kartka jest wąska, więc pasek na uchwyt też — szerszy zabierałby
-           jej dziesiątą część na coś, co widać tylko pod kursorem. */
         --grip-gutter: 18px;
+        /* Kursor tekstowy: wyraźny czarny, standardowy interwał migania. */
+        caret-color: #000000 !important;
+      }
+
+      /* ══ TYPOGRAFIA MARKDOWN NA KARTCE ══
+         Nadpisania prose.css specyficzne dla jasnego tła kartki. */
+
+      /* Punktory — wyraźny grafit zamiast akcentu */
+      #text.prose ul li::marker {
+        color: #18181b;
+      }
+      #text.prose ol li::marker {
+        color: #3f3f46;
+        font-size: 0.88em;
+      }
+
+      /* Nagłówki — ciemne, pogrubione, czytelny spacing */
+      #text.prose h1,
+      #text.prose h2,
+      #text.prose h3 {
+        color: #09090b;
+        font-weight: 700;
+      }
+
+      /* Checkbox niezaznaczony */
+      #text.prose ul.task > li::before {
+        border-color: rgba(0, 0, 0, 0.30);
+        background: rgba(255, 255, 255, 0.60);
+      }
+      #text.prose ul.task > li:hover::before {
+        border-color: rgba(99, 102, 241, 0.70);
+      }
+
+      /* Odhaczone zadanie: czytelne przekreślenie, stonowany grafit */
+      #text.prose ul.task > li[data-done="true"] {
+        color: #71717a;
+        text-decoration: line-through;
+        text-decoration-color: #a1a1aa;
+        text-decoration-thickness: 1.5px;
       }
       #text.prose[data-empty="true"]::before {
-        font-size: calc(var(--sticky-fs, 13.5px) - 1.5px);
+        font-size: calc(var(--sticky-fs, 16px) - 1.5px);
         padding: 0 var(--s-4) 8%;
+        color: var(--text-faint, #64748b);
       }
 
       /* ── Stopka ── */
@@ -907,6 +967,7 @@
     <script src="js/editor.js"></script>
     <script src="js/ask.js"></script>
     <script src="js/notes-core.js"></script>
+    <script src="js/link-card.js"></script>
     <script src="js/sticky.js"></script>
   </body>
 </html>

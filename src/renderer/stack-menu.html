@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <title>Cribro Sift — Stosik Notatek</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        user-select: none;
+        -webkit-user-select: none;
+        font-family: var(--font-body, -apple-system, BlinkMacSystemFont, "DM Sans", sans-serif);
+      }
+
+      #toolbox {
+        position: absolute;
+        inset: 4px;
+        background: rgba(9, 16, 28, 0.88);
+        background-image:
+          radial-gradient(120% 120% at 50% 0%, rgba(114, 240, 180, 0.08), transparent 70%),
+          linear-gradient(135deg, rgba(20, 27, 42, 0.85), rgba(10, 14, 26, 0.75));
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        box-shadow:
+          0 18px 38px -6px rgba(0, 0, 0, 0.55),
+          0 8px 18px -3px rgba(0, 0, 0, 0.35),
+          0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        animation: menu-appear 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      @keyframes menu-appear {
+        from {
+          opacity: 0;
+          transform: scale(0.94) translateY(-3px);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1) translateY(0);
+        }
+      }
+
+      .menu-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: rgba(240, 245, 255, 0.92);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        text-align: left;
+        cursor: pointer;
+        transition:
+          background-color 0.14s ease,
+          color 0.14s ease,
+          transform 0.12s ease;
+      }
+
+      .menu-item:hover,
+      .menu-item:focus-visible {
+        background: rgba(255, 255, 255, 0.09);
+        color: #ffffff;
+      }
+
+      .menu-item:active {
+        background: rgba(255, 255, 255, 0.14);
+        transform: scale(0.985);
+      }
+
+      .menu-item__icon {
+        font-size: 14px;
+        line-height: 1;
+        width: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0.85;
+      }
+
+      .menu-item__label {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .menu-item--danger {
+        color: rgba(255, 125, 115, 0.95);
+      }
+
+      .menu-item--danger .menu-item__icon {
+        opacity: 1;
+      }
+
+      .menu-item--danger:hover,
+      .menu-item--danger:focus-visible {
+        background: rgba(255, 90, 82, 0.16);
+        color: #ff8e86;
+      }
+
+      .menu-item--danger:active {
+        background: rgba(255, 90, 82, 0.24);
+      }
+
+      .menu-divider {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.08);
+        margin: 3px 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="toolbox" role="menu">
+      <button type="button" class="menu-item" data-action="share" role="menuitem">
+        <span class="menu-item__icon">↗</span>
+        <span class="menu-item__label">Wyślij wszystkie notatki</span>
+      </button>
+      <button type="button" class="menu-item" data-action="copy" role="menuitem">
+        <span class="menu-item__icon">📋</span>
+        <span class="menu-item__label">Kopiuj całą zawartość</span>
+      </button>
+      <button type="button" class="menu-item" data-action="hide" role="menuitem">
+        <span class="menu-item__icon">📥</span>
+        <span class="menu-item__label">Zwiń wszystko do widżetu</span>
+      </button>
+      <div class="menu-divider" role="separator"></div>
+      <button type="button" class="menu-item menu-item--danger" data-action="delete" role="menuitem">
+        <span class="menu-item__icon">🗑️</span>
+        <span class="menu-item__label">Usuń ten stosik</span>
+      </button>
+    </div>
+
+    <script>
+      const api = window.cribro;
+      const items = Array.from(document.querySelectorAll(".menu-item"));
+
+      async function triggerAction(action) {
+        if (!action) return;
+        try {
+          if (api?.deck?.stackAction) {
+            await api.deck.stackAction(action);
+          }
+        } catch (err) {
+          console.error("Błąd akcji stosiku:", err);
+        }
+      }
+
+      document.addEventListener("click", (event) => {
+        const item = event.target.closest(".menu-item");
+        if (item) {
+          triggerAction(item.dataset.action);
+        } else {
+          api?.deck?.closeStackMenu?.();
+        }
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          api?.deck?.closeStackMenu?.();
+          return;
+        }
+
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          const currentIndex = items.indexOf(document.activeElement);
+          let nextIndex = 0;
+          if (event.key === "ArrowDown") {
+            nextIndex = currentIndex >= 0 ? (currentIndex + 1) % items.length : 0;
+          } else {
+            nextIndex = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+          }
+          items[nextIndex]?.focus();
+        }
+      });
+
+      // Auto-focus first option for keyboard navigation
+      setTimeout(() => {
+        items[0]?.focus();
+      }, 50);
+    </script>
+  </body>
+</html>

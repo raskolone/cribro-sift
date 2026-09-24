@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-SRC="${1:-$HOME/CribroSift-build/mac-arm64/Cribro Sift.app}"
+SRC="${1:-$HOME/CribroSift-build.noindex/mac-arm64/Cribro Sift.app}"
 DST="/Applications/Cribro Sift.app"
 LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 

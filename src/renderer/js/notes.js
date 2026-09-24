@@ -78,6 +78,25 @@ if (state.solo) document.body.classList.add("is-solo");
    gwiazdki. Na dysk notatka wraca Markdownem — patrz shared/richtext.js. */
 const editor = window.CribroEditor.create($("#text"), { onInput: () => scheduleSave() });
 
+let linkCards = null;
+if (window.LinkCardManager) {
+  linkCards = new window.LinkCardManager($("#text"), {
+    onSave: (cards) => {
+      const note = state.notes.find((item) => item.id === state.selected);
+      if (!note) return;
+      note.linkCards = cards;
+      scheduleSave();
+    },
+  });
+}
+
+$("#text").addEventListener("paste", (event) => {
+  const text = event.clipboardData?.getData("text/plain") ?? "";
+  if (text && linkCards) {
+    void linkCards.handlePaste(text);
+  }
+});
+
 /* ── Rysowanie ────────────────────────────────────────────────── */
 
 function renderList() {
@@ -397,6 +416,7 @@ function renderEditor() {
   if (!note) return;
 
   editor.setMarkdown(note.text);
+  linkCards?.loadNote(note);
   $("#text").setAttribute("data-align", note.align ?? "left");
   renderMeta();
   if (state.solo) document.title = `${titleOf(note)} — Cribro Sift`;
@@ -466,7 +486,9 @@ function scheduleSave() {
   // Zapis po chwili ciszy — nie po każdym znaku.
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
-    await api.notes.update(note.id, { text: note.text });
+    const payload = { text: note.text };
+    if (note.linkCards !== undefined) payload.linkCards = note.linkCards;
+    await api.notes.update(note.id, payload);
     $("#status").textContent = t("Zapisane");
     $("#status").dataset.state = "saved";
     renderList();

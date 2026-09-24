@@ -3915,3 +3915,229 @@ input.tag-input:focus {
   white-space: nowrap;
 }
 
+/* ═════════════════════════════════════════════════════════════════
+   LIGHT MODE CONTRAST & SEPARATION ENHANCEMENTS (WCAG AAA)
+   ═════════════════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] #constellation,
+[data-theme="light"] body::after {
+  display: none !important;
+}
+
+[data-theme="light"] body {
+  background: #ffffff !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] #app {
+  background: #ffffff !important;
+}
+
+[data-theme="light"] #sidebar {
+  background: #f8fafc !important;
+  border-right: 1px solid #cbd5e1 !important;
+  box-shadow: 1px 0 0 #e2e8f0;
+}
+
+[data-theme="light"] .brand__name {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .nav__item {
+  color: #334155 !important;
+  font-weight: 500;
+}
+
+[data-theme="light"] .nav__item:hover {
+  color: #0f172a !important;
+  background: #f1f5f9 !important;
+}
+
+[data-theme="light"] .nav__item[aria-selected="true"] {
+  background: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+  color: #047857 !important;
+  font-weight: 700;
+}
+
+[data-theme="light"] .topbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-theme="light"] .topbar h1,
+[data-theme="light"] h1,
+[data-theme="light"] h2,
+[data-theme="light"] h3,
+[data-theme="light"] h4 {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .topbar p,
+[data-theme="light"] p,
+[data-theme="light"] li,
+[data-theme="light"] label,
+[data-theme="light"] span {
+  color: #1e293b;
+}
+
+[data-theme="light"] .glass,
+[data-theme="light"] .card,
+[data-theme="light"] .tile,
+[data-theme="light"] .entry,
+[data-theme="light"] .mesh,
+[data-theme="light"] .panel,
+[data-theme="light"] .section-box,
+[data-theme="light"] .guide__card,
+[data-theme="light"] .dict__card,
+[data-theme="light"] .meet__card,
+[data-theme="light"] .ask__card,
+[data-theme="light"] .setting__card {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="light"] .entry:hover,
+[data-theme="light"] .card:hover,
+[data-theme="light"] .tile:hover,
+[data-theme="light"] .mesh:hover {
+  border-color: #94a3b8 !important;
+  background: #f8fafc !important;
+}
+
+[data-theme="light"] .panel-header,
+[data-theme="light"] .section-head,
+[data-theme="light"] .notes__head,
+[data-theme="light"] .head,
+[data-theme="light"] .toolbar,
+[data-theme="light"] .tabs,
+[data-theme="light"] .entry__head {
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+
+/* Pola wejściowe i formularze */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="search"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] select,
+[data-theme="light"] textarea,
+[data-theme="light"] .search input,
+[data-theme="light"] .meet__find input {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder,
+[data-theme="light"] .search input::placeholder,
+[data-theme="light"] .text-faint {
+  color: #64748b !important;
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus,
+[data-theme="light"] .search input:focus,
+[data-theme="light"] .meet__find input:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  outline: none !important;
+}
+
+/* Przyciski drugorzędne i akcji */
+[data-theme="light"] .btn {
+  border: 1px solid #cbd5e1 !important;
+  background: #ffffff !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-theme="light"] .btn:hover {
+  background: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .btn--primary {
+  border: none !important;
+  background: #047857 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(4, 120, 87, 0.3) !important;
+}
+
+[data-theme="light"] .btn--primary:hover {
+  background: #065f46 !important;
+}
+
+[data-theme="light"] .btn--ghost,
+[data-theme="light"] .btn--sm,
+[data-theme="light"] .btn-secondary {
+  border: 1px solid #cbd5e1 !important;
+  background: #ffffff !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-theme="light"] .btn--ghost:hover,
+[data-theme="light"] .btn--sm:hover,
+[data-theme="light"] .btn-secondary:hover {
+  background: #f8fafc !important;
+  border-color: #94a3b8 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .pill {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+[data-theme="light"] .pill--mint {
+  background: #ecfdf5 !important;
+  border-color: #a7f3d0 !important;
+  color: #047857 !important;
+}
+
+[data-theme="light"] .pill--amber {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #b45309 !important;
+}
+
+[data-theme="light"] kbd {
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .switch {
+  background: #e2e8f0 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+[data-theme="light"] .switch::after {
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15) !important;
+}
+
+[data-theme="light"] .switch[aria-checked="true"] {
+  background: #047857 !important;
+  border-color: #047857 !important;
+}
+
+[data-theme="light"] .switch[aria-checked="true"]::after {
+  background: #ffffff !important;
+}
+
+
+

@@ -18,7 +18,7 @@
 # nadal potrzebny Developer ID i notaryzacja.
 set -euo pipefail
 
-APP="${1:-$HOME/CribroSift-build/mac-arm64/Cribro Sift.app}"
+APP="${1:-$HOME/CribroSift-build.noindex/mac-arm64/Cribro Sift.app}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENTS="$ROOT/build/entitlements.mac.plist"
 NAME="${IDENTITY_NAME:-Cribro Sift Dev}"

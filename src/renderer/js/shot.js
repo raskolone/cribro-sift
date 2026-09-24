@@ -370,7 +370,7 @@ async function openMarkup() {
   $("#markupView").hidden = false;
 
   // Powiększenie okna do wygodnych wymiarów edycji graficznej
-  await api.shot.setWindowSize({ width: 880, height: 680 });
+  await api.shot.setWindowSize({ width: 920, height: 720 });
 
   await markup.loadImage(currentImage);
   markup.setTool("select");
@@ -394,7 +394,7 @@ async function closeMarkup({ apply = false } = {}) {
   $("#mainFooter").hidden = false;
 
   // Powrót do standardowych wymiarów modala
-  await api.shot.setWindowSize({ width: 460, height: 640 });
+  await api.shot.setWindowSize({ width: 640, height: 760 });
 }
 
 /* ─────────────────────────────────────────────────────────────

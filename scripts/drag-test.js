@@ -115,7 +115,7 @@ window.__onLine = (needle) => {
   const line = window.__find(needle);
   if (!line) return null;
   const box = line.getBoundingClientRect();
-  return { x: Math.round(box.left + 20), y: Math.round(box.top + 6) };
+  return { x: Math.round(box.left + 32), y: Math.round(box.top + 6) };
 };
 
 /**

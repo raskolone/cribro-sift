@@ -57,6 +57,8 @@
   let saveTimer = null;
   let runtime = "idle";
 
+  let linkCards = null;
+
   const editor = window.CribroEditor.create($("#text"), {
     onInput: () => {
       scheduleSave();
@@ -66,6 +68,29 @@
       refreshTools();
     },
   });
+
+  if (window.LinkCardManager) {
+    linkCards = new window.LinkCardManager($("#text"), {
+      onSave: (cards) => {
+        if (!note) return;
+        note.linkCards = cards;
+        scheduleSave();
+      },
+    });
+  }
+
+  $("#text").addEventListener("paste", (event) => {
+    const text = event.clipboardData?.getData("text/plain") ?? "";
+    if (text && linkCards) {
+      void linkCards.handlePaste(text);
+    }
+  });
+
+  /* Pulsar: kartka ożywa (klasa sticky-focused) gdy kursor stoi w edytorze,
+     a gaśnie płynnie po jego opuszczeniu. Zdarzenia są na ELEMENCIE #text,
+     bo tam jest contenteditable — edytor nie eksponuje własnych callbacki fokusu. */
+  $("#text").addEventListener("focus", () => card.classList.add("sticky-focused"));
+  $("#text").addEventListener("blur",  () => card.classList.remove("sticky-focused"));
 
   /* Pasek czynności — ten sam, co pod notatką w Notatniku. Bez „Na pulpit":
      kartka już na nim leży, a zdejmuje ją krzyżyk w nagłówku, więc drugi
@@ -204,6 +229,7 @@
   function render() {
     showTitle();
     editor.setMarkdown(note.text);
+    linkCards?.loadNote(note);
     paint();
     setWords();
     refreshTools();
@@ -306,7 +332,9 @@
     clearTimeout(saveTimer);
     if (!note) return;
     try {
-      await api.notes.update(note.id, { text: note.text });
+      const payload = { text: note.text };
+      if (note.linkCards !== undefined) payload.linkCards = note.linkCards;
+      await api.notes.update(note.id, payload);
       setState(t("Zapisane"));
     } catch (error) {
       setState(String(error.message || error).slice(0, 26));
@@ -332,50 +360,72 @@
   const head = document.querySelector(".head");
   let grab = null;
   let moved = false;
+  let stackDragMoved = false;
 
-  head.addEventListener("pointerdown", (event) => {
-    // Przyciski i przepisywany tytuł nie są uchwytem — w jednym się klika,
-    // w drugim stawia kursor.
+  const onPointerDown = (event) => {
     if (event.button !== 0) return;
-    if (event.target.closest(".ico") || $("#title").dataset.renaming === "true") return;
+    const isStacked = card.dataset.stacked === "true";
+    if (!isStacked) {
+      if (!event.target.closest(".head")) return;
+      if (event.target.closest(".ico") || $("#title").dataset.renaming === "true") return;
+    }
     grab = { x: event.screenX - window.screenX, y: event.screenY - window.screenY };
     moved = false;
-  });
+    stackDragMoved = false;
+  };
 
-  head.addEventListener("pointermove", (event) => {
+  const onPointerMove = (event) => {
     if (!grab) return;
     const point = { x: event.screenX - grab.x, y: event.screenY - grab.y };
     if (!moved) {
-      if (Math.hypot(point.x - window.screenX, point.y - window.screenY) < DRAG_MIN) return;
+      if (Math.hypot(point.x - (event.screenX - grab.x), point.y - (event.screenY - grab.y)) < DRAG_MIN &&
+          Math.hypot(event.screenX - (window.screenX + grab.x), event.screenY - (window.screenY + grab.y)) < DRAG_MIN) {
+        return;
+      }
       moved = true;
-      head.dataset.drag = "true";
-      /* MYSZ ŁAPIEMY DOPIERO TERAZ, nie przy naciśnięciu.
-         Przechwycenie wskaźnika przekierowuje na element chwytający także
-         zwykłe `click` i `dblclick` — a wtedy podwójne kliknięcie w tytuł
-         dochodzi do paska, nie do tytułu, i tytuł nigdy nie robi się polem.
-         Złapane dopiero po przekroczeniu progu ruchu nie wchodzi w drogę
-         klikaniu, bo klikanie progu nie przekracza. */
-      head.setPointerCapture(event.pointerId);
+      if (card.dataset.stacked === "true") {
+        stackDragMoved = true;
+        card.dataset.drag = "true";
+      } else {
+        head.dataset.drag = "true";
+      }
+      try {
+        (card.dataset.stacked === "true" ? card : head).setPointerCapture(event.pointerId);
+      } catch {}
     }
     api.deck.move(point);
-  });
+  };
 
   const dropCard = (event) => {
     if (!grab) return;
     grab = null;
     delete head.dataset.drag;
+    delete card.dataset.drag;
     if (moved) {
       try {
-        head.releasePointerCapture(event.pointerId);
+        (card.dataset.stacked === "true" ? card : head).releasePointerCapture(event.pointerId);
       } catch {
         /* przechwycenia już nie ma */
       }
       api.deck.drop(noteId);
+      setTimeout(() => {
+        stackDragMoved = false;
+      }, 50);
     }
   };
 
-  head.addEventListener("pointerup", dropCard);
-  head.addEventListener("pointercancel", dropCard);
+  document.addEventListener("pointerdown", onPointerDown);
+  document.addEventListener("pointermove", onPointerMove);
+  document.addEventListener("pointerup", dropCard);
+  document.addEventListener("pointercancel", dropCard);
+
+  document.addEventListener("contextmenu", (event) => {
+    if (card.dataset.stacked === "true") {
+      event.preventDefault();
+      event.stopPropagation();
+      api.deck.showStackMenu?.({ screenX: event.screenX, screenY: event.screenY });
+    }
+  });
 
   /* ── Rozmiar kartki ─────────────────────────────────────────────
      Ta sama zasada co przy przesuwaniu: liczymy w pikselach EKRANU, bo
@@ -429,7 +479,13 @@
 
   document.addEventListener("click", async (event) => {
     // Kliknięcie w dowolną część zwiniętego stosiku kart rozwija go z powrotem.
+    // Jeśli użytkownik przeciągał stosik (stackDragMoved), nie rozwijamy!
     if (card.dataset.stacked === "true") {
+      if (stackDragMoved) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       await api.deck.unstack();
@@ -529,12 +585,12 @@
   }
 
   /* ── „Zwiń w stosik" ─────────────────────────────────────────────
-     Zwija WSZYSTKIE aktywne kartki w fizyczny stosik kart w rogu ekranu,
+     Zwija WSZYSTKIE aktywne kartki w fizyczny stosik kart w stronę tej kartki,
      natychmiast odsłaniając pulpit pod spodem do pracy z innymi oknami.
      Kliknięcie w stosik płynnie rozsuwa kartki z powrotem. */
   async function stackDeck() {
     await flushSave();
-    await api.deck.stack(true);
+    await api.deck.stack(true, noteId);
   }
 
   /* Escape zdejmuje po jednej warstwie, od wierzchu — tak samo jak
@@ -542,6 +598,7 @@
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
+    api.deck.closeStackMenu?.();
     if (runtime === "listening") return void api.system.cancelCapture?.();
     if (!$("#palette").hidden) return showPalette(false);
     if (card.dataset.stacked === "true") return void api.deck.unstack();
@@ -598,12 +655,14 @@
 
   api.deck.onFold?.(fold);
   api.deck.onScale?.(applyScale);
-  api.deck.onStack?.(({ stacked, rot = 0 }) => {
+  api.deck.onStack?.(({ stacked, rot = 0, isTop = false }) => {
     if (stacked) {
       card.dataset.stacked = "true";
+      card.dataset.stackedTop = String(isTop);
       card.style.setProperty("--stack-rot", `${rot}deg`);
     } else {
       delete card.dataset.stacked;
+      delete card.dataset.stackedTop;
       card.style.removeProperty("--stack-rot");
     }
   });
@@ -642,6 +701,19 @@
   });
 
   window.addEventListener("beforeunload", () => void flushSave());
+
+  /* ── Zwijanie w stosik przy kliknięciu poza notatką ────────────────────────
+     Gdy okno kartki traci fokus (użytkownik kliknął w pulpit, inną aplikację
+     lub inny obszar), powiadamiamy proces główny przez IPC.
+     Proces główny sprawdza, czy ŻADNA kartka nie ma fokusu i dopiero wtedy
+     zwija talie w stosik. Dzięki temu klikanie między kartkami nie składa
+     ich w stosik — tylko przejście poza aplikację to robi. */
+  window.addEventListener("blur", () => {
+    if (card.dataset.stacked === "true") return;
+    if (card.dataset.rolled === "true") return;
+    api.deck.stickyBlurred?.();
+  });
+
 
   /* ── Start ──────────────────────────────────────────────────── */
 

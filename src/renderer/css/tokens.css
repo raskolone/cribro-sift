@@ -210,14 +210,17 @@
    elementów) na tle --bg-surface (#FFFFFF) i --bg (#EEF2F6). */
 [data-theme="light"] {
   /* ---- Ground ---- */
-  --bg:              #f8fafc;   /* slate-50 — czyste, jasne tło aplikacji */
-  --bg-lift:         #f1f5f9;   /* slate-100 — subtelnie uniesione tło */
+  --bg:              #ffffff;   /* czysta biel tła aplikacji */
+  --bg-lift:         #f8fafc;   /* slate-50 — subtelnie uniesione tło */
   --ink:             #ffffff;
-  --ink-2:           #f8fafc;
+  --ink-2:           #f1f5f9;   /* slate-100 */
   --surface:         #ffffff;   /* czysta biel dla paneli i kart */
-  --surface-2:       #f8fafc;
+  --surface-2:       #f8fafc;   /* slate-50 */
   --surface-flat:    #ffffff;
   --glass:           #ffffff;
+
+  --page-gradient:   none;
+  --surface-gradient: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
 
   /* ---- Accent ---- */
   --accent:          #047857;   /* szmaragd — wysoki kontrast 5.9:1 na bieli */
@@ -241,7 +244,7 @@
   --rec-30:          rgba(124, 58, 237, 0.30);
   --rec-45:          rgba(124, 58, 237, 0.45);
   --rec-55:          rgba(124, 58, 237, 0.55);
-  --rec-glow:        0 0 26px rgba(124, 58, 237, 0.30);
+  --rec-glow:        0 0 20px rgba(124, 58, 237, 0.25);
 
   /* ---- ON AIR ---- */
   --air:             #dc2626;
@@ -251,18 +254,18 @@
   --air-30:          rgba(220, 38, 38, 0.30);
   --air-45:          rgba(220, 38, 38, 0.45);
   --air-55:          rgba(220, 38, 38, 0.55);
-  --air-glow:        0 0 26px rgba(220, 38, 38, 0.30);
+  --air-glow:        0 0 20px rgba(220, 38, 38, 0.25);
 
   /* ---- Poranek ---- */
   --sun:             #d97706;
   --sun-soft:        #b45309;
   --sun-ink:         #2a1602;
-  --sun-glow:        0 8px 24px -8px rgba(217, 119, 6, 0.35);
+  --sun-glow:        0 4px 16px -4px rgba(217, 119, 6, 0.30);
 
   /* ---- Text (WCAG AAA Kontrast) ---- */
   --text:            #0f172a;   /* slate-900 — głęboki, nasycony tekst podstawowy */
-  --text-hi:         #020617;   /* slate-950 — nagłówki i kluczowe etykiety */
-  --text-2:          #334155;   /* slate-700 — opisy, wiersze i paragrafy (zgodne z AAA) */
+  --text-hi:         #0f172a;   /* slate-900 — tytuły i nagłówki */
+  --text-2:          #1e293b;   /* slate-800 — opisy, wiersze i etykiety (zgodne z AAA) */
   --text-3:          #334155;   /* slate-700 */
   --text-mute:       #475569;   /* slate-600 — metadane i stopka (~7:1 na bieli) */
   --text-faint:      #64748b;   /* slate-500 — placeholder, wyraźny tekst pomocniczy */
@@ -274,50 +277,83 @@
   --danger-30:       rgba(220, 38, 38, 0.30);
   --info:            #2563eb;
 
-  /* ---- Lines & Borders (Wyraźna definicja boksów) ---- */
-  --line:            rgba(15, 23, 42, 0.14);   /* precyzyjna ramka paneli i kontenerów */
-  --line-strong:     rgba(15, 23, 42, 0.22);   /* mocny obrys selektorów i rozdzielaczy */
-  --line-soft:       rgba(15, 23, 42, 0.08);   /* subtelna linia wewnętrzna */
+  /* ---- Lines & Borders (Ostre krawędzie i separacja boksów) ---- */
+  --line:            #e2e8f0;   /* border-slate-200 — precyzyjna ramka paneli i kontenerów */
+  --line-strong:     #cbd5e1;   /* border-slate-300 — mocny obrys selektorów, pól i rozdzielaczy */
+  --line-soft:       #e2e8f0;   /* border-slate-200 — subtelne linie podziału nagłówków */
 
   /* ---- Wash ---- */
-  --wash-2:          rgba(15, 23, 42, 0.035);
-  --wash-3:          rgba(15, 23, 42, 0.05);
-  --wash-3-5:        rgba(15, 23, 42, 0.06);
-  --wash-4:          rgba(15, 23, 42, 0.07);
-  --wash-5:          rgba(15, 23, 42, 0.08);
-  --wash-6:          rgba(15, 23, 42, 0.10);
-  --wash-7:          rgba(15, 23, 42, 0.12);
+  --wash-2:          #f8fafc;
+  --wash-3:          #f1f5f9;
+  --wash-3-5:        #e2e8f0;
+  --wash-4:          #f8fafc;
+  --wash-5:          #f1f5f9;
+  --wash-6:          #e2e8f0;
+  --wash-7:          #cbd5e1;
 
   /* ---- Liquid glass & Panel Surfaces ---- */
-  --glass-fill: linear-gradient(
-                   152deg,
-                   rgba(255, 255, 255, 0.95) 0%,
-                   rgba(255, 255, 255, 0.85) 50%,
-                   rgba(255, 255, 255, 0.90) 100%
-                 );
-  --glass-edge:      rgba(15, 23, 42, 0.15);
-  --glass-sheen:     inset 0 1px 0 #ffffff,
-                     inset 0 0 0 1px rgba(15, 23, 42, 0.06),
-                     inset 0 -1px 0 rgba(15, 23, 42, 0.06);
-  --glass-drop:      0 8px 24px -6px rgba(15, 23, 42, 0.10),
-                     0 2px 6px -1px rgba(15, 23, 42, 0.05);
-  --glass-thin:      rgba(255, 255, 255, 0.85);
+  --glass-fill:      linear-gradient(152deg, #ffffff 0%, #f8fafc 100%);
+  --glass-edge:      #cbd5e1;   /* border-slate-300 */
+  --glass-sheen:     inset 0 1px 0 #ffffff;
+  --glass-drop:      0 2px 8px -2px rgba(15, 23, 42, 0.08), 0 1px 3px 0 rgba(15, 23, 42, 0.05);
+  --glass-thin:      rgba(255, 255, 255, 0.95);
 
   /* ---- Kartka ---- */
   --paper:           #ffffff;
   --paper-lift:      #ffffff;
   --paper-sink:      #f8fafc;
-  --paper-edge:      rgba(15, 23, 42, 0.16);
-  --paper-tint:      #475569;
+  --paper-edge:      #cbd5e1;
+  --paper-tint:      #334155;
 
   /* ---- Elevation & Shadows ---- */
   --shadow-sm:       0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-md:       0 4px 12px -2px rgba(15, 23, 42, 0.10), 0 2px 4px -1px rgba(15, 23, 42, 0.06);
-  --shadow-lg:       0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -2px rgba(15, 23, 42, 0.06);
-  --glow:            0 0 24px rgba(4, 120, 87, 0.20);
-  --glow-strong:     0 0 48px rgba(4, 120, 87, 0.28);
-  --glow-btn:        0 8px 24px -8px rgba(4, 120, 87, 0.35);
+  --shadow-md:       0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -1px rgba(15, 23, 42, 0.04);
+  --shadow-lg:       0 10px 24px -4px rgba(15, 23, 42, 0.10), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
+  --glow:            0 0 0 2px rgba(37, 99, 235, 0.15);
+  --glow-strong:     0 0 0 3px rgba(37, 99, 235, 0.25);
+  --glow-btn:        0 4px 14px -3px rgba(4, 120, 87, 0.35);
 }
+
+/* ── Dodatkowe reguły ostrości i interakcji dla Light Mode ── */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="email"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="search"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: #64748b !important;
+}
+
+[data-theme="light"] input:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+  outline: none !important;
+}
+
+[data-theme="light"] .btn--ghost,
+[data-theme="light"] .btn--sm {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+}
+
+[data-theme="light"] .btn--ghost:hover,
+[data-theme="light"] .btn--sm:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
 
 /* ---- Kolory kartek w jasnym motywie ----
    Te same sześć barw, przełożone na jasne tło: podłoże jasne i lekko
@@ -417,100 +453,90 @@
   --paper-tint: #9aa9bd;
 }
 
-/* ---- Karteczka na pulpicie: papier, nie szkło ----
-   Tożsamość koloru (klucz, etykieta) zostaje ta sama co w aplikacji —
-   podmienia się tylko to, JAK ten kolor wygląda, i wyłącznie w oknie
-   sticky.html (stąd `body.sticky-window`, ustawione tam wprost na <body>).
-   Ciemna paleta wyżej ma rozróżniać notatki na liście; tu chodzi o co
-   innego — o to, żeby kartka na biurku wyglądała jak kartka, a nie jak
-   panel aplikacji. Stąd ciepłe pastele zamiast granatu i cień liczony od
-   ciepłego, nie czarnego pigmentu (cień prawdziwego papieru nie jest
-   węglowy). Bursztyn/fiolet/grafit nie mają w naturze pastelowych
-   odpowiedników równie oczywistych jak żółty/miętowy/błękitny/różowy —
-   dostają więc ciepłe neutralne siostrzane odcienie, żeby paleta została
-   spójna, a nie żeby udawać, że to te same barwy. */
+/* ---- Karteczka na pulpicie: czyste, pastelowe karteczki ----
+   Jednolite, matowe tło — bez gradientu, bez filtra SVG (paper-texture),
+   bez glow. Każdy kolor kartki nosi JEDEN odcień, nie trzy. */
 body.sticky-window .paper {
-  --paper: #fef08a; --paper-lift: #fffbeb; --paper-sink: #fde047;
-  --paper-edge: rgba(161, 98, 7, 0.20);
-  --paper-head-text: #451a03;
-  --paper-head-bg: rgba(69, 26, 3, 0.08);
-  --paper-head-border: rgba(69, 26, 3, 0.14);
-  --paper-grad: radial-gradient(ellipse at 35% 20%, #fffbeb 0%, #fef08a 52%, #fde047 100%);
-  --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 18px -4px rgba(60, 45, 15, 0.16), 0 20px 32px -8px rgba(60, 45, 15, 0.22), 2px 14px 24px -6px rgba(60, 45, 15, 0.18);
+  --paper: #e7e3dc;
+  --paper-lift: #f0ece5;
+  --paper-sink: #ded9d1;
+  --paper-edge: rgba(0, 0, 0, 0.08);
+  --paper-head-text: #09090b;
+  --paper-head-bg: rgba(0, 0, 0, 0.02);
+  --paper-head-border: rgba(0, 0, 0, 0.05);
+  /* gradient trójkolorowy usunięty — powodował efekt aurora/tęczowej mgły */
+  background: var(--paper);
+  border: 1px solid var(--paper-edge);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
 }
 
-/* Kartka jest ZAWSZE jasnym papierem, obojętnie w jakim motywie chodzi
-   reszta aplikacji — więc tekst na niej musi być nasyconym, głębokim
-   atramentem (slate-900 / zinc-900) z wygładzaniem subpixel-antialiased. */
 body.sticky-window {
-  --text:        #0f172a;  /* slate-900 — głęboki nasycony atrament */
-  --text-hi:     #020617;  /* slate-950 — tytuł w edycji */
-  --text-2:      #1e293b;  /* slate-800 — etykiety i narzędzia */
-  --text-3:      #334155;
-  --text-mute:   #475569;  /* slate-600 — stopka, datownik */
-  --text-faint:  #64748b;  /* slate-500 — placeholder */
-  --line:        rgba(15, 23, 42, 0.12);
-  --line-soft:   rgba(15, 23, 42, 0.08);
-  --line-strong: rgba(15, 23, 42, 0.18);
+  --text:        #18181b;  /* wysoki, czysty kontrast (neutral-900) */
+  --text-hi:     #09090b;  /* tytuł w edycji / nagłówki */
+  --text-2:      #27272a;  /* neutral-800 */
+  --text-3:      #3f3f46;  /* neutral-700 */
+  --text-mute:   #52525b;  /* neutral-600 — stopka, datownik */
+  --text-faint:  #71717a;  /* neutral-500 — placeholder */
+  --line:        rgba(0, 0, 0, 0.08);
+  --line-soft:   rgba(0, 0, 0, 0.05);
+  --line-strong: rgba(0, 0, 0, 0.12);
+  /* Ciemne tokeny szklane z :root dają tęczową poświatę na jasnym papierze —
+     nadpisujemy na wartości neutralne dla jasnych karteczek. */
+  --paper-sheen:  inset 0 1px 0 rgba(255, 255, 255, 0.30);
+  --paper-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.07), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  font-family: system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: subpixel-antialiased;
 }
+
+body.sticky-window [data-color="default"] {
+  --paper: #e7e3dc;
+  --paper-lift: #f0ece5;
+  --paper-sink: #ded9d1;
+  --paper-edge: rgba(0, 0, 0, 0.08);
+  --paper-head-text: #09090b;
+}
 body.sticky-window [data-color="moss"] {
-  --paper: #bbf7d0; --paper-lift: #f0fdf4; --paper-sink: #86efac;
-  --paper-edge: rgba(20, 83, 45, 0.20);
-  --paper-head-text: #064e3b;
-  --paper-head-bg: rgba(6, 78, 59, 0.08);
-  --paper-head-border: rgba(6, 78, 59, 0.14);
-  --paper-grad: radial-gradient(ellipse at 35% 20%, #f0fdf4 0%, #bbf7d0 52%, #86efac 100%);
+  --paper: #c8e6d5;
+  --paper-lift: #d6ede0;
+  --paper-sink: #b6dcc5;
+  --paper-edge: rgba(0, 0, 0, 0.08);
+  --paper-head-text: #09090b;
 }
 body.sticky-window [data-color="sky"] {
-  --paper: #bae6fd; --paper-lift: #f0f9ff; --paper-sink: #7dd3fc;
-  --paper-edge: rgba(3, 105, 161, 0.20);
-  --paper-head-text: #0c4a6e;
-  --paper-head-bg: rgba(12, 74, 110, 0.08);
-  --paper-head-border: rgba(12, 74, 110, 0.14);
-  --paper-grad: radial-gradient(ellipse at 35% 20%, #f0f9ff 0%, #bae6fd 52%, #7dd3fc 100%);
+  --paper: #c8dff0;
+  --paper-lift: #d5e7f6;
+  --paper-sink: #b5d3e8;
+  --paper-edge: rgba(0, 0, 0, 0.08);
+  --paper-head-text: #09090b;
 }
 body.sticky-window [data-color="rose"] {
-  --paper: #fecdd3; --paper-lift: #fff1f2; --paper-sink: #fda4af;
-  --paper-edge: rgba(159, 18, 57, 0.20);
-  --paper-head-text: #4c0519;
-  --paper-head-bg: rgba(76, 5, 25, 0.08);
-  --paper-head-border: rgba(76, 5, 25, 0.14);
-  --paper-grad: radial-gradient(ellipse at 35% 20%, #fff1f2 0%, #fecdd3 52%, #fda4af 100%);
+  --paper: #e8c4c8;
+  --paper-lift: #edd1d4;
+  --paper-sink: #dbaeb3;
+  --paper-edge: rgba(0, 0, 0, 0.08);
+  --paper-head-text: #09090b;
 }
 body.sticky-window [data-color="amber"] {
-  --paper: #fed7aa; --paper-lift: #fff7ed; --paper-sink: #fdba74;
-  --paper-edge: rgba(194, 65, 12, 0.20);
-  --paper-head-text: #451a03;
-  --paper-head-bg: rgba(69, 26, 3, 0.08);
-  --paper-head-border: rgba(69, 26, 3, 0.14);
-  --paper-grad: radial-gradient(ellipse at 35% 20%, #fff7ed 0%, #fed7aa 52%, #fdba74 100%);
+  --paper: #eed98b;
+  --paper-lift: #f5e49b;
+  --paper-sink: #e2cb7b;
+  --paper-edge: rgba(0, 0, 0, 0.08);
+  --paper-head-text: #09090b;
 }
 body.sticky-window [data-color="violet"] {
-  --paper: #ddd6fe; --paper-lift: #f5f3ff; --paper-sink: #c4b5fd;
-  --paper-edge: rgba(109, 40, 217, 0.20);
-  --paper-head-text: #3b0764;
-  --paper-head-bg: rgba(59, 7, 100, 0.08);
-  --paper-head-border: rgba(59, 7, 100, 0.14);
-  --paper-grad: radial-gradient(ellipse at 35% 20%, #f5f3ff 0%, #ddd6fe 52%, #c4b5fd 100%);
+  --paper: #d8d0f0;
+  --paper-lift: #e3dcf6;
+  --paper-sink: #c6bde7;
+  --paper-edge: rgba(0, 0, 0, 0.08);
+  --paper-head-text: #09090b;
 }
 body.sticky-window [data-color="graphite"] {
-  --paper: #fafaf9; --paper-lift: #ffffff; --paper-sink: #f5f5f4;
-  --paper-edge: rgba(24, 24, 27, 0.16);
+  --paper: #dedad2;
+  --paper-lift: #e6e3dc;
+  --paper-sink: #d1cbc1;
+  --paper-edge: rgba(0, 0, 0, 0.08);
   --paper-head-text: #09090b;
-  --paper-head-bg: rgba(9, 9, 11, 0.06);
-  --paper-head-border: rgba(9, 9, 11, 0.12);
-  --paper-grad: radial-gradient(ellipse at 35% 20%, #ffffff 0%, #fafaf9 52%, #f4f4f5 100%);
-}
-/* Szyba, nie papier: kartka na pulpicie nie ma być przezroczysta jak
-   reszta widgetu ani nosić ukośnego połysku pomyślanego dla ciemnego
-   szkła — ma być matowym, fizycznym prostokątem papieru z organicznym
-   obrysem post-it i subtelnym gradientem światła. */
-body.sticky-window .paper {
-  background: var(--paper-grad, var(--paper));
-  border: 1px solid var(--paper-edge);
-  border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
-  box-shadow: var(--paper-shadow);
 }
 
 /* Kropka koloru — na liście i w wybieraku. Ten sam gradient co kartka,
