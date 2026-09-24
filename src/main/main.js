@@ -1448,7 +1448,8 @@ let deckGen = 0;
    kliknięcie. Escape na kartce chowa całą talię, a wtedy znaczek nie ma
    skąd się o tym dowiedzieć: nie on o to prosił. Stąd jedna wiadomość
    wysyłana z KAŻDEGO miejsca, które talię otwiera albo chowa. */
-const tellDeck = () => broadcast("deck:changed", { open: deckOpen });
+let deckStacked = false;
+const tellDeck = () => broadcast("deck:changed", { open: deckOpen, stacked: deckStacked });
 
 /** Notatki na wierzchu, w tej samej kolejności co na liście widgetu. */
 function deckNotes() {
@@ -1932,12 +1933,14 @@ function openDeck(focusId = null) {
   const notes = deckNotes();
   if (!notes.length) {
     deckOpen = false;
+    deckStacked = false;
     tellDeck();
     return false;
   }
 
   const gen = ++deckGen;
   deckOpen = true;
+  deckStacked = false;
 
   const { workArea } = screen.getDisplayNearestPoint(widgetAnchor());
   const spots = deckSpots(notes.length, workArea);
@@ -1996,6 +1999,7 @@ function openDeck(focusId = null) {
 function hideDeck() {
   const gen = ++deckGen;
   deckOpen = false;
+  deckStacked = false;
   tellDeck();
   const windows = [...stickyWindows.values()].filter((win) => !win.isDestroyed() && win.isVisible());
 
@@ -2018,10 +2022,135 @@ function hideDeck() {
 
 const toggleDeck = () => (deckOpen ? hideDeck() : openDeck());
 
+/* ══ ANIMACJA I ZWIJANIE W STOSIK (CARD STACK) ══
+   Krzywa cubic-bezier(0.16, 1, 0.3, 1) spójna z rozwijaniem widgetu Cribro. */
+let stackAnimTimer = null;
+
+function easeOutCubicBezier(t) {
+  const cx = 3 * 0.16;
+  const bx = 3 * (0.3 - 0.16) - cx;
+  const ax = 1 - cx - bx;
+
+  const cy = 3 * 1;
+  const by = 3 * (1 - 1) - cy;
+  const ay = 1 - cy - by;
+
+  function sampleCurveX(u) { return ((ax * u + bx) * u + cx) * u; }
+  function sampleCurveY(u) { return ((ay * u + by) * u + cy) * u; }
+  function sampleCurveDerivativeX(u) { return (3 * ax * u + 2 * bx) * u + cx; }
+
+  function solveCurveX(x) {
+    let u = x;
+    for (let i = 0; i < 8; i++) {
+      const x2 = sampleCurveX(u) - x;
+      if (Math.abs(x2) < 1e-4) return u;
+      const d2 = sampleCurveDerivativeX(u);
+      if (Math.abs(d2) < 1e-4) break;
+      u = u - x2 / d2;
+    }
+    return Math.min(Math.max(u, 0), 1);
+  }
+
+  return sampleCurveY(solveCurveX(t));
+}
+
+function animateWindowBounds(targets, duration = 350) {
+  if (stackAnimTimer) {
+    clearInterval(stackAnimTimer);
+    stackAnimTimer = null;
+  }
+  const startTime = Date.now();
+  const list = targets
+    .map(({ win, to }) => ({
+      win,
+      from: win.getBounds(),
+      to,
+    }))
+    .filter((item) => item.win && !item.win.isDestroyed());
+
+  stackAnimTimer = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const progress = Math.min(1, Math.max(0, elapsed / duration));
+    const ease = easeOutCubicBezier(progress);
+
+    list.forEach(({ win, from, to }) => {
+      if (win.isDestroyed()) return;
+      const curX = Math.round(from.x + (to.x - from.x) * ease);
+      const curY = Math.round(from.y + (to.y - from.y) * ease);
+      const curW = Math.round(from.width + (to.width - from.width) * ease);
+      const curH = Math.round(from.height + (to.height - from.height) * ease);
+      win.setBounds({ x: curX, y: curY, width: curW, height: curH });
+    });
+
+    if (progress >= 1) {
+      clearInterval(stackAnimTimer);
+      stackAnimTimer = null;
+      list.forEach(({ win, to }) => {
+        if (!win.isDestroyed()) win.setBounds(to);
+      });
+    }
+  }, 16);
+}
+
+function stackDeck(toStack = true) {
+  if (!deckOpen) return false;
+  const windows = [...stickyWindows.entries()].filter(([_id, win]) => !win.isDestroyed() && win.isVisible());
+  if (!windows.length) return false;
+
+  deckStacked = !!toStack;
+  tellDeck();
+
+  const { workArea } = screen.getDisplayNearestPoint(widgetAnchor());
+  const N = windows.length;
+
+  if (deckStacked) {
+    const STACK_W = 126 + STICKY_HALO * 2;
+    const STACK_H = 154 + STICKY_HALO * 2;
+    const stackBaseX = workArea.x + workArea.width - STACK_W - 24;
+    const stackBaseY = workArea.y + workArea.height - STACK_H - 24;
+
+    const targets = windows.map(([id, win], index) => {
+      if (!win._unstackedBounds) {
+        win._unstackedBounds = win.getBounds();
+      }
+      const rot = N <= 1 ? 0 : (index / (N - 1)) * 6 - 3; // -3deg do +3deg
+      const offsetX = N <= 1 ? 0 : Math.round((index - (N - 1) / 2) * 4);
+      const offsetY = N <= 1 ? 0 : Math.round((index - (N - 1) / 2) * -3);
+      const to = {
+        x: Math.round(stackBaseX + offsetX),
+        y: Math.round(stackBaseY + offsetY),
+        width: STACK_W,
+        height: STACK_H,
+      };
+      // Obniż podłogę okna, aby mogło przyjąć kompaktowy rozmiar stosiku
+      win.setMinimumSize(STACK_W - STICKY_HALO * 2, STACK_H - STICKY_HALO * 2);
+      win.webContents.send("sticky:stack", { stacked: true, rot, index, count: N });
+      return { win, to };
+    });
+
+    animateWindowBounds(targets, 350);
+  } else {
+    const spots = deckSpots(N, workArea);
+    const targets = windows.map(([id, win], index) => {
+      const savedBounds = win._unstackedBounds || deckPlace(id, spots[index], workArea);
+      win._unstackedBounds = null;
+      clampCard(win, !!store.getSettings().widget?.cards?.[id]?.rolled, win.deckScale ?? deckScaleAt(savedBounds));
+      win.webContents.send("sticky:stack", { stacked: false, rot: 0, index, count: N });
+      return { win, to: savedBounds };
+    });
+
+    animateWindowBounds(targets, 350);
+  }
+  return true;
+}
+
+const toggleStackDeck = () => stackDeck(!deckStacked);
+
 /** Talia znika na dobre — przy wyłączeniu widgetu albo zmianie widoku. */
 function closeDeck() {
   deckGen += 1;
   deckOpen = false;
+  deckStacked = false;
   for (const win of stickyWindows.values()) if (!win.isDestroyed()) win.destroy();
   stickyWindows.clear();
   tellDeck();
@@ -5456,17 +5585,23 @@ function registerIpc() {
      żeby znaczek nie musiał trzymać własnej kopii tego stanu. */
   ipcMain.handle("deck:toggle", () => toggleDeck());
   ipcMain.handle("deck:show", (_e, show) => (show ? openDeck() : hideDeck()));
+  ipcMain.handle("deck:stack", (_e, stacked) => (typeof stacked === "boolean" ? stackDeck(stacked) : toggleStackDeck()));
+  ipcMain.handle("deck:unstack", () => stackDeck(false));
   /* Wyłożenie talii z kartką WSKAZANĄ na wierzchu i pod kursorem. Woła to
      plusik: notatka właśnie powstała i ma się pojawić na pulpicie gotowa
      do pisania, a nie czekać, aż ktoś ją odszuka. */
   ipcMain.handle("deck:reveal", (_e, id) => openDeck(id));
-  ipcMain.handle("deck:state", () => ({ open: deckOpen, count: deckNotes().length }));
+  ipcMain.handle("deck:state", () => ({ open: deckOpen, stacked: deckStacked, count: deckNotes().length }));
 
   /* Escape w oknie, które samo nie ma już czego zdjąć. Talia jest ostatnią
      warstwą przed schowaniem okna, więc pytanie brzmi „czy było co chować" —
      odpowiedź decyduje, czy Escape ma iść dalej. */
   ipcMain.handle("deck:escape", () => {
     if (!deckOpen) return false;
+    if (deckStacked) {
+      stackDeck(false);
+      return true;
+    }
     hideDeck();
     return true;
   });

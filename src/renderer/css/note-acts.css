@@ -82,13 +82,14 @@
     left: 50%;
     transform: translateX(-50%) translateY(3px);
     padding: 4px 8px;
-    border-radius: var(--r-sm);
-    background: var(--surface-hi, rgba(22, 30, 28, 0.96));
-    border: 1px solid var(--glass-edge);
-    box-shadow: var(--glass-drop);
-    color: var(--text);
+    border-radius: 6px;
+    background: rgba(17, 24, 39, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 6px 18px -3px rgba(0, 0, 0, 0.4), 0 2px 6px -1px rgba(0, 0, 0, 0.25);
+    color: #ffffff !important;
     font-family: var(--font-body);
     font-size: 11px;
+    font-weight: 500;
     letter-spacing: normal;
     text-transform: none;
     white-space: nowrap;
@@ -106,8 +107,8 @@
   }
   /* Dymek kosza mówi czerwonym — tak jak sam kubełek. */
   .note-act--danger::after {
-    color: var(--danger);
-    border-color: var(--danger-30, rgb(240 114 111 / 0.35));
+    color: #ff9492 !important;
+    border-color: rgba(240, 114, 111, 0.4);
   }
 
   /* Skrajne przyciski: dymek wyśrodkowany pod pierwszym i ostatnim

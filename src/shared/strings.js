@@ -982,13 +982,14 @@ const EN = {
   /* ── Taca widgetu ── */
   "Dyktuj — ⌃⌥": "Dictate — ⌃⌥",
   "Gęstość sita": "Sieve density",
-  "Zmień rozmiar kartki": "Resize the card",
-  /* Wyłącznik pod kartką na pulpicie. „Stickies" zostaje słowem
-     angielskim także po polsku — tak się te kartki nazywa, a „Ukryj
-     karteczki" brzmi jak inna rzecz niż ta, o którą ludzie pytają. */
-  "Ukryj stickies": "Hide stickies",
+  /* Wyłącznik pod kartką na pulpicie. Zwinięcie w stosik. */
+  "Zwiń w stosik": "Stack stickies",
+  "Rozwiń stosik": "Expand stickies",
+  "Ukryj stickies": "Stack stickies",
+  "Zwija wszystkie kartki w poręczny stosik w rogu ekranu.":
+    "Stacks all stickies into a compact deck in the corner.",
   "Chowa wszystkie kartki naraz. Wracają znaczkiem widgetu.":
-    "Hides every card at once. They come back from the widget badge.",
+    "Stacks all stickies into a compact deck in the corner.",
   "Język dyktowania: {label}": "Dictation language: {label}",
 
   /* ── HUD ── */

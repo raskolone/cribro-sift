@@ -59,18 +59,6 @@ assert.ok(
 );
 console.log("✓ Kartka ma miejsce na notatkę, a nie tylko na paski");
 
-/* Kartka wraca na pulpit z dźwignią w położeniu „talia leży". Okno nie jest
-   zamykane, tylko chowane (patrz hideDeck w main/main.js), więc bez tego
-   jednego wiersza wyłącznik wracałby przełożony — mówiąc coś przeciwnego
-   niż to, co widać na ekranie. Wyłożenia talii nie da się tu odegrać
-   (polecenie przychodzi z procesu głównego), więc pytamy o sam wiersz. */
-const sticky = fs.readFileSync(path.join(root, "src", "renderer", "js", "sticky.js"), "utf8");
-assert.ok(
-  /dir === "out"[^\n]*dataset\.off/.test(sticky),
-  "kartka wyłożona na pulpit nie przywraca dźwigni wyłącznika",
-);
-console.log("✓ Wyłożona kartka wraca z wyłącznikiem w położeniu „talia leży”");
-
 /* ── 2. Wszystko inne — w prawdziwym oknie kartki ─────────────────── */
 
 const HARNESS = String.raw`
@@ -78,8 +66,9 @@ const HARNESS = String.raw`
    która zapisuje, o co ją poproszono. Reszta atrapy zostaje nietknięta —
    sticky.js trzyma sam OBIEKT deck z mostka, więc podmiana metody na nim
    dochodzi do kodu, który już wystartował. */
-window.__deck = { hidden: null, dismissed: null, deleted: null };
+window.__deck = { hidden: null, stacked: null, dismissed: null, deleted: null };
 window.cribro.deck.show = async (open) => (window.__deck.hidden = !open);
+window.cribro.deck.stack = async (stacked) => (window.__deck.stacked = stacked);
 window.cribro.deck.dismiss = async (id) => (window.__deck.dismissed = id);
 window.cribro.notes.remove = async (id) => (window.__deck.deleted = id);
 
@@ -152,15 +141,9 @@ window.__roll = (on) => {
 };
 
 window.__switch = () => {
-  const button = document.getElementById("hideAll");
+  const button = document.getElementById("stackAll") || document.getElementById("hideAll");
   return {
-    off: button.dataset.off === "true",
     label: button.textContent.trim(),
-    // Dźwignia stoi po prawej, dopóki talia leży — i to jest jedyne miejsce,
-    // w którym widać położenie wyłącznika.
-    lever: getComputedStyle(button.querySelector(".switch__lever")).transform,
-    // Wyłącznik NIE JEST czynnością na notatce: gdyby stanął w pasku
-    // czynności, czytałby się jako szósta z nich.
     inActs: !!button.closest(".note-acts"),
     belowFoot: !!document.querySelector(".foot ~ .deck-off"),
   };
@@ -256,11 +239,10 @@ app.whenReady().then(async () => {
   await type("zwykłe zdanie");
   out.plain = await js("window.__pressed()");
 
-  /* ── Wyłącznik talii ── */
+  /* ── Przycisk zwijania w stosik ── */
   out.switchBefore = await js("window.__switch()");
-  await js("window.__click('#hideAll')");
+  await js("window.__click('#stackAll, #hideAll')");
   await wait(200);
-  out.switchAfter = await js("window.__switch()");
   out.deck = await js("window.__deck");
 
   /* ── Zwinięta kartka chowa oba pasy ── */
@@ -361,24 +343,17 @@ assert.ok(
 );
 ok("Pasek gaśnie tam, gdzie żadnej listy nie ma");
 
-/* ── Wyłącznik talii ── */
-assert.equal(out.switchBefore.label, "Ukryj stickies", "wyłącznik ma się nazywać „Ukryj stickies”");
-assert.ok(!out.switchBefore.off, "wyłącznik startuje w położeniu „talia leży”");
-assert.ok(!out.switchBefore.inActs, "wyłącznik nie jest czynnością na notatce i nie stoi w ich pasku");
-assert.ok(out.switchBefore.belowFoot, "wyłącznik stoi POD stopką, na samym dole kartki");
-assert.notEqual(
-  out.switchBefore.lever,
-  out.switchAfter.lever,
-  "dźwignia nie drgnęła — wyłącznik ma się przełożyć, zanim kartki się złożą",
-);
-assert.ok(out.switchAfter.off, "po naciśnięciu wyłącznik zostaje w położeniu „zgaszone”");
-assert.strictEqual(out.deck.hidden, true, "„Ukryj stickies” nie schowało talii");
-assert.strictEqual(out.deck.dismissed, null, "„Ukryj stickies” zdjęło notatkę z wierzchu — a miało tylko zgasić talię");
-assert.strictEqual(out.deck.deleted, null, "„Ukryj stickies” ruszyło samą notatkę");
-ok("„Ukryj stickies” chowa całą talię i nie rusza ani jednej notatki");
+/* ── Przycisk zwijania w stosik ── */
+assert.equal(out.switchBefore.label, "Zwiń w stosik", "przycisk ma się nazywać „Zwiń w stosik”");
+assert.ok(!out.switchBefore.inActs, "przycisk nie jest czynnością na notatce i nie stoi w ich pasku");
+assert.ok(out.switchBefore.belowFoot, "przycisk stoi POD stopką, na samym dole kartki");
+assert.strictEqual(out.deck.stacked, true, "„Zwiń w stosik” nie wywołało zwinięcia talii w stosik");
+assert.strictEqual(out.deck.dismissed, null, "„Zwiń w stosik” zdjęło notatkę z wierzchu — a miało tylko zwinąć talię");
+assert.strictEqual(out.deck.deleted, null, "„Zwiń w stosik” ruszyło samą notatkę");
+ok("„Zwiń w stosik” zwija talię w stosik i nie rusza ani jednej notatki");
 
 assert.ok(!out.rolled.tools && !out.rolled.switch, "kartka zwinięta do belki zostawia widoczne pasy");
-ok("Kartka zwinięta do nagłówka chowa i narzędzia, i wyłącznik");
+ok("Kartka zwinięta do nagłówka chowa i narzędzia, i przycisk stosiku");
 
 fs.rmSync(work, { recursive: true, force: true });
 console.log(`\nKartka na pulpicie: ${passed} sprawdzeń.`);

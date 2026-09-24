@@ -240,6 +240,10 @@ contextBridge.exposeInMainWorld("cribro", {
     // tylko kiedy i z jakim opóźnieniem, a kartka melduje, gdy skończy.
     onFold: on("sticky:fold"),
     onScale: on("sticky:scale"),
+    // Zwinięcie talii w fizyczny stosik kart w rogu ekranu.
+    stack: (stacked = true) => ipcRenderer.invoke("deck:stack", stacked),
+    unstack: () => ipcRenderer.invoke("deck:unstack"),
+    onStack: on("sticky:stack"),
     // „Masz tu pisać" — kartka założona plusikiem dostaje kursor od razu.
     onWrite: on("sticky:write"),
     folded: (gen) => ipcRenderer.send("deck:folded", { gen }),

@@ -837,6 +837,15 @@ if (!window.cribro) {
         // W przeglądarce nie ma okna do zwinięcia — sama kartka i tak
         // schowa treść, bo to robi jej własny arkusz.
         roll: async () => true,
+        stack: async (stacked = true) => {
+          emit("sticky:stack", { stacked: !!stacked, rot: 0, index: 0, count: 1 });
+          return true;
+        },
+        unstack: async () => {
+          emit("sticky:stack", { stacked: false, rot: 0, index: 0, count: 1 });
+          return true;
+        },
+        onStack: on("sticky:stack"),
         onFold: on("sticky:fold"),
         onScale: on("sticky:scale"),
         folded: () => {},

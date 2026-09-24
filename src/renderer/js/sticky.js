@@ -428,6 +428,14 @@
   $("#title").addEventListener("dblclick", () => startRename());
 
   document.addEventListener("click", async (event) => {
+    // Kliknięcie w dowolną część zwiniętego stosiku kart rozwija go z powrotem.
+    if (card.dataset.stacked === "true") {
+      event.preventDefault();
+      event.stopPropagation();
+      await api.deck.unstack();
+      return;
+    }
+
     const swatch = event.target.closest("#palette [data-color]");
     if (swatch) return setColor(swatch.dataset.color);
     if (event.target.closest("#paint")) return showPalette($("#palette").hidden);
@@ -446,7 +454,7 @@
     const tool = event.target.closest("[data-format]");
     if (tool) return applyFormat(tool.dataset.format);
     if (event.target.closest("#stamp")) return insertStamp();
-    if (event.target.closest("#hideAll")) return void hideDeck();
+    if (event.target.closest("#stackAll, #hideAll")) return void stackDeck();
 
     /* Zwinięcie do nagłówka. Stan trzyma proces główny razem z resztą
        geometrii kartki — bo to on zmienia wysokość okna, a kartka ma
@@ -520,38 +528,24 @@
     if (menu) menu.hidden = true;
   }
 
-  /* ── „Ukryj stickies" ───────────────────────────────────────────
-     Gaśnie CAŁA talia, nie ta jedna kartka — i nic o notatkach się przy tym
-     nie zmienia: żadna nie schodzi z wierzchu, wszystkie wracają w te same
-     miejsca znaczkiem widgetu albo skrótem. Od zdejmowania pojedynczej
-     notatki jest krzyżyk w belce i to jest cała różnica między nimi.
-
-     Zapis idzie przed schowaniem z tego samego powodu, co przy czynnościach
-     w stopce: kartka zapisuje się z opóźnieniem (SAVE_DELAY), a zgaszona
-     talia wygląda dokładnie tak, jakby wszystko było już na dysku.
-
-     Dźwignia przekłada się PRZED wywołaniem, a nie po nim: proces główny
-     odpowiada dopiero po złożeniu kartek, więc czekanie na odpowiedź
-     zostawiłoby wyłącznik nieruszony przez cały ruch — czyli przez jedyny
-     moment, w którym ktokolwiek na niego patrzy. */
-  async function hideDeck() {
-    $("#hideAll").dataset.off = "true";
+  /* ── „Zwiń w stosik" ─────────────────────────────────────────────
+     Zwija WSZYSTKIE aktywne kartki w fizyczny stosik kart w rogu ekranu,
+     natychmiast odsłaniając pulpit pod spodem do pracy z innymi oknami.
+     Kliknięcie w stosik płynnie rozsuwa kartki z powrotem. */
+  async function stackDeck() {
     await flushSave();
-    await api.deck.show(false);
+    await api.deck.stack(true);
   }
 
   /* Escape zdejmuje po jednej warstwie, od wierzchu — tak samo jak
-     w Notatniku i w widgecie: najpierw trwające nagranie, potem cała
-     talia. Pojedynczej kartki Escape nie zamyka: zamknięcie zdejmuje
-     notatkę z wierzchu, a to jest decyzja, nie odruch. */
+     w Notatniku i w widgecie: najpierw trwające nagranie, potem stosik. */
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
     if (runtime === "listening") return void api.system.cancelCapture?.();
     if (!$("#palette").hidden) return showPalette(false);
-    // Ta sama droga co przycisk — razem z przełożeniem dźwigni, bo talia
-    // gaśnie tak samo i wyłącznik ma to pokazać tak samo.
-    void hideDeck();
+    if (card.dataset.stacked === "true") return void api.deck.unstack();
+    void stackDeck();
   });
 
   /* ── Skróty formatowania ────────────────────────────────────────
@@ -604,6 +598,15 @@
 
   api.deck.onFold?.(fold);
   api.deck.onScale?.(applyScale);
+  api.deck.onStack?.(({ stacked, rot = 0 }) => {
+    if (stacked) {
+      card.dataset.stacked = "true";
+      card.style.setProperty("--stack-rot", `${rot}deg`);
+    } else {
+      delete card.dataset.stacked;
+      card.style.removeProperty("--stack-rot");
+    }
+  });
   /* Kartka założona plusikiem — kursor stoi w niej od pierwszej chwili.
      Zwykłe wyłożenie talii tego nie robi i nie ma robić: talia wychodzi
      obok tego, co ktoś właśnie pisze gdzie indziej. */

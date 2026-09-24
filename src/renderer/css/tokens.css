@@ -446,58 +446,77 @@
    dostają więc ciepłe neutralne siostrzane odcienie, żeby paleta została
    spójna, a nie żeby udawać, że to te same barwy. */
 body.sticky-window .paper {
-  --paper: #fef9c3; --paper-lift: #fffdf0; --paper-sink: #fde68a;
-  --paper-edge: rgba(202, 138, 4, 0.18);
-  --paper-shadow: 0 10px 28px -12px rgba(120, 100, 40, 0.35), 0 2px 6px -2px rgba(120, 100, 40, 0.18);
+  --paper: #fbf3d5; --paper-lift: #fefaf0; --paper-sink: #f3e6bc;
+  --paper-edge: rgba(180, 130, 20, 0.16);
+  --paper-head-text: #6b4308;
+  --paper-head-bg: rgba(120, 53, 15, 0.07);
+  --paper-head-border: rgba(120, 53, 15, 0.12);
+  --paper-shadow: 0 14px 34px -10px rgba(70, 55, 25, 0.22), 0 3px 10px -2px rgba(70, 55, 25, 0.14), 0 1px 3px 0 rgba(70, 55, 25, 0.08);
 }
 
 /* Kartka jest ZAWSZE jasnym papierem, obojętnie w jakim motywie chodzi
    reszta aplikacji — więc tekst na niej musi być ustawiony wprost tutaj,
-   a nie brany z globalnego `--text`. Bez tego ciemny motyw zostawiał na
-   kartce prawie biały tekst (`--text: #eae8e3`), który ginął na żółtym,
-   miętowym czy błękitnym tle. Ta sama uwaga dotyczy linii: białe obwódki
-   z ciemnego motywu są na jasnym papierze praktycznie niewidoczne. */
+   a nie brany z globalnego `--text`. Używamy głębokiego, wyraźnego grafitu
+   (neutral-800) dla maksymalnej czytelności. */
 body.sticky-window {
-  --text:        #1e293b;  /* slate-800 — treść notatki */
-  --text-hi:     #0f172a;  /* slate-900 — tytuł, gdy się go przepisuje */
-  --text-2:      #334155;  /* slate-700 — tytuł w spoczynku, etykiety */
-  --text-3:      #334155;
-  --text-mute:   #64748b;  /* slate-500 — stopka, znaczki, datownik */
-  --text-faint:  #94a3b8;  /* slate-400 — placeholder „Pisz albo podyktuj…” */
-  --line:        rgba(15, 23, 42, 0.08);
-  --line-soft:   rgba(15, 23, 42, 0.06);
-  --line-strong: rgba(15, 23, 42, 0.14);
+  --text:        #1f2937;  /* neutral-800 — głęboki grafit treści notatki */
+  --text-hi:     #111827;  /* neutral-900 — tytuł, gdy się go przepisuje */
+  --text-2:      #374151;  /* neutral-700 — tytuł w spoczynku, etykiety */
+  --text-3:      #374151;
+  --text-mute:   #4b5563;  /* neutral-600 — stopka, datownik */
+  --text-faint:  #6b7280;  /* neutral-500 — placeholder */
+  --line:        rgba(15, 23, 42, 0.10);
+  --line-soft:   rgba(15, 23, 42, 0.08);
+  --line-strong: rgba(15, 23, 42, 0.16);
 }
 body.sticky-window [data-color="moss"] {
-  --paper: #d8f3e3; --paper-lift: #eafbf1; --paper-sink: #bee9d2;
-  --paper-edge: rgba(6, 95, 70, 0.18);
+  --paper: #e5f4eb; --paper-lift: #f2faf5; --paper-sink: #d3eadb;
+  --paper-edge: rgba(20, 83, 45, 0.15);
+  --paper-head-text: #14532d;
+  --paper-head-bg: rgba(20, 83, 45, 0.07);
+  --paper-head-border: rgba(20, 83, 45, 0.12);
 }
 body.sticky-window [data-color="sky"] {
-  --paper: #dceefb; --paper-lift: #eff8fe; --paper-sink: #c3e2f7;
-  --paper-edge: rgba(30, 64, 175, 0.16);
+  --paper: #e8f1fb; --paper-lift: #f4f8fe; --paper-sink: #d4e4f7;
+  --paper-edge: rgba(30, 58, 138, 0.15);
+  --paper-head-text: #1e3a8a;
+  --paper-head-bg: rgba(30, 58, 138, 0.07);
+  --paper-head-border: rgba(30, 58, 138, 0.12);
 }
 body.sticky-window [data-color="rose"] {
-  --paper: #fbe1e8; --paper-lift: #fef0f3; --paper-sink: #f6c7d3;
-  --paper-edge: rgba(190, 24, 93, 0.16);
+  --paper: #f7e6e8; --paper-lift: #fcf4f5; --paper-sink: #ecd2d5;
+  --paper-edge: rgba(190, 24, 93, 0.15);
+  --paper-head-text: #701a30;
+  --paper-head-bg: rgba(131, 24, 67, 0.07);
+  --paper-head-border: rgba(131, 24, 67, 0.12);
 }
 body.sticky-window [data-color="amber"] {
   --paper: #fcefd9; --paper-lift: #fff8ec; --paper-sink: #f7dfb0;
-  --paper-edge: rgba(180, 83, 9, 0.18);
+  --paper-edge: rgba(180, 83, 9, 0.16);
+  --paper-head-text: #78350f;
+  --paper-head-bg: rgba(120, 53, 15, 0.07);
+  --paper-head-border: rgba(120, 53, 15, 0.12);
 }
 body.sticky-window [data-color="violet"] {
-  --paper: #efe7fb; --paper-lift: #f8f4fe; --paper-sink: #ded0f5;
-  --paper-edge: rgba(109, 40, 217, 0.16);
+  --paper: #f0ebf8; --paper-lift: #f8f5fd; --paper-sink: #dfd5f0;
+  --paper-edge: rgba(109, 40, 217, 0.15);
+  --paper-head-text: #4c1d95;
+  --paper-head-bg: rgba(76, 29, 149, 0.07);
+  --paper-head-border: rgba(76, 29, 149, 0.12);
 }
 body.sticky-window [data-color="graphite"] {
-  --paper: #f1efea; --paper-lift: #faf9f6; --paper-sink: #e3e0d8;
-  --paper-edge: rgba(41, 37, 36, 0.16);
+  --paper: #fafaf9; --paper-lift: #ffffff; --paper-sink: #f0eeeb;
+  --paper-edge: rgba(41, 37, 36, 0.12);
+  --paper-head-text: #1c1917;
+  --paper-head-bg: rgba(28, 25, 23, 0.06);
+  --paper-head-border: rgba(28, 25, 23, 0.10);
 }
 /* Szyba, nie papier: kartka na pulpicie nie ma być przezroczysta jak
    reszta widgetu ani nosić ukośnego połysku pomyślanego dla ciemnego
-   szkła — ma być płaskim, matowym prostokątem papieru. */
+   szkła — ma być matowym, fizycznym prostokątem papieru. */
 body.sticky-window .paper {
   background: var(--paper);
-  border: none;
+  border: 1px solid var(--paper-edge);
   box-shadow: var(--paper-shadow);
 }
 

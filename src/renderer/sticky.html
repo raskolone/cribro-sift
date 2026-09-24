@@ -92,8 +92,52 @@
            klatkę mrugałby gotowy prostokąt, a dopiero potem rozwijałby się
            od zera. */
         opacity: 0;
-        transform-origin: 50% 0;
-        will-change: transform, opacity;
+        transform-origin: 50% 50%;
+        will-change: transform, opacity, box-shadow;
+        transition:
+          transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+          box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+          border-radius 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      /* ══ KARTKA ZWINIĘTA W STOSIK ══ */
+      #card[data-stacked="true"] {
+        transform: rotate(var(--stack-rot, 0deg));
+        border-radius: 8px;
+        box-shadow: 0 16px 36px -8px rgba(35, 25, 10, 0.38), 0 4px 14px -3px rgba(35, 25, 10, 0.24);
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #card[data-stacked="true"] .head {
+        cursor: pointer;
+        padding: 7px 9px 6px;
+      }
+      #card[data-stacked="true"] .head .ico {
+        display: none;
+      }
+      #card[data-stacked="true"] .head__title {
+        font-size: 11px;
+        pointer-events: none;
+      }
+      #card[data-stacked="true"] .body {
+        padding: 6px 9px;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      #card[data-stacked="true"] #text.prose {
+        font-size: 9.5px;
+        line-height: 1.35;
+        padding-left: 0;
+        --grip-gutter: 0px;
+      }
+      #card[data-stacked="true"] .tools,
+      #card[data-stacked="true"] .foot,
+      #card[data-stacked="true"] .deck-off,
+      #card[data-stacked="true"] #grip,
+      #card[data-stacked="true"] .palette,
+      #card[data-stacked="true"] .text-colors {
+        display: none !important;
       }
 
       /* Rozwinięcie: kartka odchyla się od górnej krawędzi, jak kartka
@@ -162,9 +206,9 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 9px 8px 8px 13px;
-        border-bottom: 1px solid var(--line-soft);
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent);
+        padding: 9px 8px 8px 12px;
+        border-bottom: 1px solid var(--paper-head-border, var(--line-soft));
+        background: linear-gradient(180deg, var(--paper-head-bg, rgba(0, 0, 0, 0.04)), transparent);
         cursor: grab;
       }
       .head[data-drag="true"] {
@@ -199,9 +243,10 @@
       .head__title {
         flex: 1;
         min-width: 0;
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--text-2);
+        font-size: 14px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        color: var(--paper-head-text, #1f2937);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -239,15 +284,18 @@
         border: 0;
         border-radius: 8px;
         background: transparent;
-        color: var(--text-mute);
+        color: var(--paper-head-text, var(--text-mute));
+        opacity: 0.82;
         cursor: pointer;
         transition:
           background var(--t),
+          opacity var(--t),
           color var(--t);
       }
       .ico:hover {
-        background: var(--accent-12);
-        color: var(--accent);
+        opacity: 1;
+        background: rgba(0, 0, 0, 0.06);
+        color: var(--paper-head-text, var(--accent));
       }
       .ico--close:hover {
         background: rgba(240, 114, 111, 0.14);
@@ -514,7 +562,9 @@
          mniejszym monitorze zostawało dziesięć pikseli. */
       #text.prose {
         font-size: var(--sticky-fs, 13.5px);
+        font-weight: 450;
         line-height: 1.72;
+        color: var(--text, #1f2937);
         min-height: 100%;
         user-select: text;
         -webkit-user-select: text;
@@ -593,120 +643,57 @@
         color: var(--accent-55);
       }
 
-      /* ══ WYŁĄCZNIK TALII ══
-
-         „Ukryj stickies" chowa WSZYSTKIE kartki naraz, nie tę jedną — i to
-         jest cała różnica między nim a krzyżykiem w belce. Krzyżyk zdejmuje
-         notatkę z wierzchu na dobre (przestaje być kartką); wyłącznik gasi
-         całą talię na chwilę i nic o notatkach nie zmienia. Wracają
-         znaczkiem widgetu albo skrótem, w tych samych miejscach.
-
-         DLATEGO STOI W OSOBNYM PASKU, POD STOPKĄ, a nie w rzędzie czynności
-         nad nim. W stopce leżą rzeczy robione TEJ notatce — przypnij,
-         przesiej, usuń — i wyłącznik postawiony między nimi czytałby się
-         jako szósta z nich. Osobny pas mówi: to jest przycisk o wszystkich
-         kartkach, nie o tej.
-
-         WYGLĄDA JAK WYŁĄCZNIK, BO NIM JEST. Płytka wychodzi z kartki cieniem
-         rzuconym w dół i krawędzią rozjaśnioną u góry, a naciśnięta —
-         wchodzi w kartkę: odchyla się w perspektywie, zjeżdża o te dwa
-         piksele, o które przed chwilą wystawała, i gaśnie jej podświetlenie.
-         Dźwignia przeskakuje z prawej (talia leży) na lewą (talia zgaszona)
-         i dopiero potem kartki się składają, więc ruch ręki i ruch kartek
-         są jednym gestem, a nie dwoma. */
+      /* ══ ZWIJANIE W STOSIK (CARD STACK) ══
+         Przycisk na spodzie notatki zwija wszystkie aktywne kartki w poręczny,
+         fizyczny stosik papieru w rogu ekranu. Matowy, spokojny przycisk
+         harmonizujący z papierem. */
       .deck-off {
         flex: none;
         display: flex;
         justify-content: center;
-        padding: 0 12px 9px;
-        /* Perspektywa jest na pasku, nie na płytce: postawiona na samym
-           elemencie znikałaby przy każdej innej jego transformacji — ten sam
-           powód, dla którego perspektywa kartki siedzi na scenie. */
-        perspective: 320px;
+        padding: 0 12px 10px;
       }
-      .switch {
+      .btn-stack {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        max-width: 100%;
-        padding: 3px 11px 3px 3px;
-        border: 1px solid rgba(0, 0, 0, 0.45);
-        border-top-color: rgba(255, 255, 255, 0.16);
-        border-radius: var(--r-pill);
-        background: linear-gradient(180deg, var(--paper-lift), var(--paper-sink));
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.16),
-          inset 0 -2px 4px rgba(0, 0, 0, 0.32),
-          0 2px 0 rgba(0, 0, 0, 0.5),
-          0 6px 14px -6px rgba(0, 0, 0, 0.8);
-        color: var(--text-2);
-        font-family: var(--font-mono);
-        font-size: 9px;
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
+        gap: 6px;
+        padding: 4px 12px;
+        border: 1px solid rgba(0, 0, 0, 0.09);
+        border-radius: var(--r-pill, 9999px);
+        background: rgba(0, 0, 0, 0.04);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        color: var(--text-2, #374151);
+        font-family: var(--font-body);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
         white-space: nowrap;
         cursor: pointer;
-        transform-origin: 50% 100%;
         transition:
-          transform var(--t-fast),
-          box-shadow var(--t-fast),
-          color var(--t-fast);
+          background var(--t-fast, 0.12s),
+          color var(--t-fast, 0.12s),
+          border-color var(--t-fast, 0.12s),
+          transform var(--t-fast, 0.12s),
+          box-shadow var(--t-fast, 0.12s);
       }
-      .switch:hover {
-        color: var(--text);
+      .btn-stack:hover {
+        background: rgba(0, 0, 0, 0.08);
+        border-color: rgba(0, 0, 0, 0.15);
+        color: var(--text, #111827);
+        transform: translateY(-0.5px);
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.06);
       }
-      .switch:focus-visible {
-        outline: 1px solid var(--accent-55);
-        outline-offset: 2px;
+      .btn-stack:active {
+        transform: translateY(0.5px);
+        background: rgba(0, 0, 0, 0.11);
       }
-      .switch:active,
-      .switch[data-off="true"] {
-        transform: translateY(2px) rotateX(14deg);
-        box-shadow:
-          inset 0 1px 0 rgba(255, 255, 255, 0.06),
-          inset 0 2px 6px rgba(0, 0, 0, 0.5);
-      }
-      /* Rowek dźwigni — wgłębienie, nie przycisk. Świeci akcentem, dopóki
-         talia leży: to jedyne miejsce, w którym widać, że wyłącznik jest
-         w położeniu „włączony", a nie w położeniu „do naciśnięcia". */
-      .switch__well {
-        position: relative;
+      .btn-stack__icon {
+        width: 14px;
+        height: 14px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.6;
         flex: none;
-        width: 28px;
-        height: 15px;
-        border-radius: var(--r-pill);
-        background: linear-gradient(180deg, var(--accent-25), var(--accent-12));
-        box-shadow:
-          inset 0 1px 3px rgba(0, 0, 0, 0.6),
-          0 0 8px -2px var(--accent-30);
-        transition:
-          background var(--t),
-          box-shadow var(--t);
-      }
-      .switch[data-off="true"] .switch__well {
-        background: linear-gradient(180deg, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.22));
-        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.8);
-      }
-      .switch__lever {
-        position: absolute;
-        top: 1px;
-        left: 1px;
-        width: 13px;
-        height: 13px;
-        border-radius: 50%;
-        background: linear-gradient(180deg, #e6ecf4, #9aa8bb);
-        box-shadow:
-          0 1px 2px rgba(0, 0, 0, 0.65),
-          inset 0 1px 0 rgba(255, 255, 255, 0.85);
-        transform: translateX(13px);
-        transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-      }
-      .switch[data-off="true"] .switch__lever {
-        transform: translateX(0);
-      }
-      .switch__cap {
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
 
       /* ── Uchwyt rozmiaru ──
@@ -768,6 +755,11 @@
         </symbol>
         <symbol id="s-grip" viewBox="0 0 24 24">
           <path d="M20 8L8 20M20 14l-6 6M20 20h-.01" />
+        </symbol>
+        <!-- Zwiń w stosik kart -->
+        <symbol id="s-stack" viewBox="0 0 24 24">
+          <path d="M7 4.5h10a2 2 0 0 1 2 2v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="4" y="7.5" width="13" height="13" rx="2.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
         </symbol>
       </defs>
     </svg>
@@ -870,14 +862,13 @@
             <div id="acts"></div>
           </footer>
 
-          <!-- Wyłącznik całej talii. Nie „zamknij tę kartkę" — od tego jest
-               krzyżyk w belce; ten gasi wszystkie naraz i nic o notatkach nie
-               zmienia (patrz hideDeck w main/main.js). -->
+          <!-- Zwiń w stosik kart — zamiast surowego ukrywania, zwija kartki
+               w poręczny stosik w rogu ekranu, odsłaniając pulpit. -->
           <div class="deck-off">
-            <button type="button" class="switch" id="hideAll"
-                    title="Chowa wszystkie kartki naraz. Wracają znaczkiem widgetu.">
-              <span class="switch__well" aria-hidden="true"><span class="switch__lever"></span></span>
-              <span class="switch__cap">Ukryj stickies</span>
+            <button type="button" class="btn-stack" id="stackAll"
+                    title="Zwija wszystkie kartki w poręczny stosik w rogu ekranu.">
+              <svg class="btn-stack__icon"><use href="#s-stack" /></svg>
+              <span class="btn-stack__label">Zwiń w stosik</span>
             </button>
           </div>
 
