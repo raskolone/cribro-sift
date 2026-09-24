@@ -2028,7 +2028,6 @@ const toggleDeck = () => (deckOpen ? hideDeck() : openDeck());
 /* ══ ANIMACJA I ZWIJANIE W STOSIK — FIZYCZNA KASKADA KART ══
    Płynna, luksusowa animacja zwijania do miejsca wywołującej notatki
    ze sprężystą krzywą, asymetrycznym układem kaskadowym i obsługą przeciągania. */
-let stackAnimTimer = null;
 let stackMenuWin = null;
 
 function closeStackMenu() {
@@ -2136,82 +2135,6 @@ function handleStackAction(action) {
   }
 }
 
-function easeCollapse(t) {
-  // Ultra-płynna krzywa cubic-bezier(0.16, 1, 0.3, 1) — miękkie zassanie kart w stosik
-  const cx = 3 * 0.16;
-  const bx = 3 * (0.3 - 0.16) - cx;
-  const ax = 1 - cx - bx;
-
-  const cy = 3 * 1.0;
-  const by = 3 * (1.0 - 1.0) - cy;
-  const ay = 1 - cy - by;
-
-  function sampleCurveX(u) { return ((ax * u + bx) * u + cx) * u; }
-  function sampleCurveY(u) { return ((ay * u + by) * u + cy) * u; }
-  function sampleCurveDerivativeX(u) { return (3 * ax * u + 2 * bx) * u + cx; }
-
-  function solveCurveX(x) {
-    let u = x;
-    for (let i = 0; i < 8; i++) {
-      const x2 = sampleCurveX(u) - x;
-      if (Math.abs(x2) < 1e-4) return u;
-      const d2 = sampleCurveDerivativeX(u);
-      if (Math.abs(d2) < 1e-4) break;
-      u = u - x2 / d2;
-    }
-    return Math.min(Math.max(u, 0), 1);
-  }
-
-  return sampleCurveY(solveCurveX(t));
-}
-
-function easeExpand(t) {
-  // Miękkie, organiczne rozwijanie ze sprężystym odbiciem (stiffness: 260, damping: 24)
-  const omega = 16.1245;
-  const zeta = 0.7442;
-  const decay = Math.exp(-zeta * omega * t);
-  const omegaD = omega * Math.sqrt(1 - zeta * zeta);
-  return 1 - decay * (Math.cos(omegaD * t) + (zeta / Math.sqrt(1 - zeta * zeta)) * Math.sin(omegaD * t));
-}
-
-function animateWindowBounds(targets, duration = 490, easeFn = easeCollapse) {
-  if (stackAnimTimer) {
-    clearInterval(stackAnimTimer);
-    stackAnimTimer = null;
-  }
-  const startTime = Date.now();
-  const list = targets
-    .map(({ win, to }) => ({
-      win,
-      from: win.getBounds(),
-      to,
-    }))
-    .filter((item) => item.win && !item.win.isDestroyed());
-
-  stackAnimTimer = setInterval(() => {
-    const elapsed = Date.now() - startTime;
-    const progress = Math.min(1, Math.max(0, elapsed / duration));
-    const ease = easeFn(progress);
-
-    list.forEach(({ win, from, to }) => {
-      if (win.isDestroyed()) return;
-      const curX = Math.round(from.x + (to.x - from.x) * ease);
-      const curY = Math.round(from.y + (to.y - from.y) * ease);
-      const curW = Math.round(from.width + (to.width - from.width) * ease);
-      const curH = Math.round(from.height + (to.height - from.height) * ease);
-      win.setBounds({ x: curX, y: curY, width: curW, height: curH });
-    });
-
-    if (progress >= 1) {
-      clearInterval(stackAnimTimer);
-      stackAnimTimer = null;
-      list.forEach(({ win, to }) => {
-        if (!win.isDestroyed()) win.setBounds(to);
-      });
-    }
-  }, 16);
-}
-
 function stackDeck(toStack = true, originId = null) {
   if (!deckOpen) return false;
   const windows = [...stickyWindows.entries()].filter(([_id, win]) => !win.isDestroyed() && win.isVisible());
@@ -2253,7 +2176,7 @@ function stackDeck(toStack = true, originId = null) {
     const otherEntries = windows.filter(([id]) => id !== targetId);
     const orderedEntries = [...otherEntries, [targetId, targetWin]];
 
-    const targets = orderedEntries.map(([id, win], index) => {
+    orderedEntries.forEach(([id, win], index) => {
       if (!win._unstackedBounds) {
         win._unstackedBounds = win.getBounds();
       }
@@ -2297,21 +2220,21 @@ function stackDeck(toStack = true, originId = null) {
         win.moveTop();
       } catch {}
 
-      return { win, to };
+      if (!win.isDestroyed()) {
+        win.setBounds(to);
+      }
     });
-
-    animateWindowBounds(targets, 490, easeCollapse);
   } else {
     const spots = deckSpots(N, workArea);
-    const targets = windows.map(([id, win], index) => {
+    windows.forEach(([id, win], index) => {
       const savedBounds = win._unstackedBounds || deckPlace(id, spots[index], workArea);
       win._unstackedBounds = null;
       clampCard(win, !!store.getSettings().widget?.cards?.[id]?.rolled, win.deckScale ?? deckScaleAt(savedBounds));
       win.webContents.send("sticky:stack", { stacked: false, rot: 0, isTop: false, index, count: N });
-      return { win, to: savedBounds };
+      if (!win.isDestroyed()) {
+        win.setBounds(savedBounds);
+      }
     });
-
-    animateWindowBounds(targets, 510, easeExpand);
   }
   return true;
 }
@@ -5962,10 +5885,6 @@ function registerIpc() {
     const targetY = Math.round(point.y);
 
     if (deckStacked) {
-      if (stackAnimTimer) {
-        clearInterval(stackAnimTimer);
-        stackAnimTimer = null;
-      }
       closeStackMenu();
       const [curX, curY] = win.getPosition();
       const dx = targetX - curX;
