@@ -210,26 +210,26 @@
    elementów) na tle --bg-surface (#FFFFFF) i --bg (#EEF2F6). */
 [data-theme="light"] {
   /* ---- Ground ---- */
-  --bg:              #eef2f6;
-  --bg-lift:         #e2e8f0;
+  --bg:              #f8fafc;   /* slate-50 — czyste, jasne tło aplikacji */
+  --bg-lift:         #f1f5f9;   /* slate-100 — subtelnie uniesione tło */
   --ink:             #ffffff;
   --ink-2:           #f8fafc;
-  --surface:         rgba(255, 255, 255, 0.75);
-  --surface-2:       rgba(241, 245, 249, 0.65);
+  --surface:         #ffffff;   /* czysta biel dla paneli i kart */
+  --surface-2:       #f8fafc;
   --surface-flat:    #ffffff;
-  --glass:           rgba(255, 255, 255, 0.72);
+  --glass:           #ffffff;
 
   /* ---- Accent ---- */
-  --accent:          #047857;   /* szmaragd — 5.9:1 na bieli */
-  --accent-soft:     #065f46;   /* hover: ciemniej, kontrast rośnie */
+  --accent:          #047857;   /* szmaragd — wysoki kontrast 5.9:1 na bieli */
+  --accent-soft:     #065f46;   /* hover: ciemniejszy, kontrast rośnie */
   --accent-ink:      #ffffff;
-  --accent-04:       rgba(4, 120, 87, 0.05);
-  --accent-08:       rgba(4, 120, 87, 0.08);
-  --accent-12:       rgba(4, 120, 87, 0.12);
-  --accent-15:       rgba(4, 120, 87, 0.15);
-  --accent-25:       rgba(4, 120, 87, 0.25);
-  --accent-30:       rgba(4, 120, 87, 0.30);
-  --accent-55:       rgba(4, 120, 87, 0.55);
+  --accent-04:       rgba(4, 120, 87, 0.06);
+  --accent-08:       rgba(4, 120, 87, 0.10);
+  --accent-12:       rgba(4, 120, 87, 0.14);
+  --accent-15:       rgba(4, 120, 87, 0.18);
+  --accent-25:       rgba(4, 120, 87, 0.28);
+  --accent-30:       rgba(4, 120, 87, 0.35);
+  --accent-55:       rgba(4, 120, 87, 0.60);
 
   /* ---- Nagrywanie ---- */
   --rec:             #7c3aed;
@@ -253,22 +253,19 @@
   --air-55:          rgba(220, 38, 38, 0.55);
   --air-glow:        0 0 26px rgba(220, 38, 38, 0.30);
 
-  /* ---- Poranek ----
-     Bursztyn zostaje na tyle jasny, że ciemny tekst NA nim (--sun-ink)
-     działa tak samo jak w ciemnym motywie — jedyny token stanu, który się
-     nie odwraca. */
+  /* ---- Poranek ---- */
   --sun:             #d97706;
   --sun-soft:        #b45309;
   --sun-ink:         #2a1602;
   --sun-glow:        0 8px 24px -8px rgba(217, 119, 6, 0.35);
 
-  /* ---- Text ---- */
-  --text:            #0f172a;
-  --text-hi:         #020617;
-  --text-2:          #1e293b;
-  --text-3:          #334155;
-  --text-mute:       #475569;   /* 5.8:1 na bieli */
-  --text-faint:      #cbd5e1;
+  /* ---- Text (WCAG AAA Kontrast) ---- */
+  --text:            #0f172a;   /* slate-900 — głęboki, nasycony tekst podstawowy */
+  --text-hi:         #020617;   /* slate-950 — nagłówki i kluczowe etykiety */
+  --text-2:          #334155;   /* slate-700 — opisy, wiersze i paragrafy (zgodne z AAA) */
+  --text-3:          #334155;   /* slate-700 */
+  --text-mute:       #475569;   /* slate-600 — metadane i stopka (~7:1 na bieli) */
+  --text-faint:      #64748b;   /* slate-500 — placeholder, wyraźny tekst pomocniczy */
 
   /* ---- State ---- */
   --warn:            #b45309;
@@ -277,59 +274,46 @@
   --danger-30:       rgba(220, 38, 38, 0.30);
   --info:            #2563eb;
 
-  /* ---- Lines ---- */
-  --line:            rgba(15, 23, 42, 0.10);
-  --line-strong:     rgba(15, 23, 42, 0.18);
-  --line-soft:       rgba(15, 23, 42, 0.05);
+  /* ---- Lines & Borders (Wyraźna definicja boksów) ---- */
+  --line:            rgba(15, 23, 42, 0.14);   /* precyzyjna ramka paneli i kontenerów */
+  --line-strong:     rgba(15, 23, 42, 0.22);   /* mocny obrys selektorów i rozdzielaczy */
+  --line-soft:       rgba(15, 23, 42, 0.08);   /* subtelna linia wewnętrzna */
 
-  /* ---- Wash ----
-     Kierunek się odwraca: podbicie powierzchni na jasnym tle to
-     przyciemnienie, nie rozjaśnienie. Wyższa alfa niż po ciemnej stronie —
-     czerń o tej samej przezroczystości co biel daje słabszy efekt. */
+  /* ---- Wash ---- */
   --wash-2:          rgba(15, 23, 42, 0.035);
   --wash-3:          rgba(15, 23, 42, 0.05);
-  --wash-3-5:        rgba(15, 23, 42, 0.055);
-  --wash-4:          rgba(15, 23, 42, 0.06);
-  --wash-5:          rgba(15, 23, 42, 0.07);
-  --wash-6:          rgba(15, 23, 42, 0.09);
-  --wash-7:          rgba(15, 23, 42, 0.10);
+  --wash-3-5:        rgba(15, 23, 42, 0.06);
+  --wash-4:          rgba(15, 23, 42, 0.07);
+  --wash-5:          rgba(15, 23, 42, 0.08);
+  --wash-6:          rgba(15, 23, 42, 0.10);
+  --wash-7:          rgba(15, 23, 42, 0.12);
 
-  /* ---- Liquid glass ----
-     Ta sama konstrukcja (rozmycie + podbicie + krawędź), tylko szkło leży
-     teraz nad jasnym tłem: wypełnienie zostaje białe, ale krawędź i cień
-     przechodzą na czerń, bo biała obwódka na białym tle jest niewidoczna. */
+  /* ---- Liquid glass & Panel Surfaces ---- */
   --glass-fill: linear-gradient(
                    152deg,
-                   rgba(255, 255, 255, 0.80) 0%,
-                   rgba(255, 255, 255, 0.55) 38%,
-                   rgba(255, 255, 255, 0.42) 62%,
-                   rgba(255, 255, 255, 0.68) 100%
+                   rgba(255, 255, 255, 0.95) 0%,
+                   rgba(255, 255, 255, 0.85) 50%,
+                   rgba(255, 255, 255, 0.90) 100%
                  );
-  --glass-edge:      rgba(15, 23, 42, 0.12);
-  --glass-sheen:     inset 0 1px 0 rgba(255, 255, 255, 0.70),
-                     inset 0 0 0 1px rgba(15, 23, 42, 0.05),
-                     inset 0 -1px 0 rgba(15, 23, 42, 0.06),
-                     inset 0 12px 22px -16px rgba(255, 255, 255, 0.55),
-                     inset 0 -18px 28px -22px rgba(15, 23, 42, 0.10);
-  --glass-drop:      0 22px 50px -24px rgba(15, 23, 42, 0.28);
-  --glass-thin:      rgba(255, 255, 255, 0.6);
+  --glass-edge:      rgba(15, 23, 42, 0.15);
+  --glass-sheen:     inset 0 1px 0 #ffffff,
+                     inset 0 0 0 1px rgba(15, 23, 42, 0.06),
+                     inset 0 -1px 0 rgba(15, 23, 42, 0.06);
+  --glass-drop:      0 8px 24px -6px rgba(15, 23, 42, 0.10),
+                     0 2px 6px -1px rgba(15, 23, 42, 0.05);
+  --glass-thin:      rgba(255, 255, 255, 0.85);
 
-  /* ---- Kartka ----
-     Domyślny (bez [data-color]) odcień kartki w jasnym motywie. Warianty
-     kolorów niżej dostają własne, jasne odcienie tego samego motywu. */
+  /* ---- Kartka ---- */
   --paper:           #ffffff;
-  --paper-lift:      #f8fafc;
-  --paper-sink:      #eef2f6;
-  --paper-edge:      rgba(15, 23, 42, 0.12);
+  --paper-lift:      #ffffff;
+  --paper-sink:      #f8fafc;
+  --paper-edge:      rgba(15, 23, 42, 0.16);
   --paper-tint:      #475569;
 
-  /* ---- Elevation ----
-     Cień w jasnym motywie musi być wyraźnie słabszy — ta sama siła co
-     w ciemnym wyglądałaby jak plama, bo tło jest jasne i cień nie ma się
-     w czym schować. */
-  --shadow-sm:       0 8px 24px -10px rgba(15, 23, 42, 0.18);
-  --shadow-md:       0 12px 32px -10px rgba(15, 23, 42, 0.20);
-  --shadow-lg:       0 16px 48px -14px rgba(15, 23, 42, 0.22);
+  /* ---- Elevation & Shadows ---- */
+  --shadow-sm:       0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md:       0 4px 12px -2px rgba(15, 23, 42, 0.10), 0 2px 4px -1px rgba(15, 23, 42, 0.06);
+  --shadow-lg:       0 12px 28px -4px rgba(15, 23, 42, 0.12), 0 4px 10px -2px rgba(15, 23, 42, 0.06);
   --glow:            0 0 24px rgba(4, 120, 87, 0.20);
   --glow-strong:     0 0 48px rgba(4, 120, 87, 0.28);
   --glow-btn:        0 8px 24px -8px rgba(4, 120, 87, 0.35);

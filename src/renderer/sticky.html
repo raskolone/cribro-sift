@@ -201,12 +201,28 @@
          dać przepisać podwójnym kliknięciem. Z app-region to kliknięcie
          nigdy do niego nie dochodziło. Własne przeciąganie ma próg ruchu,
          więc jedno nie wyklucza drugiego. */
+      .drag-pill {
+        position: absolute;
+        top: 3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 32px;
+        height: 3px;
+        border-radius: 9999px;
+        background: rgba(0, 0, 0, 0.12);
+        pointer-events: none;
+        transition: opacity var(--t-fast);
+      }
+      .head:hover .drag-pill {
+        background: rgba(0, 0, 0, 0.22);
+      }
       .head {
+        position: relative;
         flex: none;
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 9px 8px 8px 12px;
+        padding: 10px 8px 8px 12px;
         border-bottom: 1px solid var(--paper-head-border, var(--line-soft));
         background: linear-gradient(180deg, var(--paper-head-bg, rgba(0, 0, 0, 0.04)), transparent);
         cursor: grab;
@@ -771,6 +787,7 @@
       <div id="zoom">
         <section id="card" class="paper" data-state="idle">
           <header class="head">
+            <div class="drag-pill" aria-hidden="true"></div>
             <span class="head__title" id="title" data-i18n="skip"
                   title="Podwójne kliknięcie zmienia tytuł"></span>
             <button class="ico" id="paint" title="Kolor notatki" aria-expanded="false">
