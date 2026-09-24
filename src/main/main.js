@@ -2022,17 +2022,18 @@ function hideDeck() {
 
 const toggleDeck = () => (deckOpen ? hideDeck() : openDeck());
 
-/* ══ ANIMACJA I ZWIJANIE W STOSIK (CARD STACK) ══
-   Krzywa cubic-bezier(0.16, 1, 0.3, 1) spójna z rozwijaniem widgetu Cribro. */
+/* ══ ANIMACJA I ZWIJANIE W STOSIK — GENIE EFFECT ══
+   Płynny efekt zasysania kartki w dół z krzywą cubic-bezier(0.2, 0.9, 0.3, 1)
+   oraz sprężystym rozwinięciem z lekkim overshootingiem (bounce-back). */
 let stackAnimTimer = null;
 
-function easeOutCubicBezier(t) {
-  const cx = 3 * 0.16;
-  const bx = 3 * (0.3 - 0.16) - cx;
+function easeGenieDown(t) {
+  const cx = 3 * 0.2;
+  const bx = 3 * (0.3 - 0.2) - cx;
   const ax = 1 - cx - bx;
 
-  const cy = 3 * 1;
-  const by = 3 * (1 - 1) - cy;
+  const cy = 3 * 0.9;
+  const by = 3 * (1 - 0.9) - cy;
   const ay = 1 - cy - by;
 
   function sampleCurveX(u) { return ((ax * u + bx) * u + cx) * u; }
@@ -2054,7 +2055,14 @@ function easeOutCubicBezier(t) {
   return sampleCurveY(solveCurveX(t));
 }
 
-function animateWindowBounds(targets, duration = 350) {
+function easeGenieUp(t) {
+  const c1 = 0.45;
+  const c3 = c1 + 1;
+  const tm = t - 1;
+  return 1 + c3 * Math.pow(tm, 3) + c1 * Math.pow(tm, 2);
+}
+
+function animateWindowBounds(targets, duration = 650, easeFn = easeGenieDown) {
   if (stackAnimTimer) {
     clearInterval(stackAnimTimer);
     stackAnimTimer = null;
@@ -2071,7 +2079,7 @@ function animateWindowBounds(targets, duration = 350) {
   stackAnimTimer = setInterval(() => {
     const elapsed = Date.now() - startTime;
     const progress = Math.min(1, Math.max(0, elapsed / duration));
-    const ease = easeOutCubicBezier(progress);
+    const ease = easeFn(progress);
 
     list.forEach(({ win, from, to }) => {
       if (win.isDestroyed()) return;
@@ -2128,7 +2136,7 @@ function stackDeck(toStack = true) {
       return { win, to };
     });
 
-    animateWindowBounds(targets, 350);
+    animateWindowBounds(targets, 650, easeGenieDown);
   } else {
     const spots = deckSpots(N, workArea);
     const targets = windows.map(([id, win], index) => {
@@ -2139,7 +2147,7 @@ function stackDeck(toStack = true) {
       return { win, to: savedBounds };
     });
 
-    animateWindowBounds(targets, 350);
+    animateWindowBounds(targets, 650, easeGenieUp);
   }
   return true;
 }

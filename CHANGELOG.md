@@ -5,21 +5,20 @@ All notable changes to Cribro Sift will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- **Card Stacking Animation for Stickies (`Zwiń w stosik` / `Stack Stickies`)**:
-  - Replaced the simple hide switch button on stickies with a matte, paper-harmonic stack button.
-  - Implemented smooth cubic-bezier (`transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1)`) transition animating active stickies into a compact stack in the screen corner with natural rotation angles (-3° to +3°) and subtle offsets.
+- **Genie Effect Stacking Animation for Stickies (`Zwiń w stosik` / `Stack Stickies`)**:
+  - Implemented smooth macOS Genie effect transition (`650ms`, `cubic-bezier(0.2, 0.9, 0.3, 1)`) animating active stickies into a compact stack in the screen corner with natural rotation angles (-3° to +3°) and subtle offsets.
+  - Added physical spring overshoot (bounce-back) unstacking animation when restoring stickies to their desktop positions.
   - Exposes the desktop underneath for selecting and copying content from underlying application windows.
-  - Clicking on the stacked card or triggering the toggle unrolls and restores all stickies smoothly to their original desktop positions and dimensions.
   - Added full IPC bridge support (`deck:stack`, `deck:unstack`, `deck:state`, `api.deck.onStack`).
 
 ### Changed
-- **Paper Look & Feel (Aesthetics & Materials)**:
-  - Replaced bright plastic pastels with warm, toned, and matte paper color palettes (Manila/parchment `#fbf3d5`, soft powder rose `#f7e6e8`, natural linen/chalk `#fafaf9`, and softened tones for graphite, moss, sky, amber, and violet).
-  - Added soft, physical warm paper elevation shadows (`box-shadow: 0 14px 34px -10px rgba(70,55,25,0.22)`) and refined borders.
-  - Redesigned the bottom button capsule to a clean, minimal matte paper style.
-- **Typography & Contrast**:
-  - Note body text enhanced to high-contrast deep charcoal (`#1f2937` / neutral-800) with weight `450` for optimal readability.
-  - Note header titles increased in size (`14px` / `text-base`), weighted at `650` (semi-bold/bold), and given color-accented tone bars tailored to each note paper tint (ochre for yellow, deep plum for rose, dark emerald for moss, etc.).
+- **Rich Post-it Aesthetics & Organic Paper Contour**:
+  - Replaced flat colors with rich, warm classic Post-it color palettes with radial light gradients (`#fffbeb` -> `#fef08a` -> `#fde047` for yellow, rich powder pink for rose, natural chalk for graphite/white, fresh mint for moss, azure for sky, amber and violet).
+  - Applied subtle organic paper curvature (`border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px`).
+  - Added multi-layered physical paper shadow (`box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 18px -4px ..., 0 20px 32px -8px ...`) simulating peeling and lifted post-it corners.
+- **Typography, Antialiasing & Contrast**:
+  - Note body text set to deep saturated ink (`#0f172a` / slate-900) with weight `500` (`font-medium`) and enabled `-webkit-font-smoothing: subpixel-antialiased`.
+  - Header titles given 100% high-contrast tonally matching colors per note paper tint (deep sepia `#451a03` for yellow/amber, deep burgundy `#4c0519` for rose, anthracite `#09090b` for white, deep forest `#064e3b` for moss, deep navy `#0c4a6e` for sky, deep violet `#3b0764` for violet), with larger `15px` bold typography (`font-weight: 700`).
 
 ### Fixed
 - **Tooltip Contrast on Bottom Toolbar**:

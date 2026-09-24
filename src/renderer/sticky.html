@@ -82,10 +82,7 @@
         inset: 0;
         display: flex;
         flex-direction: column;
-        /* Osiem pikseli, nie szesnaście jak `--r-lg` reszty aplikacji —
-           kartka ma zaokrąglony róg prawdziwej karteczki, nie panelu
-           szklanej aplikacji. */
-        border-radius: 8px;
+        border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
         overflow: hidden;
         /* Do pierwszej klatki animacji kartki nie widać. Okno pokazuje się
            zanim renderer zdąży cokolwiek narysować — bez tego przez jedną
@@ -95,15 +92,17 @@
         transform-origin: 50% 50%;
         will-change: transform, opacity, box-shadow;
         transition:
-          transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-          box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1),
-          border-radius 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+          transform 0.65s cubic-bezier(0.2, 0.9, 0.3, 1),
+          box-shadow 0.65s cubic-bezier(0.2, 0.9, 0.3, 1),
+          border-radius 0.65s cubic-bezier(0.2, 0.9, 0.3, 1),
+          opacity 0.65s cubic-bezier(0.2, 0.9, 0.3, 1);
       }
 
-      /* ══ KARTKA ZWINIĘTA W STOSIK ══ */
+      /* ══ KARTKA ZWINIĘTA W STOSIK (GENIE EFFECT) ══ */
       #card[data-stacked="true"] {
-        transform: rotate(var(--stack-rot, 0deg));
-        border-radius: 8px;
+        transform: perspective(700px) rotate(var(--stack-rot, 0deg));
+        opacity: 0.88;
+        border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
         box-shadow: 0 16px 36px -8px rgba(35, 25, 10, 0.38), 0 4px 14px -3px rgba(35, 25, 10, 0.24);
         cursor: pointer;
         user-select: none;
@@ -118,6 +117,7 @@
       }
       #card[data-stacked="true"] .head__title {
         font-size: 11px;
+        font-weight: 700;
         pointer-events: none;
       }
       #card[data-stacked="true"] .body {
@@ -243,10 +243,10 @@
       .head__title {
         flex: 1;
         min-width: 0;
-        font-size: 14px;
-        font-weight: 650;
-        letter-spacing: -0.01em;
-        color: var(--paper-head-text, #1f2937);
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+        color: var(--paper-head-text, #0f172a);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -284,8 +284,8 @@
         border: 0;
         border-radius: 8px;
         background: transparent;
-        color: var(--paper-head-text, var(--text-mute));
-        opacity: 0.82;
+        color: var(--paper-head-text, #0f172a);
+        opacity: 0.85;
         cursor: pointer;
         transition:
           background var(--t),
@@ -294,7 +294,7 @@
       }
       .ico:hover {
         opacity: 1;
-        background: rgba(0, 0, 0, 0.06);
+        background: rgba(0, 0, 0, 0.08);
         color: var(--paper-head-text, var(--accent));
       }
       .ico--close:hover {
@@ -562,12 +562,15 @@
          mniejszym monitorze zostawało dziesięć pikseli. */
       #text.prose {
         font-size: var(--sticky-fs, 13.5px);
-        font-weight: 450;
+        font-weight: 500;
         line-height: 1.72;
-        color: var(--text, #1f2937);
+        color: var(--text, #0f172a);
         min-height: 100%;
         user-select: text;
         -webkit-user-select: text;
+        -webkit-font-smoothing: subpixel-antialiased;
+        -moz-osx-font-smoothing: auto;
+        font-smooth: always;
         /* Kartka jest wąska, więc pasek na uchwyt też — szerszy zabierałby
            jej dziesiątą część na coś, co widać tylko pod kursorem. */
         --grip-gutter: 18px;
