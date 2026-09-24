@@ -311,18 +311,34 @@
    dwie różne rzeczy, choć rysuje je ta sama linia. Sam tekst gaśnie do
    odcienia meta, żeby to, co zostało do zrobienia, było jaśniejsze od tego,
    co już zrobione. */
-.prose ul.task > li[data-done="true"] {
-  color: var(--text-mute);
-  text-decoration: line-through;
-  text-decoration-color: var(--accent-55);
-  text-decoration-thickness: 1.5px;
+.prose ul.task > li[data-done="true"],
+.prose ul.task > li[data-done="true"] > *,
+.task-item.completed,
+li[data-checked="true"] > .task-text,
+input[type="checkbox"]:checked + label {
+  color: #4b5563 !important;
+  text-decoration: line-through !important;
+  text-decoration-color: #1f2937 !important;
+  text-decoration-thickness: 2.5px !important;
+  opacity: 0.85;
 }
-/* Pogrubienie i kod mają własny, jaśniejszy kolor — w odhaczonym punkcie
-   świeciłyby tak, jakby ta jedna rzecz nadal czekała. */
+
+[data-theme="dark"] .prose ul.task > li[data-done="true"],
+[data-theme="dark"] .prose ul.task > li[data-done="true"] > *,
+[data-theme="dark"] .task-item.completed {
+  color: #9ca3af !important;
+  text-decoration: line-through !important;
+  text-decoration-color: #cbd5e1 !important;
+  text-decoration-thickness: 2.5px !important;
+  opacity: 0.85;
+}
+
+/* Pogrubienie i kod w odhaczonym punkcie dziedziczą przekreślenie i stonowany kolor */
 .prose ul.task > li[data-done="true"] strong,
 .prose ul.task > li[data-done="true"] b,
 .prose ul.task > li[data-done="true"] code {
-  color: inherit;
+  color: inherit !important;
+  text-decoration: inherit !important;
 }
 
 .prose blockquote {

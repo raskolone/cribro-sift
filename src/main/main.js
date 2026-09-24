@@ -2320,22 +2320,17 @@ const toggleStackDeck = () => stackDeck(!deckStacked);
 
 let stickyBlurTimer = null;
 function handleStickyBlur() {
-  if (!deckOpen || deckStacked) return;
-  clearTimeout(stickyBlurTimer);
+  if (stickyBlurTimer) clearTimeout(stickyBlurTimer);
   stickyBlurTimer = setTimeout(() => {
-    // 1. Sprawdź, czy którekolwiek okno notatki ma fokus
-    const stickyHasFocus = [...stickyWindows.values()].some(
-      (w) => !w.isDestroyed() && w.isFocused()
-    );
-    if (stickyHasFocus) return;
-
-    // 2. Sprawdź, czy którekolwiek inne okno aplikacji ma fokus
-    const focused = BrowserWindow.getFocusedWindow();
-    if (focused) return;
-
-    // 3. Żadne okno aplikacji nie ma fokusu -> zwiń notatki w kaskadowy stosik
-    stackDeck(true);
-  }, 120);
+    if (!deckOpen || deckStacked) return;
+    const allStickies = [...stickyWindows.values()].filter((w) => !w.isDestroyed());
+    const isAnyStickyFocused = allStickies.some((w) => w.isFocused());
+    
+    // Jeśli żadne okno notatki nie ma aktualnie fokusu -> zwiń w kaskadowy stosik
+    if (!isAnyStickyFocused && deckOpen && !deckStacked) {
+      stackDeck(true);
+    }
+  }, 150);
 }
 
 /** Talia znika na dobre — przy wyłączeniu widgetu albo zmianie widoku. */
@@ -7207,6 +7202,7 @@ function guardWindows() {
     // później — dopinanie go w każdej funkcji tworzącej okno z osobna
     // kończyłoby się pominięciem tego, które dopisano jako ostatnie.
     app.on("browser-window-created", (_event, win) => attachContextMenu(win));
+    app.on("browser-window-blur", () => handleStickyBlur());
 
     registerIpc();
     createTray();

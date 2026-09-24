@@ -45,8 +45,8 @@
           </div>
         </a>
         <div class="lc-actions">
-          <button class="lc-btn" data-do="small" title="Mała miniatura">🔲</button>
-          <button class="lc-btn" data-do="text"  title="Zwykły link">🔗</button>
+          <button type="button" class="lc-btn" data-do="small" title="Mała miniatura">🔲</button>
+          <button type="button" class="lc-btn" data-do="text"  title="Zwykły link">🔗</button>
         </div>`;
     }
     return `
@@ -61,8 +61,8 @@
         </div>
       </a>
       <div class="lc-actions">
-        <button class="lc-btn" data-do="big"  title="Duża karta">🖼️</button>
-        <button class="lc-btn" data-do="text" title="Zwykły link">🔗</button>
+        <button type="button" class="lc-btn" data-do="big"  title="Duża karta">🖼️</button>
+        <button type="button" class="lc-btn" data-do="text" title="Zwykły link">🔗</button>
       </div>`;
   }
 
@@ -93,11 +93,12 @@
     fig.innerHTML = buildCardInner(url, format, meta);
   }
 
-  /* ── Popover ──────────────────────────────────────────────────── */
+  /* ── Popover Singleton & Lifecycle ────────────────────────────── */
 
   let popover = null;
-  let popoverTimer = null;
   let popoverCb = null;
+  let popoverAnchor = null;
+  let popoverUrl = null;
 
   const FMT = [
     { fmt: "text",  icon: "🔗", label: "Tekst" },
@@ -105,13 +106,26 @@
     { fmt: "small", icon: "🔲", label: "Miniatura" },
   ];
 
+  function destroyExistingPopover() {
+    if (popover) {
+      popover.remove();
+      popover = null;
+    }
+    for (const el of document.querySelectorAll(".lc-popover")) {
+      el.remove();
+    }
+    popoverCb = null;
+    popoverAnchor = null;
+    popoverUrl = null;
+  }
+
   function buildPopover() {
-    if (popover) return;
+    destroyExistingPopover();
     popover = document.createElement("div");
     popover.className = "lc-popover";
-    popover.hidden = true;
+    popover.style.cssText = "position: absolute; z-index: 99999; pointer-events: auto; display: flex;";
     popover.innerHTML = FMT.map(({ fmt, icon, label }) =>
-      `<button class="lc-pop-btn" data-fmt="${fmt}"><span class="lc-pop-icon">${icon}</span><span class="lc-pop-label">${label}</span></button>`
+      `<button type="button" class="lc-pop-btn" data-fmt="${fmt}"><span class="lc-pop-icon">${icon}</span><span class="lc-pop-label">${label}</span></button>`
     ).join("");
     document.body.appendChild(popover);
 
@@ -120,17 +134,19 @@
       if (!btn) return;
       e.preventDefault();
       e.stopPropagation();
-      if (popoverCb) popoverCb(btn.dataset.fmt);
-      hidePopover(true);
+      const fmt = btn.dataset.fmt;
+      const cb = popoverCb;
+      destroyExistingPopover();
+      if (cb) cb(fmt);
     });
   }
 
-  function showPopover(anchor, currentFmt, cb) {
+  function showPopover(anchor, url, currentFmt, cb) {
+    if (!anchor) return;
     buildPopover();
-    clearTimeout(popoverTimer);
     popoverCb = cb;
-    popover.hidden = false;
-    popover.style.display = "flex";
+    popoverAnchor = anchor;
+    popoverUrl = url;
 
     const box = anchor.getBoundingClientRect();
     const pw  = 240;
@@ -153,12 +169,6 @@
     }
   }
 
-  function hidePopover(now) {
-    if (!popover) return;
-    if (now) { popover.hidden = true; }
-    else { popoverTimer = setTimeout(() => { if (popover) popover.hidden = true; }, 200); }
-  }
-
   /* ── LinkCardManager ────────────────────────────────────────────── */
 
   class LinkCardManager {
@@ -168,9 +178,11 @@
       this._cards = {};
       this._setupPaste();
       this._setupClicks();
+      this._setupLifecycle();
     }
 
     loadNote(note) {
+      destroyExistingPopover();
       this._cards = { ...(note?.linkCards ?? {}) };
       this._rehydrate();
     }
@@ -195,6 +207,7 @@
     }
 
     handleUrlPaste(url) {
+      destroyExistingPopover();
       const sel = window.getSelection();
       let anchor = null;
 
@@ -232,7 +245,7 @@
 
       this.root.dispatchEvent(new Event("input", { bubbles: true }));
       const current = this._cards[url]?.format ?? "text";
-      showPopover(anchor, current, (fmt) => this._setFormat(url, fmt, anchor));
+      showPopover(anchor, url, current, (fmt) => this._setFormat(url, fmt, anchor));
     }
 
     async handlePaste(text) {
@@ -240,6 +253,55 @@
       if (URL_RE.test(clean)) {
         this.handleUrlPaste(clean);
       }
+    }
+
+    _checkPopover() {
+      if (!popover || !popoverAnchor) return;
+      // 1. Czy anchor nadal fizycznie istnieje w edytorze?
+      if (!this.root.contains(popoverAnchor)) {
+        destroyExistingPopover();
+        return;
+      }
+      // 2. Czy edytor jest całkowicie pusty?
+      if (!this.root.textContent?.trim() && !this.root.querySelector(".link-card, img")) {
+        destroyExistingPopover();
+        return;
+      }
+      // 3. Czy adres URL został skasowany lub ucięty w anchorze?
+      if (popoverUrl) {
+        const text = popoverAnchor.textContent?.trim() ?? "";
+        const href = popoverAnchor.getAttribute?.("href") ?? popoverAnchor.dataset?.url ?? "";
+        if (!text || (!text.includes(popoverUrl) && href !== popoverUrl && !popoverAnchor.classList?.contains("link-card"))) {
+          destroyExistingPopover();
+          return;
+        }
+      }
+    }
+
+    _setupLifecycle() {
+      // 1. Sprawdzanie przy każdej edycji i usuwaniu tekstu
+      this.root.addEventListener("input", () => this._checkPopover());
+      this.root.addEventListener("keyup", (e) => {
+        if (e.key === "Backspace" || e.key === "Delete" || e.key === "Escape") {
+          this._checkPopover();
+        }
+      });
+
+      // 2. Klawisz Escape bezwzględnie zamyka popover
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && popover) {
+          e.preventDefault();
+          e.stopPropagation();
+          destroyExistingPopover();
+        }
+      }, true);
+
+      // 3. Kliknięcie poza popover
+      document.addEventListener("pointerdown", (e) => {
+        if (popover && !popover.contains(e.target)) {
+          destroyExistingPopover();
+        }
+      }, true);
     }
 
     _findAnchor(url) {
@@ -289,6 +351,7 @@
     }
 
     async _setFormat(url, format, anchorEl) {
+      destroyExistingPopover();
       const existing = this._cards[url] ?? {};
       let meta = existing.meta ?? null;
 
@@ -394,7 +457,7 @@
           const url = link.dataset.url || link.getAttribute("href") || link.textContent.trim();
           if (url) {
             void window.cribro?.system?.openExternal?.(url);
-            showPopover(link, this._cards[url]?.format ?? "text",
+            showPopover(link, url, this._cards[url]?.format ?? "text",
               (fmt) => this._setFormat(url, fmt, link));
           }
           return;
@@ -405,15 +468,11 @@
         if (bl && this.root.contains(bl)) {
           const txt = bl.textContent?.trim() ?? "";
           if (URL_RE.test(txt)) {
-            showPopover(bl, this._cards[txt]?.format ?? "text",
+            showPopover(bl, txt, this._cards[txt]?.format ?? "text",
               (fmt) => this._setFormat(txt, fmt, bl));
           }
         }
       });
-
-      document.addEventListener("pointerdown", (e) => {
-        if (popover && !popover.hidden && !popover.contains(e.target)) hidePopover(true);
-      }, true);
     }
   }
 

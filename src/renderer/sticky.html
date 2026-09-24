@@ -643,12 +643,21 @@
         border-color: rgba(99, 102, 241, 0.70);
       }
 
-      /* Odhaczone zadanie: czytelne przekreślenie, stonowany grafit */
-      #text.prose ul.task > li[data-done="true"] {
-        color: #71717a;
-        text-decoration: line-through;
-        text-decoration-color: #a1a1aa;
-        text-decoration-thickness: 1.5px;
+      /* Odhaczone zadanie: wyraziste, grube przekreślenie i kontrast */
+      #text.prose ul.task > li[data-done="true"],
+      #text.prose ul.task > li[data-done="true"] > * {
+        color: #4b5563 !important;
+        text-decoration: line-through !important;
+        text-decoration-color: #1f2937 !important;
+        text-decoration-thickness: 2.5px !important;
+        opacity: 0.85;
+      }
+      [data-theme="dark"] #text.prose ul.task > li[data-done="true"],
+      [data-theme="dark"] #text.prose ul.task > li[data-done="true"] > * {
+        color: #9ca3af !important;
+        text-decoration-color: #cbd5e1 !important;
+        text-decoration-thickness: 2.5px !important;
+        opacity: 0.85;
       }
       #text.prose[data-empty="true"]::before {
         font-size: calc(var(--sticky-fs, 16px) - 1.5px);
