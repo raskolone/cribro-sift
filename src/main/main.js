@@ -1913,6 +1913,9 @@ function createStickyWindow(note, bounds) {
     rememberCard(note.id, win);
     win.webContents.send("sticky:scale", deckScaleAt(win.getBounds()));
   });
+  win.on("blur", () => {
+    handleStickyBlur();
+  });
   win.on("closed", () => stickyWindows.delete(note.id));
 
   stickyWindows.set(note.id, win);
@@ -2314,6 +2317,26 @@ function stackDeck(toStack = true, originId = null) {
 }
 
 const toggleStackDeck = () => stackDeck(!deckStacked);
+
+let stickyBlurTimer = null;
+function handleStickyBlur() {
+  if (!deckOpen || deckStacked) return;
+  clearTimeout(stickyBlurTimer);
+  stickyBlurTimer = setTimeout(() => {
+    // 1. Sprawdź, czy którekolwiek okno notatki ma fokus
+    const stickyHasFocus = [...stickyWindows.values()].some(
+      (w) => !w.isDestroyed() && w.isFocused()
+    );
+    if (stickyHasFocus) return;
+
+    // 2. Sprawdź, czy którekolwiek inne okno aplikacji ma fokus
+    const focused = BrowserWindow.getFocusedWindow();
+    if (focused) return;
+
+    // 3. Żadne okno aplikacji nie ma fokusu -> zwiń notatki w kaskadowy stosik
+    stackDeck(true);
+  }, 120);
+}
 
 /** Talia znika na dobre — przy wyłączeniu widgetu albo zmianie widoku. */
 function closeDeck() {
@@ -5191,7 +5214,7 @@ function registerIpc() {
   // Link do konsoli dostawcy ma otworzyć przeglądarkę, a nie zastąpić
   // sobą interfejs aplikacji.
   ipcMain.handle("link:open", (_e, url) => {
-    if (/^https:\/\//.test(url)) shell.openExternal(url);
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
     return true;
   });
 
@@ -5907,22 +5930,8 @@ function registerIpc() {
        - talia zwinięta (deckStacked) — już jest stosik, nie zwijaj
        - talia zamknięta (deckOpen false) — nie ma co zwijać
        - inne okno aplikacji (main, notes, briefing) ma fokus — zachowaj kartki */
-  let stickyBlurTimer = null;
   ipcMain.on("sticky:blurred", () => {
-    if (!deckOpen || deckStacked) return;
-    clearTimeout(stickyBlurTimer);
-    stickyBlurTimer = setTimeout(() => {
-      // Jeśli którakolwiek kartka ma fokus — nic nie rób.
-      const stickyHasFocus = [...stickyWindows.values()].some(
-        (w) => !w.isDestroyed() && w.isFocused()
-      );
-      if (stickyHasFocus) return;
-      // Jeśli jakiekolwiek okno aplikacji ma fokus — nie zwijaj kartek.
-      // „Okno aplikacji" to każde okno z wyjątkiem obcych (null = brak fokusu).
-      const focused = BrowserWindow.getFocusedWindow();
-      if (focused) return; // jakieś okno Electrona ma fokus — zachowaj kartki
-      stackDeck(true);
-    }, 150);
+    handleStickyBlur();
   });
 
 
@@ -7079,7 +7088,7 @@ function guardWindows() {
     "child-src 'self' blob:",
     "style-src 'self' file: 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' file: https://fonts.gstatic.com",
-    "img-src 'self' file: data: blob:",
+    "img-src 'self' file: data: blob: https:",
     "media-src 'self' file: data: blob:",
     "connect-src 'self'",
     "object-src 'none'",

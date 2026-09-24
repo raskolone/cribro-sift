@@ -39,7 +39,7 @@ const POLICY = [
   "child-src 'self' blob:",
   "style-src 'self' file: 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' file: https://fonts.gstatic.com",
-  "img-src 'self' file: data: blob:",
+  "img-src 'self' file: data: blob: https:",
   "media-src 'self' file: data: blob:",
   "connect-src 'self'",
   "object-src 'none'",

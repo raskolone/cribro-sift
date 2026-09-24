@@ -867,19 +867,27 @@ figure.link-card:hover .lc-actions {
 
 /* Popover wyboru formatu linku */
 .lc-popover {
-  position: fixed;
-  z-index: 100;
+  position: absolute;
+  z-index: 99999;
+  pointer-events: auto;
   display: flex;
   gap: 4px;
-  padding: 4px;
+  padding: 4px 6px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(0, 0, 0, 0.12);
-  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.08);
   animation: lc-pop-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+[data-theme="dark"] .lc-popover {
+  background: rgba(26, 34, 48, 0.95);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
 @keyframes lc-pop-in {
   from {
     opacity: 0;
@@ -890,6 +898,7 @@ figure.link-card:hover .lc-actions {
     transform: translateY(0) scale(1);
   }
 }
+
 .lc-pop-btn {
   display: flex;
   align-items: center;
@@ -905,15 +914,32 @@ figure.link-card:hover .lc-actions {
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
 }
+
 .lc-pop-btn:hover {
   background: rgba(0, 0, 0, 0.06);
   color: var(--accent, #4f46e5);
 }
+
 .lc-pop-btn--active {
   background: rgba(99, 102, 241, 0.12);
   color: var(--accent, #4f46e5);
   font-weight: 600;
 }
+
+[data-theme="dark"] .lc-pop-btn {
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .lc-pop-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #93c5fd;
+}
+
+[data-theme="dark"] .lc-pop-btn--active {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+}
+
 .lc-pop-icon { font-size: 12px; }
 .lc-pop-label { white-space: nowrap; }
 

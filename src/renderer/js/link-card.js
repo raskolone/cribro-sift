@@ -11,7 +11,7 @@
  */
 
 (function () {
-  const URL_RE = /https?:\/\/[^\s<>"')\]]+/g;
+  const URL_RE = /^https?:\/\/[^\s]+$/i;
 
   function domain(url) {
     try { return new URL(url).hostname.replace(/^www\./, ""); }
@@ -78,9 +78,11 @@
     fig.setAttribute("contenteditable", "false");
     fig.innerHTML = buildCardInner(url, format, meta);
     urlNode.replaceWith(fig);
-    const after = document.createElement("p");
-    after.appendChild(document.createElement("br"));
-    fig.after(after);
+    if (!fig.nextElementSibling) {
+      const after = document.createElement("p");
+      after.appendChild(document.createElement("br"));
+      fig.after(after);
+    }
     return fig;
   }
 
@@ -128,11 +130,24 @@
     clearTimeout(popoverTimer);
     popoverCb = cb;
     popover.hidden = false;
+    popover.style.display = "flex";
+
     const box = anchor.getBoundingClientRect();
-    const pw  = 230;
-    let left  = box.left;
+    const pw  = 240;
+    const ph  = 38;
+
+    let left = box.left;
     if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
-    popover.style.cssText = `left:${Math.max(8, left)}px;top:${box.bottom + 6}px;`;
+    if (left < 8) left = 8;
+
+    let top = box.top - ph - 6;
+    if (top < 8) {
+      top = box.bottom + 6;
+    }
+
+    popover.style.left = `${Math.round(left + window.scrollX)}px`;
+    popover.style.top = `${Math.round(top + window.scrollY)}px`;
+
     for (const btn of popover.querySelectorAll("[data-fmt]")) {
       btn.classList.toggle("lc-pop-btn--active", btn.dataset.fmt === currentFmt);
     }
@@ -151,6 +166,7 @@
       this.root  = root;
       this.onSave = onSave ?? (() => {});
       this._cards = {};
+      this._setupPaste();
       this._setupClicks();
     }
 
@@ -165,25 +181,72 @@
       this._rehydrate();
     }
 
-    /* Wywołaj z handlera paste, przekazując wklejony tekst. */
-    async handlePaste(text) {
-      if (!window.cribro?.links?.fetchPreview) return;
-      const urls = [...(text.matchAll(URL_RE) ?? [])].map(m => m[0]);
-      if (!urls.length) return;
-      await new Promise(r => setTimeout(r, 100));
-      for (const url of urls) {
-        const anchor = this._findAnchor(url);
-        if (!anchor) continue;
-        const current = this._cards[url]?.format ?? "text";
-        showPopover(anchor, current, (fmt) => this._setFormat(url, fmt, anchor));
-      }
+    getCards() { return { ...this._cards }; }
+
+    _setupPaste() {
+      this.root.addEventListener("paste", (e) => {
+        const text = (e.clipboardData?.getData("text/plain") ?? "").trim();
+        if (URL_RE.test(text)) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.handleUrlPaste(text);
+        }
+      }, true);
     }
 
-    getCards() { return { ...this._cards }; }
+    handleUrlPaste(url) {
+      const sel = window.getSelection();
+      let anchor = null;
+
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const a = document.createElement("a");
+        a.className = "prose-link";
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.dataset.url = url;
+        a.textContent = url;
+        range.insertNode(a);
+
+        const after = document.createRange();
+        after.setStartAfter(a);
+        after.setEndAfter(a);
+        sel.removeAllRanges();
+        sel.addRange(after);
+        anchor = a;
+      } else {
+        const p = document.createElement("p");
+        const a = document.createElement("a");
+        a.className = "prose-link";
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.dataset.url = url;
+        a.textContent = url;
+        p.appendChild(a);
+        this.root.appendChild(p);
+        anchor = a;
+      }
+
+      this.root.dispatchEvent(new Event("input", { bubbles: true }));
+      const current = this._cards[url]?.format ?? "text";
+      showPopover(anchor, current, (fmt) => this._setFormat(url, fmt, anchor));
+    }
+
+    async handlePaste(text) {
+      const clean = String(text ?? "").trim();
+      if (URL_RE.test(clean)) {
+        this.handleUrlPaste(clean);
+      }
+    }
 
     _findAnchor(url) {
       const fig = this.root.querySelector(`.link-card[data-url="${CSS.escape(url)}"]`);
       if (fig) return fig;
+      const a = this.root.querySelector(`a[data-url="${CSS.escape(url)}"], a[href="${CSS.escape(url)}"]`);
+      if (a) return a;
       for (const bl of this.root.children) {
         if ((bl.textContent?.trim() ?? "") === url) return bl;
       }
@@ -195,18 +258,33 @@
       for (const fig of [...this.root.querySelectorAll(".link-card")]) {
         if (!this._cards[fig.dataset.url]) {
           const p = document.createElement("p");
-          p.textContent = fig.dataset.url;
+          const a = document.createElement("a");
+          a.className = "prose-link";
+          a.href = fig.dataset.url;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.dataset.url = fig.dataset.url;
+          a.textContent = fig.dataset.url;
+          p.appendChild(a);
           fig.replaceWith(p);
         }
       }
-      /* Zamień akapity-URL na karty (jeśli mamy zapisany format inny niż text). */
-      for (const bl of [...this.root.children]) {
-        if (bl.classList?.contains("link-card")) continue;
-        const txt = bl.textContent?.trim() ?? "";
-        if (!/^https?:\/\/[^\s]+$/.test(txt)) continue;
-        const card = this._cards[txt];
+
+      /* Podmień zapisane karty. */
+      for (const [url, card] of Object.entries(this._cards)) {
         if (!card || card.format === "text") continue;
-        insertCard(bl, txt, card.format, card.meta ?? null);
+        const existingFig = this.root.querySelector(`.link-card[data-url="${CSS.escape(url)}"]`);
+        if (existingFig) {
+          refreshCard(existingFig, card.format, card.meta ?? null);
+          continue;
+        }
+        const anchor = this._findAnchor(url);
+        if (anchor) {
+          const target = (anchor.tagName === "A" && anchor.parentElement && anchor.parentElement.childNodes.length === 1 && anchor.parentElement.tagName === "P")
+            ? anchor.parentElement
+            : anchor;
+          insertCard(target, url, card.format, card.meta ?? null);
+        }
       }
     }
 
@@ -215,56 +293,86 @@
       let meta = existing.meta ?? null;
 
       if (format !== "text") {
-        /* Wyświetl skeleton, gdy brak meta. */
         let fig = anchorEl?.classList?.contains("link-card") ? anchorEl : null;
-        if (!meta) {
-          if (!fig) {
-            fig = document.createElement("figure");
-            fig.className = "link-card link-card--big";
-            fig.dataset.url = url;
-            fig.setAttribute("contenteditable", "false");
-            fig.innerHTML = skeletonInner();
-            const after = document.createElement("p");
-            after.appendChild(document.createElement("br"));
-            anchorEl.replaceWith(fig);
-            fig.after(after);
+        if (!fig) {
+          fig = document.createElement("figure");
+          fig.className = `link-card link-card--${format}`;
+          fig.dataset.url = url;
+          fig.dataset.format = format;
+          fig.setAttribute("contenteditable", "false");
+
+          if (meta) {
+            fig.innerHTML = buildCardInner(url, format, meta);
           } else {
             fig.innerHTML = skeletonInner();
           }
 
-          try { meta = await window.cribro.links.fetchPreview(url); }
-          catch { meta = null; }
+          const target = (anchorEl?.tagName === "A" && anchorEl.parentElement && anchorEl.parentElement.childNodes.length === 1 && anchorEl.parentElement.tagName === "P")
+            ? anchorEl.parentElement
+            : (anchorEl ?? this._findAnchor(url));
 
-          const fresh = this.root.querySelector(`.link-card[data-url="${CSS.escape(url)}"]`);
-          if (fresh) refreshCard(fresh, format, meta);
+          if (target && target.parentNode) {
+            target.replaceWith(fig);
+          } else {
+            this.root.appendChild(fig);
+          }
+
+          if (!fig.nextElementSibling) {
+            const after = document.createElement("p");
+            after.appendChild(document.createElement("br"));
+            fig.after(after);
+          }
         } else {
-          if (fig) { refreshCard(fig, format, meta); }
-          else {
-            const a = this._findAnchor(url);
-            if (a) insertCard(a, url, format, meta);
+          fig.className = `link-card link-card--${format}`;
+          fig.dataset.format = format;
+          if (meta) {
+            fig.innerHTML = buildCardInner(url, format, meta);
+          } else {
+            fig.innerHTML = skeletonInner();
+          }
+        }
+
+        if (!meta && window.cribro?.links?.fetchPreview) {
+          try {
+            meta = await window.cribro.links.fetchPreview(url);
+          } catch {
+            meta = null;
+          }
+          const fresh = this.root.querySelector(`.link-card[data-url="${CSS.escape(url)}"]`);
+          if (fresh) {
+            refreshCard(fresh, format, meta);
           }
         }
       } else {
         const fig = this.root.querySelector(`.link-card[data-url="${CSS.escape(url)}"]`);
         if (fig) {
           const p = document.createElement("p");
-          p.textContent = url;
+          const a = document.createElement("a");
+          a.className = "prose-link";
+          a.href = url;
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.dataset.url = url;
+          a.textContent = url;
+          p.appendChild(a);
           fig.replaceWith(p);
         }
       }
 
       this._cards[url] = { format, meta };
+      this.root.dispatchEvent(new Event("input", { bubbles: true }));
       this.onSave({ ...this._cards });
     }
 
     _setupClicks() {
       this.root.addEventListener("click", (e) => {
         /* Otwarcie URL z karty. */
-        const a = e.target.closest("a[data-url]");
-        if (a) {
+        const cardLink = e.target.closest("a[data-url]");
+        if (cardLink && cardLink.closest(".link-card")) {
           e.preventDefault();
           e.stopPropagation();
-          void window.cribro?.system?.openExternal?.(a.dataset.url);
+          const url = cardLink.dataset.url || cardLink.href;
+          if (url) void window.cribro?.system?.openExternal?.(url);
           return;
         }
 
@@ -278,11 +386,25 @@
           return;
         }
 
-        /* Klik w akapit z gołym URL — pokaż popover. */
-        const bl = e.target.closest("p");
+        /* Klik w link tekstowy <a>. */
+        const link = e.target.closest("a.prose-link, a[href]");
+        if (link && this.root.contains(link)) {
+          e.preventDefault();
+          e.stopPropagation();
+          const url = link.dataset.url || link.getAttribute("href") || link.textContent.trim();
+          if (url) {
+            void window.cribro?.system?.openExternal?.(url);
+            showPopover(link, this._cards[url]?.format ?? "text",
+              (fmt) => this._setFormat(url, fmt, link));
+          }
+          return;
+        }
+
+        /* Klik w zwykły akapit zawierający goły URL — pokaż popover. */
+        const bl = e.target.closest("p, li");
         if (bl && this.root.contains(bl)) {
           const txt = bl.textContent?.trim() ?? "";
-          if (/^https?:\/\/[^\s]+$/.test(txt)) {
+          if (URL_RE.test(txt)) {
             showPopover(bl, this._cards[txt]?.format ?? "text",
               (fmt) => this._setFormat(txt, fmt, bl));
           }
