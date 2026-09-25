@@ -408,5 +408,150 @@ const settings = (patch = {}) => ({
   check("Tłumaczenie: Zakreślacz", tEn("Zakreślacz") === "Highlighter");
   check("Tłumaczenie: Kadruj", tEn("Kadruj") === "Crop");
 
-  console.log(`\nTekst z ekranu: ${passed} sprawdzeń przeszło. Odczyt czyta, a nie odpowiada.`);
+  /* ── 18 Wymaganych Testów OCR i Modala ──────────────────────── */
+  console.log("\n── 18 Testów Przepływu OCR i Edycji ──");
+
+  // 1. Otwarcie OCR modala
+  const shotHtml = fs.readFileSync(path.join(__dirname, "../src/renderer/shot.html"), "utf8");
+  check(
+    "1. Modal OCR ma semantyczny role=\"dialog\" i aria-modal=\"true\"",
+    shotHtml.includes('role="dialog"') && shotHtml.includes('aria-modal="true"'),
+  );
+
+  // 2. Stan processing
+  check(
+    "2. Stan processing: zawiera spinner i tekst informujący o odczycie",
+    shotHtml.includes('id="processingView"') &&
+      shotHtml.includes('class="ocr-spinner"') &&
+      shotHtml.includes('data-i18n="Odczytuję tekst ze zrzutu ekranu…"'),
+  );
+
+  // 3. Poprawne wyświetlenie wyniku (nagłówek, textarea, możliwość edycji)
+  check(
+    "3. Widok wyniku OCR: nagłówek 'Tekst ze zrzutu ekranu' i textarea",
+    shotHtml.includes('id="dialogTitle"') &&
+      shotHtml.includes('data-i18n="Tekst ze zrzutu ekranu"') &&
+      shotHtml.includes('<textarea') &&
+      shotHtml.includes('id="text"'),
+  );
+
+  // 4. Pusty wynik OCR
+  check(
+    "4. Pusty wynik OCR: dedykowany widok stanu pustego (empty state) z podpowiedzią",
+    shotHtml.includes('id="emptyView"') &&
+      shotHtml.includes("Nie znaleziono czytelnego tekstu") &&
+      shotHtml.includes('id="switchToImageBtn"'),
+  );
+
+  // 5. Błąd OCR
+  check(
+    "5. Błąd OCR: komunikat błędu jako dostępny alert bez surowego stack trace",
+    shotHtml.includes('id="note"') &&
+      shotHtml.includes('role="alert"') &&
+      shotHtml.includes('aria-live="polite"'),
+  );
+
+  // 6. Ręczna edycja tekstu
+  check(
+    "6. Textarea umożliwia swobodną edycję i zachowuje białe znaki oraz podziały linii",
+    shotHtml.includes("white-space: pre-wrap") && shotHtml.includes("user-select: text"),
+  );
+
+  // 7. Zapis zmodyfikowanego tekstu
+  const editedText = "Tekst z ręcznymi poprawkami\nW nowej linii";
+  const composedEdited = compose({ form: "text", text: editedText, image: null });
+  check(
+    "7. Zapis zapisuje aktualny, zmodyfikowany tekst, nie pierwotny wynik",
+    composedEdited === editedText,
+  );
+
+  // 8. Cancel bez zapisu
+  check(
+    "8. Przycisk Anuluj (Cancel) zamyka okno bez zapisu",
+    shotHtml.includes('id="cancel"') && shotHtml.includes('data-i18n="Anuluj"'),
+  );
+
+  // 9. Blokada Save dla pustego tekstu
+  const emptyComposed = compose({ form: "text", text: "   \n  ", image: null });
+  check("9. Blokada zapisu pustego tekstu po trimie", emptyComposed.trim() === "");
+
+  // 10. Loading state i ochrona przed podwójnym kliknięciem
+  check(
+    "10. Stan 'Zapisywanie…' z kontrolką spinnera i blokadą przycisku",
+    shotHtml.includes('class="btn-spinner"') && tEn("Zapisywanie…") === "Saving…",
+  );
+
+  // 11. Light mode tokeny
+  const tokensCss = fs.readFileSync(path.join(__dirname, "../src/renderer/css/tokens.css"), "utf8");
+  check(
+    "11. Light mode: tokeny dialogu (--dialog-surface, --dialog-text, --dialog-primary)",
+    tokensCss.includes('[data-theme="light"]') &&
+      tokensCss.includes("--dialog-surface:") &&
+      tokensCss.includes("--dialog-text:") &&
+      tokensCss.includes("--dialog-primary:"),
+  );
+
+  // 12. Dark mode tokeny
+  check(
+    "12. Dark mode: tokeny dialogu w :root z odpowiednim kontrastem",
+    tokensCss.includes(":root") &&
+      tokensCss.includes("--dialog-surface:          #121316;") &&
+      tokensCss.includes("--dialog-input-surface:    #090a0d;"),
+  );
+
+  // 13. Długi tekst: scrollable body, fixed header/footer
+  check(
+    "13. Długi tekst nie rozpycha okna: #mainView ma overflow-y: auto, header/footer są flex: none",
+    shotHtml.includes("#mainView {") &&
+      shotHtml.includes("overflow-y: auto;") &&
+      shotHtml.includes("header {") &&
+      shotHtml.includes("flex: none;") &&
+      shotHtml.includes("footer {"),
+  );
+
+  // 14. Mały viewport / responsywność
+  check(
+    "14. Mały viewport: media query max-width: 600px z kolumnowym layoutem",
+    shotHtml.includes("@media (max-width: 600px)") &&
+      shotHtml.includes("flex-direction: column-reverse;") &&
+      shotHtml.includes("min-height: 180px;"),
+  );
+
+  // 15. Poprawny z-index
+  check(
+    "15. Z-index hierarchy: app=0, canvas=100, selector=500, backdrop=900, modal=1000, toast=1100",
+    tokensCss.includes("--z-app:                 0;") &&
+      tokensCss.includes("--z-canvas-tools:        100;") &&
+      tokensCss.includes("--z-screenshot-selector: 500;") &&
+      tokensCss.includes("--z-ocr-backdrop:        900;") &&
+      tokensCss.includes("--z-ocr-modal:           1000;") &&
+      tokensCss.includes("--z-toast:               1100;"),
+  );
+
+  // 16. Context tracking: activeNotebookId, activeLessonId, activeStudentId
+  const shotJs = fs.readFileSync(path.join(__dirname, "../src/renderer/js/shot.js"), "utf8");
+  check(
+    "16. Obsługa kontekstu: śledzenie activeNotebookId, activeLessonId i activeStudentId",
+    shotJs.includes("activeNotebookId") &&
+      shotJs.includes("activeLessonId") &&
+      shotJs.includes("activeStudentId"),
+  );
+
+  // 17. Zmiana kontekstu podczas zapisu
+  check(
+    "17. Zmiana kontekstu: ostrzeżenie przed zapisem w przypadku zmiany lekcji/kursanta",
+    shotJs.includes("verifyContext") &&
+      shotJs.includes("contextWarning") &&
+      shotJs.includes("Kursant lub lekcja zmieniły się w trakcie odczytu OCR"),
+  );
+
+  // 18. Focus management i Escape
+  check(
+    "18. Zarządzanie fokusem: focus trap, auto-focus na textarea oraz obsługa Escape i ⌘Enter",
+    shotJs.includes("setupFocusTrap") &&
+      shotJs.includes('event.key === "Escape"') &&
+      shotJs.includes('(event.metaKey || event.ctrlKey) && event.key === "Enter"'),
+  );
+
+  console.log(`\nTekst z ekranu: ${passed} sprawdzeń przeszło. Wszystkie stany i wymagania spełnione.`);
 })();

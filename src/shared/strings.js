@@ -1022,6 +1022,23 @@ const EN = {
 
   /* ── Tekst z ekranu (okno i ustawienia) ── */
   "Tekst z ekranu": "Text from the screen",
+  "Tekst ze zrzutu ekranu": "Text from image",
+  "Odczytuję tekst ze zrzutu ekranu…": "Reading text from image…",
+  "Nie znaleziono czytelnego tekstu na tym zrzucie ekranu. Spróbuj wykonać wyraźniejszy zrzut lub zaznaczyć większy obszar tekstu.":
+    "No readable text was found in this image. Try a clearer screenshot or select a larger text area.",
+  "Przejrzyj i popraw tekst przed zapisaniem…": "Review and edit the text before saving…",
+  "Zapisywanie…": "Saving…",
+  "Wstaw do lekcji": "Insert into lesson",
+  "Brak tekstu": "No text found",
+  "Ponów próbę": "Try again",
+  "Kopiuj tekst": "Copy text",
+  "Kopiuj obraz": "Copy image",
+  Wszystko: "Everything",
+  "Edytor graficzny": "Markup editor",
+  "Edytuj zrzut (Markup)": "Edit screenshot (Markup)",
+  "Kontekst uległ zmianie": "Context changed",
+  "Kursant lub lekcja zmieniły się w trakcie odczytu OCR. Czy na pewno chcesz zapisać?":
+    "The student or lesson changed during OCR. Are you sure you want to save?",
   Odczyt: "Reading",
   "poprawki wpisujesz tutaj": "corrections go here",
   "czytam…": "reading…",

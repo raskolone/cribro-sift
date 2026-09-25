@@ -198,6 +198,34 @@
   --t-fast:          0.15s var(--ease);
   --t:               0.2s var(--ease);
   --t-slow:          0.4s var(--ease);
+
+  /* ---- Z-index hierarchy ---- */
+  --z-app:                 0;
+  --z-canvas-tools:        100;
+  --z-screenshot-selector: 500;
+  --z-ocr-backdrop:        900;
+  --z-ocr-modal:           1000;
+  --z-toast:               1100;
+
+  /* ---- Dialog / Modal & OCR tokens (Dark Default) ---- */
+  --dialog-surface:          #121316;
+  --dialog-surface-elevated: #1a1b20;
+  --dialog-border:           rgba(255, 255, 255, 0.12);
+  --dialog-border-subtle:    rgba(255, 255, 255, 0.08);
+  --dialog-text:             #f4f4f5;
+  --dialog-text-muted:       #a1a1aa;
+  --dialog-text-faint:       #71717a;
+  --dialog-input-surface:    #090a0d;
+  --dialog-input-border:     rgba(255, 255, 255, 0.14);
+  --dialog-input-text:       #f4f4f5;
+  --dialog-primary:          #10b981;
+  --dialog-primary-hover:    #059669;
+  --dialog-primary-contrast: #ffffff;
+  --dialog-danger:           #f0726f;
+  --dialog-warn:             #f59e0b;
+  --dialog-focus-ring:       rgba(16, 185, 129, 0.45);
+  --dialog-backdrop:         rgba(0, 0, 0, 0.65);
+  --dialog-shadow:           0 24px 50px -12px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
 }
 
 /* ---- Jasny motyw ----
@@ -312,6 +340,26 @@
   --glow:            0 0 0 2px rgba(37, 99, 235, 0.15);
   --glow-strong:     0 0 0 3px rgba(37, 99, 235, 0.25);
   --glow-btn:        0 4px 14px -3px rgba(4, 120, 87, 0.35);
+
+  /* ---- Dialog / Modal & OCR tokens (Light Mode) ---- */
+  --dialog-surface:          #ffffff;
+  --dialog-surface-elevated: #f8fafc;
+  --dialog-border:           #cbd5e1;
+  --dialog-border-subtle:    #e2e8f0;
+  --dialog-text:             #0f172a;
+  --dialog-text-muted:       #475569;
+  --dialog-text-faint:       #64748b;
+  --dialog-input-surface:    #ffffff;
+  --dialog-input-border:     #cbd5e1;
+  --dialog-input-text:       #0f172a;
+  --dialog-primary:          #047857;
+  --dialog-primary-hover:    #065f46;
+  --dialog-primary-contrast: #ffffff;
+  --dialog-danger:           #dc2626;
+  --dialog-warn:             #b45309;
+  --dialog-focus-ring:       rgba(4, 120, 87, 0.35);
+  --dialog-backdrop:         rgba(15, 23, 42, 0.45);
+  --dialog-shadow:           0 20px 40px -12px rgba(15, 23, 42, 0.15), 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 /* ── Dodatkowe reguły ostrości i interakcji dla Light Mode ── */

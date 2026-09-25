@@ -2,7 +2,8 @@
 <html lang="pl">
   <head>
     <meta charset="utf-8" />
-    <title>Tekst z ekranu — Cribro Sift</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tekst ze zrzutu ekranu — Cribro</title>
     <link
       href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap"
       rel="stylesheet"
@@ -10,8 +11,7 @@
     <link rel="stylesheet" href="css/tokens.css" />
     <style>
       /* ─────────────────────────────────────────────────────────
-         Tekst z ekranu — Redesign OCR Modal (macOS Dark Theme)
-         Czysty, przestrzenny przepływ pionowy, bez nachodzenia sekcji.
+         OCR Modal & Floating Window — Design System & Tokens
          ───────────────────────────────────────────────────────── */
 
       * {
@@ -26,42 +26,50 @@
         overflow: hidden;
         background: transparent;
         font-family: var(--font-body, -apple-system, BlinkMacSystemFont, "DM Sans", sans-serif);
-        color: var(--text, #f4f4f5);
+        color: var(--dialog-text, var(--text, #f4f4f5));
         user-select: none;
         -webkit-user-select: none;
       }
 
+      /* ── 1. Główna powłoka okna dialogowego (Dark Default) ── */
       #shell {
+        position: relative;
+        z-index: var(--z-ocr-modal, 1000);
         height: 100%;
+        width: 100%;
+        max-width: calc(100vw - 32px);
+        max-height: calc(100vh - 32px);
+        margin: 0 auto;
         display: flex;
         flex-direction: column;
-        background-color: #121316;
+        background-color: var(--dialog-surface, #121316);
         background-image:
-          radial-gradient(120% 120% at 50% 0%, rgba(114, 240, 180, 0.05), transparent 70%),
-          linear-gradient(180deg, rgba(24, 24, 27, 0.96) 0%, rgba(18, 19, 22, 0.98) 100%);
+          radial-gradient(120% 120% at 50% 0%, var(--accent-04, rgba(114, 240, 180, 0.05)), transparent 70%),
+          linear-gradient(180deg, var(--dialog-surface, #121316) 0%, var(--dialog-surface-elevated, #1a1b20) 100%);
         backdrop-filter: blur(28px) saturate(180%);
         -webkit-backdrop-filter: blur(28px) saturate(180%);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow:
-          0 24px 50px -12px rgba(0, 0, 0, 0.75),
-          0 0 0 1px rgba(255, 255, 255, 0.06) inset;
-        border-radius: 16px;
+        border: 1px solid var(--dialog-border, rgba(255, 255, 255, 0.12));
+        box-shadow: var(--dialog-shadow, 0 24px 50px -12px rgba(0, 0, 0, 0.75));
+        border-radius: var(--r-lg, 16px);
         overflow: hidden;
+        transition: background-color var(--t, 0.2s ease), border-color var(--t, 0.2s ease), color var(--t, 0.2s ease);
       }
 
+      /* ── 2. Nagłówek (Header) ────────────────────────────── */
       header {
         flex: none;
         display: flex;
         align-items: center;
         gap: 10px;
         padding: 14px 20px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        border-bottom: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
+        background: transparent;
         -webkit-app-region: drag;
       }
       header svg {
         width: 16px;
         height: 16px;
-        color: var(--accent, #10b981);
+        color: var(--dialog-primary, var(--accent, #10b981));
         flex-shrink: 0;
       }
       header .label {
@@ -71,28 +79,35 @@
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #e4e4e7;
+        color: var(--dialog-text, #f4f4f5);
       }
       #close {
         -webkit-app-region: no-drag;
-        width: 26px;
-        height: 26px;
+        width: 28px;
+        height: 28px;
         display: grid;
         place-items: center;
         border-radius: 50%;
         border: 1px solid transparent;
         background: transparent;
-        color: #a1a1aa;
+        color: var(--dialog-text-muted, #a1a1aa);
         cursor: pointer;
-        font-size: 14px;
+        font-size: 16px;
         line-height: 1;
-        transition: color 0.15s ease, background 0.15s ease;
+        transition: color var(--t-fast, 0.15s ease), background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease);
       }
       #close:hover {
-        color: #ffffff;
-        background: rgba(255, 255, 255, 0.09);
+        color: var(--dialog-text, #ffffff);
+        background: var(--wash-4, rgba(255, 255, 255, 0.09));
+        border-color: var(--dialog-border-subtle, rgba(255, 255, 255, 0.1));
+      }
+      #close:focus-visible {
+        outline: none;
+        border-color: var(--dialog-primary, #10b981);
+        box-shadow: 0 0 0 2px var(--dialog-focus-ring, rgba(16, 185, 129, 0.4));
       }
 
+      /* ── 3. Korpus dialogu (Przewijalne Body) ─────────────── */
       #mainView {
         flex: 1;
         min-height: 0;
@@ -101,6 +116,7 @@
         display: flex;
         flex-direction: column;
         gap: 16px;
+        outline: none;
       }
 
       ::-webkit-scrollbar {
@@ -108,17 +124,138 @@
         height: 8px;
       }
       ::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.15);
+        background: var(--dialog-border, rgba(255, 255, 255, 0.15));
         border-radius: 9999px;
         border: 2px solid transparent;
         background-clip: content-box;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: rgba(114, 240, 180, 0.4);
+        background: var(--dialog-primary, rgba(114, 240, 180, 0.4));
         background-clip: content-box;
       }
 
-      /* ── 2. Podgląd zrzutu ────────────────────────────── */
+      /* ── 4. Widoki Stanów OCR (Processing, Empty, Error) ─── */
+      .state-view {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 32px 16px;
+        gap: 14px;
+        border-radius: var(--r-md, 14px);
+        background: var(--dialog-surface-elevated, rgba(255, 255, 255, 0.03));
+        border: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
+        animation: fadeIn 0.25s ease-out;
+      }
+
+      .ocr-spinner-wrap {
+        position: relative;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+      }
+      .ocr-spinner {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 3px solid var(--dialog-border, rgba(255, 255, 255, 0.15));
+        border-top-color: var(--dialog-primary, #10b981);
+        animation: spin 0.85s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .state-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--wash-4, rgba(255, 255, 255, 0.06));
+        border: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
+        color: var(--dialog-text-muted, #a1a1aa);
+      }
+      .state-icon svg {
+        width: 22px;
+        height: 22px;
+      }
+      .state-icon--empty {
+        color: var(--dialog-warn, #f59e0b);
+        border-color: rgba(245, 158, 11, 0.25);
+        background: rgba(245, 158, 11, 0.08);
+      }
+
+      .state-title {
+        margin: 0;
+        font-family: var(--font-body);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--dialog-text, #f4f4f5);
+      }
+
+      .state-msg {
+        margin: 0;
+        font-family: var(--font-body);
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--dialog-text-muted, #a1a1aa);
+        max-width: 440px;
+      }
+
+      .state-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 4px;
+      }
+
+      /* ── 5. Komunikaty ostrzeżeń i błędów (Alerts) ────────── */
+      .ocr-alert {
+        padding: 10px 14px;
+        border-radius: var(--r-sm, 10px);
+        border: 1px solid var(--dialog-warn, rgba(245, 158, 11, 0.4));
+        background: rgba(245, 158, 11, 0.12);
+        color: var(--dialog-warn, #fbbf24);
+        font-size: 12.5px;
+        line-height: 1.5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        animation: fadeIn 0.2s ease-out;
+      }
+      .ocr-alert[data-kind="ok"] {
+        border-color: var(--dialog-primary, rgba(16, 185, 129, 0.4));
+        background: rgba(16, 185, 129, 0.12);
+        color: var(--dialog-primary, #34d399);
+      }
+      .ocr-alert[data-kind="danger"],
+      .ocr-alert--danger {
+        border-color: var(--dialog-danger, rgba(240, 114, 111, 0.4));
+        background: rgba(240, 114, 111, 0.12);
+        color: var(--dialog-danger, #f0726f);
+      }
+      .ocr-alert--warn {
+        border-color: var(--dialog-warn, rgba(245, 158, 11, 0.4));
+        background: rgba(245, 158, 11, 0.12);
+        color: var(--dialog-warn, #fbbf24);
+      }
+      .ocr-alert button {
+        padding: 4px 10px;
+        font-size: 11.5px;
+        font-weight: 600;
+        border-radius: 6px;
+        cursor: pointer;
+        border: 1px solid currentColor;
+        background: transparent;
+        color: inherit;
+      }
+
+      /* ── 6. Podgląd zrzutu ─────────────────────────────── */
       .preview-box {
         display: flex;
         flex-direction: column;
@@ -129,19 +266,24 @@
       #preview {
         position: relative;
         height: 124px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
-        background: #090a0d;
+        border: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
+        border-radius: var(--r-sm, 10px);
+        background: var(--dialog-input-surface, #090a0d);
         overflow: hidden;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        transition: border-color var(--t-fast, 0.15s ease), box-shadow var(--t-fast, 0.15s ease);
       }
       #preview:hover {
-        border-color: rgba(114, 240, 180, 0.4);
-        box-shadow: 0 0 16px rgba(114, 240, 180, 0.1);
+        border-color: var(--dialog-primary, rgba(114, 240, 180, 0.4));
+        box-shadow: 0 0 16px var(--dialog-focus-ring, rgba(114, 240, 180, 0.1));
+      }
+      #preview:focus-visible {
+        outline: none;
+        border-color: var(--dialog-primary, #10b981);
+        box-shadow: 0 0 0 2px var(--dialog-focus-ring, rgba(16, 185, 129, 0.4));
       }
 
       #preview img {
@@ -156,27 +298,29 @@
       .preview-overlay {
         position: absolute;
         inset: 0;
-        background: rgba(14, 14, 18, 0.55);
+        background: var(--dialog-backdrop, rgba(14, 14, 18, 0.55));
         backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
         display: flex;
         align-items: center;
         justify-content: center;
         gap: 8px;
         opacity: 0;
-        color: #ffffff;
+        color: var(--dialog-text, #ffffff);
         font-family: var(--font-body);
         font-size: 12px;
         font-weight: 500;
-        transition: opacity 0.15s ease;
-        border-radius: 10px;
+        transition: opacity var(--t-fast, 0.15s ease);
+        border-radius: var(--r-sm, 10px);
       }
-      #preview:hover .preview-overlay {
+      #preview:hover .preview-overlay,
+      #preview:focus-visible .preview-overlay {
         opacity: 1;
       }
       .preview-overlay svg {
         width: 16px;
         height: 16px;
-        color: var(--accent, #10b981);
+        color: var(--dialog-primary, #10b981);
       }
 
       .preview-actions {
@@ -196,44 +340,47 @@
         align-items: center;
         gap: 6px;
         padding: 5px 12px;
-        border: 1px solid rgba(63, 63, 70, 0.5);
+        border: 1px solid var(--dialog-border, rgba(63, 63, 70, 0.5));
         border-radius: 9999px;
-        background: rgba(39, 39, 42, 0.6);
-        color: #d4d4d8;
+        background: var(--wash-4, rgba(39, 39, 42, 0.6));
+        color: var(--dialog-text-muted, #d4d4d8);
         font-family: var(--font-body);
         font-size: 11.5px;
         font-weight: 500;
         cursor: pointer;
-        transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+        transition: color var(--t-fast, 0.15s ease), background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease);
       }
       .preview-action-btn:hover {
-        color: #ffffff;
-        border-color: rgba(82, 82, 91, 0.8);
-        background: rgba(63, 63, 70, 0.85);
+        color: var(--dialog-text, #ffffff);
+        border-color: var(--dialog-border, rgba(82, 82, 91, 0.8));
+        background: var(--wash-6, rgba(63, 63, 70, 0.85));
+      }
+      .preview-action-btn:focus-visible {
+        outline: none;
+        border-color: var(--dialog-primary, #10b981);
+        box-shadow: 0 0 0 2px var(--dialog-focus-ring, rgba(16, 185, 129, 0.4));
       }
       .preview-action-btn svg {
         width: 13px;
         height: 13px;
         color: currentColor;
       }
-      .preview-action-btn.active {
-        color: var(--accent, #10b981);
-        border-color: rgba(16, 185, 129, 0.5);
-      }
 
       .copy-feedback {
         font-family: var(--font-mono);
         font-size: 11px;
-        color: var(--accent, #10b981);
+        color: var(--dialog-primary, #10b981);
         letter-spacing: 0.04em;
         animation: fadeIn 0.2s ease-out;
+        z-index: var(--z-toast, 1100);
       }
+
       @keyframes fadeIn {
         from { opacity: 0; transform: translateY(2px); }
         to { opacity: 1; transform: translateY(0); }
       }
 
-      /* ── Sekcje i nagłówki ────────────────────────────── */
+      /* ── 7. Sekcje formularza i nagłówki grup ─────────────── */
       .group {
         display: flex;
         flex-direction: column;
@@ -250,91 +397,99 @@
         font-weight: 600;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #a1a1aa;
+        color: var(--dialog-text-muted, #a1a1aa);
       }
       .group__note {
         font-family: var(--font-body);
         font-size: 11px;
         letter-spacing: 0;
         text-transform: none;
-        color: #71717a;
+        color: var(--dialog-text-faint, #71717a);
         font-weight: 400;
       }
 
-      /* ── 3. Odczyt OCR (Textarea) ─────────────────────── */
+      /* ── 8. Textarea edycji tekstu OCR ───────────────────── */
       .group--read {
         flex: none;
       }
 
       #text {
         width: 100%;
-        min-height: 110px;
-        max-height: 150px;
+        min-height: 220px;
+        max-height: 480px;
         overflow-y: auto;
         resize: vertical;
-        border: 1px solid rgba(63, 63, 70, 0.6);
-        border-radius: 10px;
+        border: 1px solid var(--dialog-input-border, rgba(63, 63, 70, 0.6));
+        border-radius: var(--r-sm, 10px);
         outline: none;
-        background: #090a0d;
-        color: #f4f4f5;
+        background: var(--dialog-input-surface, #090a0d);
+        color: var(--dialog-input-text, #f4f4f5);
         font-family: var(--font-body);
         font-size: 13.5px;
-        line-height: 1.6;
+        line-height: var(--lh-body, 1.6);
         padding: 12px 14px;
-        caret-color: var(--accent, #10b981);
+        caret-color: var(--dialog-primary, var(--accent, #10b981));
+        white-space: pre-wrap;
+        word-break: break-word;
         user-select: text;
         -webkit-user-select: text;
-        transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        transition: border-color var(--t-fast, 0.15s ease), box-shadow var(--t-fast, 0.15s ease), background-color var(--t-fast, 0.15s ease), color var(--t-fast, 0.15s ease);
+      }
+      #text::placeholder {
+        color: var(--dialog-text-faint, #71717a);
       }
       #text:focus {
-        border-color: rgba(16, 185, 129, 0.65);
-        box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.2);
-      }
-      #text[data-state="reading"] {
-        color: #71717a;
+        border-color: var(--dialog-primary, #10b981);
+        box-shadow: 0 0 0 2px var(--dialog-focus-ring, rgba(16, 185, 129, 0.35));
       }
 
-      /* ── 4 & 5. Przełączniki segmentowe (DOKĄD / FORMA) ─── */
+      /* ── 9. Przełączniki segmentowe (DOKĄD / FORMA) ───────── */
       .seg {
         display: flex;
         gap: 4px;
         padding: 4px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
-        background: rgba(24, 24, 27, 0.55);
+        border: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
+        border-radius: var(--r-sm, 10px);
+        background: var(--dialog-surface-elevated, rgba(24, 24, 27, 0.55));
       }
       .seg button {
         flex: 1;
         padding: 7px 12px;
         border: 1px solid transparent;
-        border-radius: 8px;
+        border-radius: var(--r-sm, 8px);
         background: transparent;
-        color: #a1a1aa;
+        color: var(--dialog-text-muted, #a1a1aa);
         font-family: var(--font-body);
         font-size: 12px;
         font-weight: 500;
         cursor: pointer;
-        transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+        transition: color var(--t-fast, 0.15s ease), background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease), box-shadow var(--t-fast, 0.15s ease);
         white-space: nowrap;
         text-align: center;
       }
       .seg button:hover:not([aria-pressed="true"]):not(:disabled) {
-        color: #ffffff;
-        background: rgba(255, 255, 255, 0.07);
+        color: var(--dialog-text, #ffffff);
+        background: var(--wash-4, rgba(255, 255, 255, 0.07));
+      }
+      .seg button:focus-visible {
+        outline: none;
+        border-color: var(--dialog-primary, #10b981);
+        box-shadow: 0 0 0 2px var(--dialog-focus-ring, rgba(16, 185, 129, 0.35));
       }
       .seg button[aria-pressed="true"] {
-        color: #a7f3d0;
-        border-color: rgba(16, 185, 129, 0.75);
-        background: rgba(6, 78, 59, 0.7);
-        box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+        color: var(--dialog-primary-contrast, #ffffff);
+        border-color: var(--dialog-primary, #10b981);
+        background: var(--dialog-primary, #10b981);
+        box-shadow: 0 2px 8px var(--dialog-focus-ring, rgba(16, 185, 129, 0.25));
         font-weight: 600;
       }
       .seg button:disabled {
-        color: #52525b;
+        color: var(--dialog-text-faint, #52525b);
         cursor: not-allowed;
+        opacity: 0.5;
       }
 
-      /* ── 6 & 7. Siatki akcji (DO SCHOWKA / UDOSTĘPNIJ) ─── */
+      /* ── 10. Siatki akcji (DO SCHOWKA / UDOSTĘPNIJ) ──────── */
       .action-grid {
         display: grid;
         gap: 8px;
@@ -351,30 +506,35 @@
         justify-content: center;
         gap: 7px;
         padding: 8px 10px;
-        border: 1px solid rgba(63, 63, 70, 0.45);
-        border-radius: 8px;
-        background: rgba(39, 39, 42, 0.55);
-        color: #d4d4d8;
+        border: 1px solid var(--dialog-border, rgba(63, 63, 70, 0.45));
+        border-radius: var(--r-sm, 8px);
+        background: var(--wash-4, rgba(39, 39, 42, 0.55));
+        color: var(--dialog-text-muted, #d4d4d8);
         font-family: var(--font-body);
         font-size: 12px;
         font-weight: 500;
         cursor: pointer;
-        transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+        transition: color var(--t-fast, 0.15s ease), background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease), transform var(--t-fast, 0.12s ease);
         white-space: nowrap;
       }
       .action-card-btn:hover {
-        color: #ffffff;
-        border-color: rgba(16, 185, 129, 0.5);
-        background: rgba(63, 63, 70, 0.85);
+        color: var(--dialog-text, #ffffff);
+        border-color: var(--dialog-primary, rgba(16, 185, 129, 0.5));
+        background: var(--wash-6, rgba(63, 63, 70, 0.85));
         transform: translateY(-1px);
       }
       .action-card-btn:active {
         transform: translateY(0);
       }
+      .action-card-btn:focus-visible {
+        outline: none;
+        border-color: var(--dialog-primary, #10b981);
+        box-shadow: 0 0 0 2px var(--dialog-focus-ring, rgba(16, 185, 129, 0.35));
+      }
       .action-card-btn svg {
         width: 14px;
         height: 14px;
-        color: var(--accent, #10b981);
+        color: var(--dialog-primary, #10b981);
         flex-shrink: 0;
       }
 
@@ -382,45 +542,31 @@
         width: 100%;
         margin-top: 4px;
         padding: 8px 12px;
-        border: 1px solid rgba(63, 63, 70, 0.6);
-        border-radius: 8px;
-        background: #121316;
-        color: #f4f4f5;
+        border: 1px solid var(--dialog-input-border, rgba(63, 63, 70, 0.6));
+        border-radius: var(--r-sm, 8px);
+        background: var(--dialog-input-surface, #121316);
+        color: var(--dialog-input-text, #f4f4f5);
         font-family: var(--font-body);
         font-size: 12.5px;
         outline: none;
       }
       select:focus {
-        border-color: rgba(16, 185, 129, 0.6);
+        border-color: var(--dialog-primary, rgba(16, 185, 129, 0.6));
+        box-shadow: 0 0 0 2px var(--dialog-focus-ring, rgba(16, 185, 129, 0.25));
       }
       [hidden] {
         display: none !important;
       }
 
-      #note {
-        padding: 8px 12px;
-        border-radius: 8px;
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        background: rgba(245, 158, 11, 0.1);
-        color: #fbbf24;
-        font-size: 12px;
-        line-height: 1.5;
-      }
-      #note[data-kind="ok"] {
-        border-color: rgba(16, 185, 129, 0.35);
-        background: rgba(16, 185, 129, 0.12);
-        color: #34d399;
-      }
-
-      /* ── 8. Stopka ────────────────────────────────────── */
+      /* ── 11. Stopka (Footer) ─────────────────────────────── */
       footer {
         flex: none;
         display: flex;
         align-items: center;
         gap: 12px;
         padding: 14px 24px;
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(18, 19, 22, 0.7);
+        border-top: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
+        background: var(--dialog-surface-elevated, rgba(18, 19, 22, 0.7));
       }
       #hint {
         flex: 1;
@@ -430,60 +576,230 @@
         font-size: 10.5px;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        color: #71717a;
+        color: var(--dialog-text-faint, #71717a);
       }
 
       button.act {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 8px;
-        padding: 7px 18px;
-        border-radius: 8px;
-        border: 1px solid rgba(52, 211, 153, 0.6);
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.85), rgba(5, 150, 105, 0.95));
-        color: #ffffff;
+        padding: 8px 20px;
+        border-radius: var(--r-sm, 8px);
+        border: 1px solid var(--dialog-primary, rgba(52, 211, 153, 0.6));
+        background: var(--dialog-primary, #10b981);
+        color: var(--dialog-primary-contrast, #ffffff);
         font-family: var(--font-body);
-        font-size: 12px;
+        font-size: 12.5px;
         font-weight: 600;
         cursor: pointer;
-        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
-        transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+        box-shadow: 0 2px 8px var(--dialog-focus-ring, rgba(16, 185, 129, 0.25));
+        transition: border-color var(--t-fast, 0.15s ease), box-shadow var(--t-fast, 0.15s ease), transform var(--t-fast, 0.12s ease), background var(--t-fast, 0.15s ease), opacity var(--t-fast, 0.15s ease);
       }
       button.act:hover:not(:disabled) {
-        border-color: rgba(52, 211, 153, 0.9);
-        box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4);
+        border-color: var(--dialog-primary-hover, #059669);
+        background: var(--dialog-primary-hover, #059669);
+        box-shadow: 0 4px 16px var(--dialog-focus-ring, rgba(16, 185, 129, 0.4));
         transform: translateY(-1px);
       }
       button.act:active:not(:disabled) {
         transform: translateY(0);
       }
+      button.act:focus-visible {
+        outline: none;
+        border-color: var(--dialog-primary-hover, #059669);
+        box-shadow: 0 0 0 3px var(--dialog-focus-ring, rgba(16, 185, 129, 0.45));
+      }
       button.act:disabled {
         opacity: 0.45;
         cursor: not-allowed;
+        transform: none !important;
+        box-shadow: none !important;
       }
       button.act--quiet {
-        border-color: rgba(63, 63, 70, 0.5);
-        background: rgba(39, 39, 42, 0.6);
-        color: #d4d4d8;
+        border-color: var(--dialog-border, rgba(63, 63, 70, 0.5));
+        background: var(--wash-4, rgba(39, 39, 42, 0.6));
+        color: var(--dialog-text-muted, #d4d4d8);
         font-weight: 500;
         box-shadow: none;
       }
-      button.act--quiet:hover {
-        border-color: rgba(82, 82, 91, 0.8);
-        background: rgba(63, 63, 70, 0.9);
-        color: #ffffff;
+      button.act--quiet:hover:not(:disabled) {
+        border-color: var(--dialog-border, rgba(82, 82, 91, 0.8));
+        background: var(--wash-6, rgba(63, 63, 70, 0.9));
+        color: var(--dialog-text, #ffffff);
         box-shadow: none;
       }
 
-      /* ─────────────────────────────────────────────────────────
-         WIDOK EDYTORA MARKUP / CANVAS
-         ───────────────────────────────────────────────────────── */
+      .btn-spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: #ffffff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        display: inline-block;
+      }
+
+      /* ── 12. Specjalne reguły dla Jasnego Motywu (Light Theme) ── */
+      [data-theme="light"] #shell {
+        background-color: #ffffff;
+        background-image:
+          radial-gradient(120% 120% at 50% 0%, rgba(4, 120, 87, 0.04), transparent 70%),
+          linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        border: 1px solid #cbd5e1;
+        box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.06);
+        color: #0f172a;
+      }
+
+      [data-theme="light"] header {
+        border-bottom: 1px solid #e2e8f0;
+      }
+      [data-theme="light"] header svg {
+        color: #047857;
+      }
+      [data-theme="light"] header .label {
+        color: #0f172a;
+      }
+      [data-theme="light"] #close {
+        color: #64748b;
+      }
+      [data-theme="light"] #close:hover {
+        color: #0f172a;
+        background: #f1f5f9;
+        border-color: #cbd5e1;
+      }
+
+      [data-theme="light"] .state-view {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+      }
+      [data-theme="light"] .state-title {
+        color: #0f172a;
+      }
+      [data-theme="light"] .state-msg {
+        color: #475569;
+      }
+
+      [data-theme="light"] #preview {
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+      }
+      [data-theme="light"] #preview:hover {
+        border-color: #047857;
+        box-shadow: 0 0 16px rgba(4, 120, 87, 0.15);
+      }
+      [data-theme="light"] .preview-overlay {
+        background: rgba(255, 255, 255, 0.85);
+        color: #0f172a;
+      }
+
+      [data-theme="light"] .preview-action-btn {
+        background: #f8fafc;
+        border: 1px solid #cbd5e1;
+        color: #334155;
+      }
+      [data-theme="light"] .preview-action-btn:hover {
+        background: #f1f5f9;
+        border-color: #94a3b8;
+        color: #0f172a;
+      }
+
+      [data-theme="light"] .group__label {
+        color: #475569;
+      }
+      [data-theme="light"] .group__note {
+        color: #64748b;
+      }
+
+      [data-theme="light"] #text {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        color: #0f172a !important;
+      }
+      [data-theme="light"] #text::placeholder {
+        color: #94a3b8 !important;
+      }
+      [data-theme="light"] #text:focus {
+        border-color: #047857 !important;
+        box-shadow: 0 0 0 2px rgba(4, 120, 87, 0.25) !important;
+      }
+
+      [data-theme="light"] .seg {
+        background: #f1f5f9;
+        border: 1px solid #cbd5e1;
+      }
+      [data-theme="light"] .seg button {
+        color: #475569;
+      }
+      [data-theme="light"] .seg button:hover:not([aria-pressed="true"]):not(:disabled) {
+        color: #0f172a;
+        background: #e2e8f0;
+      }
+      [data-theme="light"] .seg button[aria-pressed="true"] {
+        color: #ffffff;
+        background: #047857;
+        border-color: #047857;
+        box-shadow: 0 2px 6px rgba(4, 120, 87, 0.25);
+      }
+
+      [data-theme="light"] .action-card-btn {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #334155;
+      }
+      [data-theme="light"] .action-card-btn:hover {
+        background: #f8fafc;
+        border-color: #047857;
+        color: #0f172a;
+      }
+      [data-theme="light"] .action-card-btn svg {
+        color: #047857;
+      }
+
+      [data-theme="light"] select {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #0f172a;
+      }
+
+      [data-theme="light"] footer {
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+      }
+      [data-theme="light"] #hint {
+        color: #64748b;
+      }
+
+      [data-theme="light"] button.act--quiet {
+        background: #f1f5f9;
+        border: 1px solid #cbd5e1;
+        color: #334155;
+      }
+      [data-theme="light"] button.act--quiet:hover:not(:disabled) {
+        background: #e2e8f0;
+        border-color: #94a3b8;
+        color: #0f172a;
+      }
+
+      [data-theme="light"] button.act:not(.act--quiet) {
+        background: #047857;
+        border-color: #047857;
+        color: #ffffff;
+        box-shadow: 0 2px 8px rgba(4, 120, 87, 0.25);
+      }
+      [data-theme="light"] button.act:not(.act--quiet):hover:not(:disabled) {
+        background: #065f46;
+        border-color: #065f46;
+        box-shadow: 0 4px 14px rgba(4, 120, 87, 0.35);
+      }
+
+      /* ── 13. Edytor graficzny Markup ─────────────────────── */
       #markupView {
         flex: 1;
         display: flex;
         flex-direction: column;
         min-height: 0;
-        background: #090a0d;
+        background: var(--dialog-input-surface, #090a0d);
         overflow: hidden;
       }
 
@@ -493,8 +809,9 @@
         align-items: center;
         gap: 6px;
         padding: 8px 12px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        background: rgba(24, 24, 27, 0.7);
+        border-bottom: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
+        background: var(--dialog-surface-elevated, rgba(24, 24, 27, 0.7));
+        z-index: var(--z-canvas-tools, 100);
         -webkit-app-region: no-drag;
       }
 
@@ -504,8 +821,8 @@
         gap: 2px;
         padding: 2px;
         border-radius: 9999px;
-        background: #121316;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--dialog-surface, #121316);
+        border: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
       }
 
       .tool-btn {
@@ -516,20 +833,20 @@
         border: 1px solid transparent;
         border-radius: 50%;
         background: none;
-        color: #a1a1aa;
+        color: var(--dialog-text-muted, #a1a1aa);
         cursor: pointer;
-        transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+        transition: color var(--t-fast, 0.15s ease), background var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease);
         padding: 0;
       }
       .tool-btn:hover:not(:disabled) {
-        color: #ffffff;
-        background: rgba(255, 255, 255, 0.08);
+        color: var(--dialog-text, #ffffff);
+        background: var(--wash-4, rgba(255, 255, 255, 0.08));
       }
       .tool-btn[aria-pressed="true"],
       .tool-btn.active {
-        color: #a7f3d0;
-        border-color: rgba(16, 185, 129, 0.75);
-        background: rgba(6, 78, 59, 0.7);
+        color: var(--dialog-primary-contrast, #ffffff);
+        border-color: var(--dialog-primary, #10b981);
+        background: var(--dialog-primary, #10b981);
       }
       .tool-btn:disabled {
         opacity: 0.35;
@@ -546,8 +863,8 @@
         gap: 5px;
         padding: 3px 6px;
         border-radius: 9999px;
-        background: #121316;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--dialog-surface, #121316);
+        border: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
       }
 
       .color-dot {
@@ -556,15 +873,15 @@
         border-radius: 50%;
         border: 2px solid transparent;
         cursor: pointer;
-        transition: transform 0.15s ease, border-color 0.15s ease;
+        transition: transform var(--t-fast, 0.15s ease), border-color var(--t-fast, 0.15s ease);
         padding: 0;
       }
       .color-dot:hover {
         transform: scale(1.15);
       }
       .color-dot.active {
-        border-color: #ffffff;
-        box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+        border-color: var(--dialog-text, #ffffff);
+        box-shadow: 0 0 6px var(--dialog-focus-ring, rgba(255, 255, 255, 0.4));
         transform: scale(1.1);
       }
 
@@ -574,8 +891,8 @@
         gap: 2px;
         padding: 2px;
         border-radius: 9999px;
-        background: #121316;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--dialog-surface, #121316);
+        border: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
       }
       .stroke-btn {
         padding: 4px 8px;
@@ -584,13 +901,13 @@
         border: 1px solid transparent;
         border-radius: 9999px;
         background: none;
-        color: #a1a1aa;
+        color: var(--dialog-text-muted, #a1a1aa);
         cursor: pointer;
       }
       .stroke-btn.active {
-        color: #a7f3d0;
-        border-color: rgba(16, 185, 129, 0.5);
-        background: rgba(6, 78, 59, 0.7);
+        color: var(--dialog-primary-contrast, #ffffff);
+        border-color: var(--dialog-primary, #10b981);
+        background: var(--dialog-primary, #10b981);
       }
 
       .markup-actions {
@@ -609,14 +926,14 @@
         padding: 12px;
         overflow: auto;
         background:
-          radial-gradient(circle, rgba(255, 255, 255, 0.04) 1px, transparent 1px) 0 0 / 16px 16px,
-          #090a0d;
+          radial-gradient(circle, var(--wash-4, rgba(255, 255, 255, 0.04)) 1px, transparent 1px) 0 0 / 16px 16px,
+          var(--dialog-input-surface, #090a0d);
       }
 
       #markupCanvas {
         display: block;
-        border-radius: 8px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+        border-radius: var(--r-sm, 8px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--dialog-border-subtle, rgba(255, 255, 255, 0.1));
         cursor: crosshair;
         background: transparent;
       }
@@ -626,11 +943,42 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        background: rgba(24, 24, 27, 0.8);
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--dialog-surface-elevated, rgba(24, 24, 27, 0.8));
+        border-top: 1px solid var(--dialog-border-subtle, rgba(255, 255, 255, 0.08));
         font-family: var(--font-mono);
         font-size: 10px;
-        color: #a1a1aa;
+        color: var(--dialog-text-muted, #a1a1aa);
+      }
+
+      /* ── 14. Responsywność (Mobile / Desktop) ────────────── */
+      @media (max-width: 600px) {
+        #shell {
+          max-width: calc(100vw - 24px);
+          max-height: calc(100vh - 24px);
+          border-radius: var(--r-md, 14px);
+        }
+        #mainView {
+          padding: 14px 16px;
+          gap: 12px;
+        }
+        #text {
+          min-height: 180px;
+        }
+        .action-grid--4 {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        footer {
+          flex-direction: column-reverse;
+          align-items: stretch;
+          padding: 12px 16px;
+          gap: 8px;
+        }
+        footer .act {
+          width: 100%;
+        }
+        #hint {
+          text-align: center;
+        }
       }
     </style>
   </head>
@@ -730,160 +1078,198 @@
       </defs>
     </svg>
 
-    <div id="shell">
-      <!-- 1. Belka tytułowa -->
+    <!-- Dialog Shell -->
+    <div id="shell" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+      <!-- 1. Belka tytułowa (Header) -->
       <header>
-        <svg><use href="#s-frame" /></svg>
-        <span class="label">Tekst z ekranu</span>
-        <button id="close" aria-label="Zamknij">×</button>
+        <svg aria-hidden="true"><use href="#s-frame" /></svg>
+        <span class="label" id="dialogTitle" data-i18n="Tekst ze zrzutu ekranu">Tekst ze zrzutu ekranu</span>
+        <button id="close" aria-label="Zamknij" title="Zamknij (Esc)">×</button>
       </header>
 
-      <!-- Widok główny (Standardowy) -->
-      <main id="mainView">
-        <!-- 2. Sekcja podglądu zrzutu -->
-        <div class="preview-box">
-          <div id="preview" title="Kliknij, aby edytować zrzut (Markup)">
-            <img id="shotImage" alt="Zaznaczony fragment ekranu" />
-            <div class="preview-overlay">
-              <svg><use href="#s-edit" /></svg>
-              <span>Edytuj zrzut (Markup)</span>
+      <!-- 2. Widok główny (Body) -->
+      <main id="mainView" tabindex="-1">
+        <!-- Stan Przetwarzania (Processing Loader) -->
+        <div id="processingView" class="state-view" hidden>
+          <div class="ocr-spinner-wrap">
+            <div class="ocr-spinner" aria-hidden="true"></div>
+          </div>
+          <p class="state-title" data-i18n="Odczytuję tekst ze zrzutu ekranu…">Odczytuję tekst ze zrzutu ekranu…</p>
+          <p class="state-msg" data-i18n="Analizuję zawartość obrazu za pomocą modelu OCR…">Analizuję zawartość obrazu za pomocą modelu OCR…</p>
+        </div>
+
+        <!-- Stan Pusty (Empty State) -->
+        <div id="emptyView" class="state-view state-view--empty" hidden>
+          <div class="state-icon state-icon--empty">
+            <svg aria-hidden="true"><use href="#s-text" /></svg>
+          </div>
+          <p class="state-title" data-i18n="Brak tekstu">Brak tekstu</p>
+          <p class="state-msg" data-i18n="Nie znaleziono czytelnego tekstu na tym zrzucie ekranu. Spróbuj wykonać wyraźniejszy zrzut lub zaznaczyć większy obszar tekstu.">
+            Nie znaleziono czytelnego tekstu na tym zrzucie ekranu. Spróbuj wykonać wyraźniejszy zrzut lub zaznaczyć większy obszar tekstu.
+          </p>
+          <div class="state-actions">
+            <button type="button" class="preview-action-btn" id="switchToImageBtn">
+              <svg aria-hidden="true"><use href="#s-frame" /></svg>
+              <span data-i18n="Zapisz jako obrazek">Zapisz jako obrazek</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Ostrzeżenia i błędy (Alerts) -->
+        <div id="note" class="ocr-alert" role="alert" aria-live="polite" hidden></div>
+        <div id="contextWarning" class="ocr-alert ocr-alert--warn" role="alert" aria-live="polite" hidden></div>
+
+        <!-- Główna sekcja zawartości OCR -->
+        <div id="contentSection">
+          <!-- Podgląd zrzutu -->
+          <div class="preview-box">
+            <div id="preview" title="Kliknij, aby edytować zrzut (Markup)" role="button" tabindex="0" aria-label="Edytuj zrzut ekranu w edytorze graficznym">
+              <img id="shotImage" alt="Zaznaczony fragment ekranu" />
+              <div class="preview-overlay">
+                <svg aria-hidden="true"><use href="#s-edit" /></svg>
+                <span data-i18n="Edytuj zrzut (Markup)">Edytuj zrzut (Markup)</span>
+              </div>
+            </div>
+
+            <div class="preview-actions">
+              <div class="preview-actions-left">
+                <button type="button" class="preview-action-btn" id="copyImageBtn" aria-label="Kopiuj obraz do schowka">
+                  <svg aria-hidden="true"><use href="#s-copy" /></svg>
+                  <span data-i18n="Kopiuj obraz">Kopiuj obraz</span>
+                </button>
+                <button type="button" class="preview-action-btn" id="openMarkupBtn" aria-label="Otwórz edytor graficzny">
+                  <svg aria-hidden="true"><use href="#s-edit" /></svg>
+                  <span data-i18n="Edytor graficzny">Edytor graficzny</span>
+                </button>
+              </div>
+              <span id="copyFeedback" class="copy-feedback" role="status" hidden>✓ Skopiowano</span>
             </div>
           </div>
 
-          <div class="preview-actions">
-            <div class="preview-actions-left">
-              <button type="button" class="preview-action-btn" id="copyImageBtn">
-                <svg><use href="#s-copy" /></svg>
-                <span>Kopiuj obraz</span>
+          <!-- Textarea z wynikiem OCR -->
+          <div class="group group--read" id="textGroup">
+            <div class="group__label">
+              <label for="text" data-i18n="Odczyt">Odczyt</label>
+              <span class="group__note" id="readNote" data-i18n="poprawki wpisujesz tutaj">poprawki wpisujesz tutaj</span>
+            </div>
+            <textarea
+              id="text"
+              spellcheck="true"
+              placeholder="Przejrzyj i popraw tekst przed zapisaniem…"
+              data-i18n-placeholder="Przejrzyj i popraw tekst przed zapisaniem…"
+              aria-label="Odczytany tekst"
+            ></textarea>
+          </div>
+
+          <!-- Wybór celu (Dokąd) -->
+          <div class="group" id="targetGroup">
+            <div class="group__label" data-i18n="Dokąd">Dokąd</div>
+            <div class="seg" id="target" role="group" aria-label="Wybierz miejsce docelowe">
+              <button type="button" data-value="new" aria-pressed="true" data-i18n="Nowa notatka">Nowa notatka</button>
+              <button type="button" data-value="note" aria-pressed="false" data-i18n="Do notatki">Do notatki</button>
+              <button type="button" data-value="disk" aria-pressed="false" data-i18n="Zapisz na dysk">Zapisz na dysk</button>
+            </div>
+            <select id="noteId" aria-label="Wybierz notatkę" hidden></select>
+          </div>
+
+          <!-- Wybór formy (Forma) -->
+          <div class="group" id="formGroup">
+            <div class="group__label">
+              <span data-i18n="Forma">Forma</span> <span class="group__note" id="formNote"></span>
+            </div>
+            <div class="seg" id="form" role="group" aria-label="Wybierz formę zapisu">
+              <button type="button" data-value="text" aria-pressed="true" data-i18n="Tekst">Tekst</button>
+              <button type="button" data-value="image" aria-pressed="false" data-i18n="Obrazek">Obrazek</button>
+              <button type="button" data-value="both" aria-pressed="false" data-i18n="Oba">Oba</button>
+            </div>
+          </div>
+
+          <!-- Szybkie akcje (Do schowka) -->
+          <div class="group">
+            <div class="group__label" data-i18n="Do schowka">Do schowka</div>
+            <div class="action-grid action-grid--3">
+              <button type="button" class="action-card-btn" id="copyTextBtn" title="Kopiuj odczytany tekst">
+                <svg aria-hidden="true"><use href="#s-text" /></svg>
+                <span data-i18n="Tekst">Tekst</span>
               </button>
-              <button type="button" class="preview-action-btn" id="openMarkupBtn">
-                <svg><use href="#s-edit" /></svg>
-                <span>Edytor graficzny</span>
+              <button type="button" class="action-card-btn" id="copyShotImgBtn" title="Kopiuj zrzut ekranu">
+                <svg aria-hidden="true"><use href="#s-frame" /></svg>
+                <span>Screenshot</span>
+              </button>
+              <button type="button" class="action-card-btn" id="copyAllBtn" title="Kopiuj tekst i obraz">
+                <svg aria-hidden="true"><use href="#s-copy" /></svg>
+                <span data-i18n="Wszystko">Wszystko</span>
               </button>
             </div>
-            <span id="copyFeedback" class="copy-feedback" hidden>✓ Skopiowano</span>
           </div>
-        </div>
 
-        <div id="note" hidden></div>
-
-        <!-- 3. Sekcja ODCZYT -->
-        <div class="group group--read">
-          <div class="group__label">
-            Odczyt <span class="group__note" id="readNote">poprawki wpisujesz tutaj</span>
-          </div>
-          <textarea id="text" spellcheck="true" data-state="reading"></textarea>
-        </div>
-
-        <!-- 4. Sekcja DOKĄD -->
-        <div class="group">
-          <div class="group__label">Dokąd</div>
-          <div class="seg" id="target">
-            <button data-value="new" aria-pressed="true">Nowa notatka</button>
-            <button data-value="note" aria-pressed="false">Do notatki</button>
-            <button data-value="disk" aria-pressed="false">Zapisz na dysk</button>
-          </div>
-          <select id="noteId" hidden></select>
-        </div>
-
-        <!-- 5. Sekcja FORMA -->
-        <div class="group">
-          <div class="group__label">
-            Forma <span class="group__note" id="formNote"></span>
-          </div>
-          <div class="seg" id="form">
-            <button data-value="text" aria-pressed="true">Tekst</button>
-            <button data-value="image" aria-pressed="false">Obrazek</button>
-            <button data-value="both" aria-pressed="false">Oba</button>
-          </div>
-        </div>
-
-        <!-- 6. Sekcja DO SCHOWKA -->
-        <div class="group">
-          <div class="group__label">Do schowka</div>
-          <div class="action-grid action-grid--3">
-            <button type="button" class="action-card-btn" id="copyTextBtn" title="Kopiuj odczytany tekst">
-              <svg><use href="#s-text" /></svg>
-              <span>Tekst</span>
-            </button>
-            <button type="button" class="action-card-btn" id="copyShotImgBtn" title="Kopiuj zrzut ekranu">
-              <svg><use href="#s-frame" /></svg>
-              <span>Screenshot</span>
-            </button>
-            <button type="button" class="action-card-btn" id="copyAllBtn" title="Kopiuj tekst i obraz">
-              <svg><use href="#s-copy" /></svg>
-              <span>Wszystko</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 7. Sekcja UDOSTĘPNIJ -->
-        <div class="group">
-          <div class="group__label">Udostępnij</div>
-          <div class="action-grid action-grid--4">
-            <button type="button" class="action-card-btn" id="shareAppleNotesBtn" title="Notatki Apple">
-              <svg><use href="#s-apple-notes" /></svg>
-              <span>Notatki</span>
-            </button>
-            <button type="button" class="action-card-btn" id="shareNotionBtn" title="Notion">
-              <svg><use href="#s-notion" /></svg>
-              <span>Notion</span>
-            </button>
-            <button type="button" class="action-card-btn" id="shareSparkBtn" title="Spark Mail">
-              <svg><use href="#s-spark" /></svg>
-              <span>Spark</span>
-            </button>
-            <button type="button" class="action-card-btn" id="shareWhatsAppBtn" title="WhatsApp">
-              <svg><use href="#s-whatsapp" /></svg>
-              <span>WhatsApp</span>
-            </button>
+          <!-- Udostępnianie (Udostępnij) -->
+          <div class="group">
+            <div class="group__label" data-i18n="Udostępnij">Udostępnij</div>
+            <div class="action-grid action-grid--4">
+              <button type="button" class="action-card-btn" id="shareAppleNotesBtn" title="Notatki Apple">
+                <svg aria-hidden="true"><use href="#s-apple-notes" /></svg>
+                <span data-i18n="Notatki">Notatki</span>
+              </button>
+              <button type="button" class="action-card-btn" id="shareNotionBtn" title="Notion">
+                <svg aria-hidden="true"><use href="#s-notion" /></svg>
+                <span data-i18n="Notion">Notion</span>
+              </button>
+              <button type="button" class="action-card-btn" id="shareSparkBtn" title="Spark Mail">
+                <svg aria-hidden="true"><use href="#s-spark" /></svg>
+                <span data-i18n="Spark">Spark</span>
+              </button>
+              <button type="button" class="action-card-btn" id="shareWhatsAppBtn" title="WhatsApp">
+                <svg aria-hidden="true"><use href="#s-whatsapp" /></svg>
+                <span data-i18n="WhatsApp">WhatsApp</span>
+              </button>
+            </div>
           </div>
         </div>
       </main>
 
-      <!-- 8. Stopka -->
+      <!-- 3. Stopka (Footer) -->
       <footer id="mainFooter">
-        <span id="hint">⌘⏎ zapisuje · Esc zamyka</span>
-        <button class="act act--quiet" id="cancel">Anuluj</button>
-        <button class="act" id="save">Zapisz</button>
+        <span id="hint" data-i18n="⌘⏎ zapisuje · Esc zamyka">⌘⏎ zapisuje · Esc zamyka</span>
+        <button type="button" class="act act--quiet" id="cancel" data-i18n="Anuluj" aria-label="Anuluj i zamknij">Anuluj</button>
+        <button type="button" class="act" id="save" data-i18n="Zapisz" aria-label="Zapisz odczytany tekst">
+          <span class="btn-spinner" aria-hidden="true" hidden></span>
+          <span class="btn-text">Zapisz</span>
+        </button>
       </footer>
 
       <!-- Widok edytora graficznego (Markup Canvas) -->
       <div id="markupView" hidden>
         <div class="markup-toolbar">
-          <!-- Narzędzia wyboru i kształtów -->
           <div class="markup-tool-group">
-            <button class="tool-btn active" data-tool="select" title="Zaznacz i przekształć"><svg><use href="#s-select" /></svg></button>
-            <button class="tool-btn" data-tool="crop" title="Kadrowanie (Crop)"><svg><use href="#s-crop" /></svg></button>
-            <button class="tool-btn" data-tool="highlighter" title="Zakreślacz"><svg><use href="#s-highlighter" /></svg></button>
-            <button class="tool-btn" data-tool="rectangle" title="Prostokąt / Ramka"><svg><use href="#s-rect" /></svg></button>
-            <button class="tool-btn" data-tool="ellipse" title="Okrąg / Elipsa"><svg><use href="#s-circle" /></svg></button>
-            <button class="tool-btn" data-tool="triangle" title="Trójkąt"><svg><use href="#s-triangle" /></svg></button>
-            <button class="tool-btn" data-tool="line" title="Linia prosta"><svg><use href="#s-line" /></svg></button>
-            <button class="tool-btn" data-tool="arrow" title="Strzałka"><svg><use href="#s-arrow" /></svg></button>
-            <button class="tool-btn" data-tool="bubble" title="Dymek dialogowy"><svg><use href="#s-bubble" /></svg></button>
-            <button class="tool-btn" data-tool="text" title="Zwykły tekst"><svg><use href="#s-text" /></svg></button>
+            <button class="tool-btn active" data-tool="select" title="Zaznacz i przekształć" aria-label="Zaznacz i przekształć"><svg aria-hidden="true"><use href="#s-select" /></svg></button>
+            <button class="tool-btn" data-tool="crop" title="Kadrowanie (Crop)" aria-label="Kadrowanie"><svg aria-hidden="true"><use href="#s-crop" /></svg></button>
+            <button class="tool-btn" data-tool="highlighter" title="Zakreślacz" aria-label="Zakreślacz"><svg aria-hidden="true"><use href="#s-highlighter" /></svg></button>
+            <button class="tool-btn" data-tool="rectangle" title="Prostokąt / Ramka" aria-label="Prostokąt"><svg aria-hidden="true"><use href="#s-rect" /></svg></button>
+            <button class="tool-btn" data-tool="ellipse" title="Okrąg / Elipsa" aria-label="Okrąg"><svg aria-hidden="true"><use href="#s-circle" /></svg></button>
+            <button class="tool-btn" data-tool="triangle" title="Trójkąt" aria-label="Trójkąt"><svg aria-hidden="true"><use href="#s-triangle" /></svg></button>
+            <button class="tool-btn" data-tool="line" title="Linia prosta" aria-label="Linia prosta"><svg aria-hidden="true"><use href="#s-line" /></svg></button>
+            <button class="tool-btn" data-tool="arrow" title="Strzałka" aria-label="Strzałka"><svg aria-hidden="true"><use href="#s-arrow" /></svg></button>
+            <button class="tool-btn" data-tool="bubble" title="Dymek dialogowy" aria-label="Dymek dialogowy"><svg aria-hidden="true"><use href="#s-bubble" /></svg></button>
+            <button class="tool-btn" data-tool="text" title="Zwykły tekst" aria-label="Zwykły tekst"><svg aria-hidden="true"><use href="#s-text" /></svg></button>
           </div>
 
-          <!-- Paleta kolorów -->
           <div class="markup-palette">
-            <button class="color-dot active" data-color="#ef4444" style="background: #ef4444" title="Czerwony"></button>
-            <button class="color-dot" data-color="#eab308" style="background: #eab308" title="Żółty"></button>
-            <button class="color-dot" data-color="#22c55e" style="background: #22c55e" title="Zielony"></button>
-            <button class="color-dot" data-color="#3b82f6" style="background: #3b82f6" title="Niebieski"></button>
-            <button class="color-dot" data-color="#e5b968" style="background: #e5b968" title="Złoty"></button>
-            <button class="color-dot" data-color="#ffffff" style="background: #ffffff" title="Biały"></button>
-            <button class="color-dot" data-color="#1e1e1e" style="background: #1e1e1e; border-color: #444;" title="Ciemny"></button>
+            <button class="color-dot active" data-color="#ef4444" style="background: #ef4444" title="Czerwony" aria-label="Kolor czerwony"></button>
+            <button class="color-dot" data-color="#eab308" style="background: #eab308" title="Żółty" aria-label="Kolor żółty"></button>
+            <button class="color-dot" data-color="#22c55e" style="background: #22c55e" title="Zielony" aria-label="Kolor zielony"></button>
+            <button class="color-dot" data-color="#3b82f6" style="background: #3b82f6" title="Niebieski" aria-label="Kolor niebieski"></button>
+            <button class="color-dot" data-color="#e5b968" style="background: #e5b968" title="Złoty" aria-label="Kolor złoty"></button>
+            <button class="color-dot" data-color="#ffffff" style="background: #ffffff" title="Biały" aria-label="Kolor biały"></button>
+            <button class="color-dot" data-color="#1e1e1e" style="background: #1e1e1e; border-color: #444;" title="Ciemny" aria-label="Kolor ciemny"></button>
           </div>
 
-          <!-- Grubość linii -->
           <div class="stroke-seg">
             <button class="stroke-btn" data-width="2">2px</button>
             <button class="stroke-btn active" data-width="4">4px</button>
             <button class="stroke-btn" data-width="8">8px</button>
           </div>
 
-          <!-- Rozmiar tekstu -->
           <div class="stroke-seg" id="fontSeg" style="display: none;">
             <button class="stroke-btn" data-size="16">S</button>
             <button class="stroke-btn active" data-size="24">M</button>
@@ -891,16 +1277,15 @@
             <button class="stroke-btn" data-size="48">XL</button>
           </div>
 
-          <!-- Historia i akcje -->
           <div class="markup-tool-group">
-            <button class="tool-btn" id="markupUndo" title="Cofnij (⌘Z)" disabled><svg><use href="#s-undo" /></svg></button>
-            <button class="tool-btn" id="markupRedo" title="Ponów (⌘⇧Z)" disabled><svg><use href="#s-redo" /></svg></button>
-            <button class="tool-btn" id="markupDelete" title="Usuń zaznaczony (Backspace)" disabled><svg><use href="#s-trash" /></svg></button>
+            <button class="tool-btn" id="markupUndo" title="Cofnij (⌘Z)" aria-label="Cofnij" disabled><svg aria-hidden="true"><use href="#s-undo" /></svg></button>
+            <button class="tool-btn" id="markupRedo" title="Ponów (⌘⇧Z)" aria-label="Ponów" disabled><svg aria-hidden="true"><use href="#s-redo" /></svg></button>
+            <button class="tool-btn" id="markupDelete" title="Usuń zaznaczony (Backspace)" aria-label="Usuń" disabled><svg aria-hidden="true"><use href="#s-trash" /></svg></button>
           </div>
 
           <div class="markup-actions">
-            <button class="act act--quiet" id="markupCancel">Anuluj</button>
-            <button class="act" id="markupDone">Gotowe</button>
+            <button class="act act--quiet" id="markupCancel" data-i18n="Anuluj">Anuluj</button>
+            <button class="act" id="markupDone" data-i18n="Gotowe">Gotowe</button>
           </div>
         </div>
 
@@ -909,8 +1294,8 @@
         </div>
 
         <div class="markup-hint-bar">
-          <span>Podwójne kliknięcie edytuje tekst · Przeciągnij uchwyty, aby zmienić rozmiar</span>
-          <span>Esc anuluje · ⌘⏎ zatwierdza</span>
+          <span data-i18n="Podwójne kliknięcie edytuje tekst · Przeciągnij uchwyty, aby zmienić rozmiar">Podwójne kliknięcie edytuje tekst · Przeciągnij uchwyty, aby zmienić rozmiar</span>
+          <span data-i18n="Esc anuluje · ⌘⏎ zatwierdza">Esc anuluje · ⌘⏎ zatwierdza</span>
         </div>
       </div>
     </div>
@@ -918,6 +1303,7 @@
     <script src="../shared/strings.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/mock-bridge.js"></script>
+    <script src="js/theme.js"></script>
     <script src="js/markup.js"></script>
     <script src="js/shot.js"></script>
   </body>
