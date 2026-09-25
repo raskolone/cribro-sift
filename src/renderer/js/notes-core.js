@@ -158,11 +158,11 @@
    * @returns {{ groups: {key: string, label: string, items: object[]}[], divided: boolean }}
    */
   function groupNotes(notes) {
-    const nonMeeting = (notes || []).filter((n) => !isMeeting(n));
-    const sorted = sortNotes(nonMeeting);
+    const sorted = sortNotes(notes || []);
     const loose = sorted.filter((note) => !note.pinned);
     const groups = [
       { key: "pinned", label: "Przypięte", items: sorted.filter((note) => !!note.pinned) },
+      { key: "meeting", label: "Notatki ze spotkań", items: loose.filter(isMeeting) },
       { key: "quick", label: "Szybkie notatki", items: loose.filter(isQuick) },
       {
         key: "note",

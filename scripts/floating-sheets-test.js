@@ -32,13 +32,13 @@ assert.ok(componentCode.includes("gsap.context"), "Komponent musi używać gsap.
 assert.ok(componentCode.includes("ctx.revert()"), "Komponent musi sprzątać animacje przez ctx.revert()");
 ok("GSAP jest poprawnie zintegrowany z cyklem życia React (gsap.context + ctx.revert)");
 
-// 3. Weryfikacja parametrów animacji (czas trwania, stagger, easing)
-assert.ok(componentCode.includes("0.65") || componentCode.includes("0.6"), "Czas trwania zwijania powinien wynosić ~0.65s");
-assert.ok(componentCode.includes("0.75") || componentCode.includes("0.7") || componentCode.includes("0.8"), "Czas trwania rozwijania powinien wynosić ~0.75s");
-assert.ok(componentCode.includes("power3.inOut") || componentCode.includes("power2.out"), "Easing zwijania powinien być płynny (power3.inOut / power2.out)");
-assert.ok(componentCode.includes("back.out") || componentCode.includes("power3.out"), "Easing rozwijania powinien mieć naturalny overshoot lub power3");
-assert.ok(componentCode.includes("stagger"), "Animacja musi stosować stagger dla efektu orbitalnego kaskadowego");
-ok("Parametry czasowe i krzywe easing (0.65s zwijanie, 0.75s rozwijanie, stagger) są zgodne ze specyfikacją");
+// 3. Weryfikacja parametrów animacji (motion parity z górnym widgetem: czas trwania, kaskada foldStep, easing)
+assert.ok(componentCode.includes("0.38") || componentCode.includes("0.65") || componentCode.includes("0.34"), "Czas trwania zwijania powinien być dopasowany do widgetu (~0.34s-0.38s)");
+assert.ok(componentCode.includes("0.42") || componentCode.includes("0.75") || componentCode.includes("0.4"), "Czas trwania rozwijania powinien być dopasowany do widgetu (~0.42s)");
+assert.ok(componentCode.includes("power2.inOut") || componentCode.includes("power3.inOut"), "Easing zwijania powinien być płynny i miękki (power2.inOut / power3.inOut)");
+assert.ok(componentCode.includes("power3.out") || componentCode.includes("back.out"), "Easing rozwijania powinien odpowiadać Apple Quintic deceleration (power3.out)");
+assert.ok(componentCode.includes("foldStep") || componentCode.includes("0.038") || componentCode.includes("stagger"), "Animacja musi stosować kaskadę tożsamą z --fold-step widgetu (38ms / 19ms)");
+ok("Parametry czasowe i krzywe easing (0.38s zwijanie, 0.42s rozwijanie, foldStep 38ms) są tożsame z górnym widgetem");
 
 // 4. Weryfikacja obsługi prefers-reduced-motion
 assert.ok(componentCode.includes("prefers-reduced-motion"), "Komponent musi respektować prefers-reduced-motion");

@@ -386,6 +386,36 @@
         return;
       }
 
+      const exportMd = event.target.closest("[data-meet-export-md]");
+      if (exportMd) {
+        await flushNotes();
+        try {
+          const res = await api.meetings.exportMarkdown(exportMd.dataset.meetExportMd);
+          if (res && !res.canceled) {
+            exportMd.textContent = t("Zapisano .md");
+            setTimeout(() => paint(), 1600);
+          }
+        } catch (err) {
+          window.alert(err.message || String(err));
+        }
+        return;
+      }
+
+      const exportPdf = event.target.closest("[data-meet-export-pdf]");
+      if (exportPdf) {
+        await flushNotes();
+        try {
+          const res = await api.meetings.exportPdf(exportPdf.dataset.meetExportPdf);
+          if (res && !res.canceled) {
+            exportPdf.textContent = t("Zapisano .pdf");
+            setTimeout(() => paint(), 1600);
+          }
+        } catch (err) {
+          window.alert(err.message || String(err));
+        }
+        return;
+      }
+
       const toRecallBtn = event.target.closest("[data-meet-recall]");
       if (toRecallBtn) {
         const field = root.querySelector("[data-meet-recall-email]");
@@ -1248,11 +1278,15 @@
       /* Nagranie da się przepisać jeszcze raz — dopóki leży na dysku.
          To jest jedyny krok w tym module, który wolno powtórzyć, i jedyny
          ratunek dla rozmowy nagranej bez klucza API albo bez sieci. */
-      const again = meeting.tracks?.mic
+      const again = meeting.tracks?.mic || meeting.transcript?.length
         ? `<div class="meet__act">
-             <button class="btn btn--sm" data-meet-again="${meeting.id}">
-               ${t(meeting.transcript?.length ? "Przepisz jeszcze raz" : "Przepisz nagranie")}
-             </button>
+             ${
+               meeting.tracks?.mic
+                 ? `<button class="btn btn--sm" data-meet-again="${meeting.id}">
+                      ${t(meeting.transcript?.length ? "Przepisz jeszcze raz" : "Przepisz nagranie")}
+                    </button>`
+                 : ""
+             }
              ${
                meeting.transcript?.length && !meeting.verification
                  ? `<button class="btn btn--ghost btn--sm" data-meet-verify="${meeting.id}">
@@ -1264,6 +1298,12 @@
                meeting.transcript?.length
                  ? `<button class="btn btn--ghost btn--sm" data-meet-polish="${meeting.id}">
                       ${t(meeting.talk?.length ? "Oczyść jeszcze raz" : "Oczyść rozmowę")}
+                    </button>
+                    <button class="btn btn--ghost btn--sm" data-meet-export-md="${meeting.id}">
+                      ${t("Eksportuj Markdown")}
+                    </button>
+                    <button class="btn btn--ghost btn--sm" data-meet-export-pdf="${meeting.id}">
+                      ${t("Eksportuj PDF")}
                     </button>`
                  : ""
              }
@@ -1318,9 +1358,11 @@
        Notatka jest już zrobiona, zanim ktokolwiek tu spojrzy: każda rozmowa
        dostaje ją sama, razem z zapisem (patrz keepMeetingNote w main.js).
        Ten przycisk tylko do niej prowadzi. */
-    const out = meeting.summary
-      ? `<button class="btn btn--sm" data-meet-note="${meeting.id}">${t("Pokaż notatkę")}</button>
-         <button class="btn btn--ghost btn--sm" data-meet-copy="${meeting.id}">${t("Kopiuj")}</button>`
+    const out = meeting.summary || meeting.transcript?.length
+      ? `${meeting.summary ? `<button class="btn btn--sm" data-meet-note="${meeting.id}">${t("Pokaż notatkę")}</button>` : ""}
+         <button class="btn btn--ghost btn--sm" data-meet-copy="${meeting.id}">${t("Kopiuj")}</button>
+         <button class="btn btn--ghost btn--sm" data-meet-export-md="${meeting.id}">${t("Eksportuj Markdown")}</button>
+         <button class="btn btn--ghost btn--sm" data-meet-export-pdf="${meeting.id}">${t("Eksportuj PDF")}</button>`
       : "";
     const button = nothing
       ? ""

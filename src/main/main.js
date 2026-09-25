@@ -37,7 +37,7 @@ const { detect: detectCommand, byId: commandById } = require("./commands");
 const { keyFor, STT, SIEVE, OCR, listGeminiModels } = require("./providers");
 const { deliver, frontmostApp } = require("./paste");
 const { toAppleNotes, toMarkdown } = require("./share");
-const { noteToPdf, folderToPdf } = require("./pdf");
+const { noteToPdf, folderToPdf, meetingToPdf, meetingToMarkdown } = require("./pdf");
 const { sendNote: sendToNotion, check: checkNotion } = require("./notion");
 const recall = require("./recall");
 const { detectConflicts } = require("./shortcuts");
@@ -6143,6 +6143,50 @@ function registerIpc() {
     if (!meeting) return false;
     clipboard.writeText(asNote(meeting, { transcript: false, me: whoAmI() }));
     return true;
+  });
+
+  /** Eksport transkrypcji i podsumowania spotkania do pliku .md */
+  ipcMain.handle("meetings:exportMarkdown", async (_e, id) => {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting) throw new Error("Nie ma takiego spotkania.");
+
+    const rawTitle = (meeting.title || "spotkanie").trim();
+    const safeName = rawTitle.slice(0, 60).replace(/[\\/:*?"<>|]/g, "-");
+
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: "Eksportuj spotkanie jako Markdown",
+      defaultPath: `${safeName}.md`,
+      filters: [{ name: "Markdown", extensions: ["md"] }, { name: "Tekst", extensions: ["txt"] }],
+    });
+    if (canceled || !filePath) return { canceled: true };
+
+    const mdContent = meetingToMarkdown(meeting, {
+      locale: store.getSettings().uiLanguage === "en" ? "en-GB" : "pl-PL",
+    });
+    fs.writeFileSync(filePath, mdContent, "utf8");
+    return { canceled: false, filePath };
+  });
+
+  /** Eksport transkrypcji i podsumowania spotkania do pliku .pdf */
+  ipcMain.handle("meetings:exportPdf", async (_e, id) => {
+    const meeting = store.getMeetings().find((item) => item.id === id);
+    if (!meeting) throw new Error("Nie ma takiego spotkania.");
+
+    const rawTitle = (meeting.title || "spotkanie").trim();
+    const safeName = rawTitle.slice(0, 60).replace(/[\\/:*?"<>|]/g, "-");
+
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: "Eksportuj spotkanie jako PDF",
+      defaultPath: `${safeName}.pdf`,
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    if (canceled || !filePath) return { canceled: true };
+
+    await meetingToPdf(meeting, {
+      filePath,
+      locale: store.getSettings().uiLanguage === "en" ? "en-GB" : "pl-PL",
+    });
+    return { canceled: false, filePath };
   });
 
   ipcMain.handle("meetings:retranscribe", async (_e, id) => {

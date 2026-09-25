@@ -17,6 +17,9 @@ export interface FloatingNoteData {
   color: NoteColor;
   x: number;
   y: number;
+  width?: number;
+  height?: number;
+  zIndex?: number;
   rotation?: number;
   pinned?: boolean;
   updatedAt?: string;
@@ -24,7 +27,9 @@ export interface FloatingNoteData {
 
 export interface FloatingSheetNotesProps {
   notes?: FloatingNoteData[];
+  initialStacked?: boolean;
   onNotesChange?: (notes: FloatingNoteData[]) => void;
+  onStackChange?: (isStacked: boolean) => void;
   onNoteSelect?: (id: string) => void;
   className?: string;
 }
@@ -90,6 +95,8 @@ const DEFAULT_NOTES: FloatingNoteData[] = [
     color: 'yellow',
     x: 80,
     y: 80,
+    width: 300,
+    height: 320,
     rotation: -2,
     pinned: true,
   },
@@ -100,6 +107,8 @@ const DEFAULT_NOTES: FloatingNoteData[] = [
     color: 'sky',
     x: 420,
     y: 110,
+    width: 300,
+    height: 320,
     rotation: 3,
   },
   {
@@ -109,6 +118,8 @@ const DEFAULT_NOTES: FloatingNoteData[] = [
     color: 'mint',
     x: 220,
     y: 430,
+    width: 300,
+    height: 320,
     rotation: -1.5,
   },
 ];
@@ -135,6 +146,7 @@ export const PaperTextureFilter: React.FC = () => (
  */
 export const FloatingSheetNote: React.FC<FloatingSheetNoteProps> = ({
   note,
+  index,
   isStacked,
   isTopCard = false,
   cardRef,
@@ -147,6 +159,9 @@ export const FloatingSheetNote: React.FC<FloatingSheetNoteProps> = ({
   onTitleChange,
 }) => {
   const palette = COLOR_MAP[note.color] || COLOR_MAP.yellow;
+  const cardWidth = note.width ?? 300;
+  const cardMinHeight = note.height ?? 320;
+  const initialRot = (note.rotation ?? 0) * 0.5;
 
   return (
     <div
@@ -170,8 +185,8 @@ export const FloatingSheetNote: React.FC<FloatingSheetNoteProps> = ({
         position: 'absolute',
         top: 0,
         left: 0,
-        width: 300,
-        minHeight: 320,
+        width: cardWidth,
+        minHeight: cardMinHeight,
         padding: 24,
         borderRadius: 16,
         border: '1px solid rgba(0, 0, 0, 0.08)',
@@ -182,8 +197,11 @@ export const FloatingSheetNote: React.FC<FloatingSheetNoteProps> = ({
         cursor: isStacked ? (isTopCard ? 'pointer' : 'default') : 'grab',
         userSelect: isStacked ? 'none' : 'auto',
         pointerEvents: isStacked ? (isTopCard ? 'auto' : 'none') : 'auto',
+        transform: `translate3d(${note.x}px, ${note.y}px, 0px) rotate(${initialRot}deg) scale(1)`,
         transformOrigin: '50% 50%',
-        willChange: 'transform, opacity',
+        willChange: 'transform, opacity, box-shadow',
+        boxShadow: '0px 10px 30px rgba(0,0,0,0.1)',
+        zIndex: note.zIndex ?? 10 + index,
       }}
       className="flex flex-col select-none overflow-hidden"
     >
@@ -254,34 +272,51 @@ export const FloatingSheetNote: React.FC<FloatingSheetNoteProps> = ({
 
 /**
  * FloatingSheetNotes — Główny kontener pływających notatek na macOS ("Floating Sheets").
- * Zarządza animacją stosu w GSAP z fizycznym, orbitalnym rozkładaniem i składaniem kart.
+ * Zarządza animacją stosu w GSAP z fizyką ruchu i krzywymi przejść tożsamymi z górnym widgetem.
  */
 export const FloatingSheetNotes: React.FC<FloatingSheetNotesProps> = ({
   notes: initialNotes = DEFAULT_NOTES,
+  initialStacked = false,
   onNotesChange,
+  onStackChange,
   onNoteSelect,
   className = '',
 }) => {
   const [notes, setNotes] = useState<FloatingNoteData[]>(initialNotes);
-  const [isStacked, setIsStacked] = useState(false);
+  const [isStacked, setIsStacked] = useState(initialStacked);
   const [originId, setOriginId] = useState<string | null>(null);
+
+  // Synchronizacja przy zmianie zewnętrznych propsów initialNotes
+  useEffect(() => {
+    setNotes(initialNotes);
+  }, [initialNotes]);
+
+  const notesRef = useRef<FloatingNoteData[]>(notes);
+  notesRef.current = notes;
+
+  const isStackedRef = useRef<boolean>(isStacked);
+  isStackedRef.current = isStacked;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const innerRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const handleRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const timelineRef = useRef<gsap.core.Timeline | null>(null);
+  const gsapCtxRef = useRef<gsap.Context | null>(null);
   const isInitialMount = useRef(true);
 
   const toggleStack = useCallback((id?: string) => {
-    if (isStacked) {
-      setIsStacked(false);
-      setOriginId(null);
-    } else {
-      setOriginId(id || notes[0]?.id || null);
-      setIsStacked(true);
-    }
-  }, [isStacked, notes]);
+    setIsStacked((prevStacked) => {
+      const nextStacked = !prevStacked;
+      if (nextStacked) {
+        setOriginId(id || notesRef.current[0]?.id || null);
+      } else {
+        setOriginId(null);
+      }
+      onStackChange?.(nextStacked);
+      return nextStacked;
+    });
+  }, [onStackChange]);
 
   const handleDragEnd = useCallback((id: string, newX: number, newY: number) => {
     setNotes((prev) => {
@@ -309,7 +344,7 @@ export const FloatingSheetNotes: React.FC<FloatingSheetNotesProps> = ({
 
   // Obsługa przeciągania pojedynczej karty myszą w stanie rozwiniętym
   const handlePointerDrag = useCallback((id: string, e: React.PointerEvent<HTMLDivElement>) => {
-    if (isStacked) return;
+    if (isStackedRef.current) return;
     const targetCard = cardRefs.current[id];
     if (!targetCard) return;
 
@@ -320,7 +355,7 @@ export const FloatingSheetNotes: React.FC<FloatingSheetNotesProps> = ({
     e.preventDefault();
     const startX = e.clientX;
     const startY = e.clientY;
-    const currentNote = notes.find((n) => n.id === id);
+    const currentNote = notesRef.current.find((n) => n.id === id);
     if (!currentNote) return;
 
     const initialX = currentNote.x;
@@ -345,207 +380,232 @@ export const FloatingSheetNotes: React.FC<FloatingSheetNotesProps> = ({
       const finalDx = upEvent.clientX - startX;
       const finalDy = upEvent.clientY - startY;
       if (Math.hypot(finalDx, finalDy) > 3) {
-        handleDragEnd(id, initialX + finalDx, initialY + finalDy);
+        let finalX = initialX + finalDx;
+        let finalY = initialY + finalDy;
+
+        // Ograniczenie pozycji do granic kontenera, jeśli kontener jest dostępny
+        if (containerRef.current) {
+          const containerRect = containerRef.current.getBoundingClientRect();
+          const cardWidth = currentNote.width ?? 300;
+          const cardHeight = currentNote.height ?? 320;
+          finalX = Math.max(0, Math.min(finalX, containerRect.width - cardWidth));
+          finalY = Math.max(0, Math.min(finalY, containerRect.height - cardHeight));
+          gsap.set(targetCard, { x: finalX, y: finalY });
+        }
+
+        handleDragEnd(id, finalX, finalY);
       }
     };
 
     targetCard.addEventListener('pointermove', onPointerMove);
     targetCard.addEventListener('pointerup', onPointerUp);
     targetCard.addEventListener('pointercancel', onPointerUp);
-  }, [isStacked, notes, handleDragEnd]);
+  }, [handleDragEnd]);
 
-  // Wyznaczenie pozycji w stosie
-  const originNote = notes.find((n) => n.id === originId) || notes[0];
-  const otherNotes = notes.filter((n) => n.id !== originNote?.id);
-  const orderedNotes = originNote ? [...otherNotes, originNote] : notes;
-
-  // Główna synchronizacja animacji GSAP
+  // Główna synchronizacja animacji GSAP z fizyką i feeling of motion tożsamym z górnym widgetem
   useEffect(() => {
-    const ctx = gsap.context(() => {
-      const isReducedMotion = typeof window !== 'undefined' &&
-        window.matchMedia &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const currentNotes = notesRef.current;
+    const originNote = currentNotes.find((n) => n.id === originId) || currentNotes[0];
+    const otherNotes = currentNotes.filter((n) => n.id !== originNote?.id);
+    const orderedNotes = originNote ? [...otherNotes, originNote] : currentNotes;
 
-      // Zatrzymaj trwającą animację przed rozpoczęciem nowej
+    const isReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    // Bezpieczne przerwanie aktywnego timeline'u
+    if (timelineRef.current) {
+      timelineRef.current.kill();
+      timelineRef.current = null;
+    }
+
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      gsapCtxRef.current = gsap.context(() => {}, containerRef);
+
+      // Inicjalizacja pozycji startowych
+      currentNotes.forEach((note, idx) => {
+        const cardEl = cardRefs.current[note.id];
+        const innerEl = innerRefs.current[note.id];
+        const handleEl = handleRefs.current[note.id];
+        if (!cardEl) return;
+
+        gsap.set(cardEl, {
+          x: note.x,
+          y: note.y,
+          scale: 1,
+          rotation: (note.rotation ?? 0) * 0.5,
+          zIndex: note.zIndex ?? 10 + idx,
+          opacity: 1,
+          boxShadow: '0px 10px 30px rgba(0,0,0,0.1)',
+        });
+        if (innerEl) gsap.set(innerEl, { opacity: 1 });
+        if (handleEl) gsap.set(handleEl, { opacity: 1 });
+      });
+      return;
+    }
+
+    const tl = gsap.timeline();
+    timelineRef.current = tl;
+
+    if (isStacked) {
+      // ── ZWIJANIE DO STOSU (COLLAPSE — MOTION PARITY Z WIDGETEM) ──
+      // Widget: --t-fold: 0.34s, cubic-bezier(0.22, 1, 0.36, 1), kaskada od zewnątrz do wewnątrz (19ms)
+      const duration = isReducedMotion ? 0.05 : 0.38;
+      const ease = isReducedMotion ? 'none' : 'power2.inOut';
+      const foldStep = isReducedMotion ? 0 : 0.019; // 19ms krok kaskady
+
+      const cascadeSteps = [
+        { dx: -10, dy: 8, rot: -2.5 },
+        { dx: 14, dy: -12, rot: 3.5 },
+        { dx: -14, dy: 14, rot: -3.8 },
+        { dx: 18, dy: -16, rot: 4.2 },
+        { dx: -8, dy: -6, rot: -1.8 },
+      ];
+
+      orderedNotes.forEach((n, idx) => {
+        const cardEl = cardRefs.current[n.id];
+        const innerEl = innerRefs.current[n.id];
+        const handleEl = handleRefs.current[n.id];
+        if (!cardEl) return;
+
+        const isTop = idx === orderedNotes.length - 1;
+        const distFromTop = orderedNotes.length - 1 - idx;
+        const step = isTop ? { dx: 0, dy: 0, rot: 0 } : cascadeSteps[(distFromTop - 1) % cascadeSteps.length];
+
+        const targetX = originNote.x + step.dx;
+        const targetY = originNote.y + step.dy;
+        const targetRot = isReducedMotion ? 0 : step.rot;
+        const targetZIndex = isTop ? 40 : (n.zIndex ?? 10 + idx);
+        const targetShadow = isTop
+          ? '0px 20px 38px -6px rgba(0,0,0,0.32), 0px 10px 18px -4px rgba(0,0,0,0.18), 0px 2px 6px rgba(0,0,0,0.12)'
+          : '0px 8px 20px -2px rgba(0,0,0,0.18), 0px 3px 8px -1px rgba(0,0,0,0.10)';
+
+        // Kaskada: karty spodnie składają się pierwsze, wierzchnia domyka stos
+        const cardStartTime = distFromTop * foldStep;
+
+        tl.to(
+          cardEl,
+          {
+            x: targetX,
+            y: targetY,
+            scale: 0.46,
+            rotation: targetRot,
+            zIndex: targetZIndex,
+            boxShadow: targetShadow,
+            duration,
+            ease,
+            overwrite: 'auto',
+          },
+          cardStartTime
+        );
+
+        if (innerEl) {
+          tl.to(
+            innerEl,
+            {
+              opacity: 0,
+              duration: duration * 0.45,
+              ease: 'power2.in',
+              overwrite: 'auto',
+            },
+            cardStartTime
+          );
+        }
+
+        if (handleEl) {
+          tl.to(
+            handleEl,
+            {
+              opacity: 0,
+              duration: duration * 0.35,
+              ease: 'power2.in',
+              overwrite: 'auto',
+            },
+            cardStartTime
+          );
+        }
+      });
+    } else {
+      // ── ROZWIJANIE ZE STOSU (EXPAND — MOTION PARITY Z WIDGETEM) ──
+      // Widget: --t-fold: 0.34s-0.42s, cubic-bezier(0.22, 1, 0.36, 1) / power3.out, stagger: 38ms (--fold-step)
+      const duration = isReducedMotion ? 0.05 : 0.42;
+      const ease = isReducedMotion ? 'none' : 'power3.out';
+      const foldStep = isReducedMotion ? 0 : 0.038; // 38ms dokładny krok kaskady widgetu
+
+      const reverseOrdered = [...orderedNotes].reverse();
+
+      reverseOrdered.forEach((n, idx) => {
+        const cardEl = cardRefs.current[n.id];
+        const innerEl = innerRefs.current[n.id];
+        const handleEl = handleRefs.current[n.id];
+        if (!cardEl) return;
+
+        const naturalRotation = isReducedMotion ? 0 : (n.rotation ?? 0) * 0.5;
+        // Rozkładanie: od wierzchu do spodu z opóźnieniem 38ms
+        const cardStartTime = idx * foldStep;
+
+        tl.to(
+          cardEl,
+          {
+            x: n.x,
+            y: n.y,
+            scale: 1.0,
+            rotation: naturalRotation,
+            zIndex: n.zIndex ?? 10 + idx,
+            boxShadow: '0px 10px 30px rgba(0,0,0,0.1)',
+            duration,
+            ease,
+            overwrite: 'auto',
+          },
+          cardStartTime
+        );
+
+        if (innerEl) {
+          tl.to(
+            innerEl,
+            {
+              opacity: 1,
+              duration: duration * 0.55,
+              ease: 'power2.out',
+              overwrite: 'auto',
+            },
+            cardStartTime + duration * 0.25
+          );
+        }
+
+        if (handleEl) {
+          tl.to(
+            handleEl,
+            {
+              opacity: 1,
+              duration: duration * 0.45,
+              ease: 'power2.out',
+              overwrite: 'auto',
+            },
+            cardStartTime + duration * 0.2
+          );
+        }
+      });
+    }
+  }, [isStacked, originId]);
+
+  // Sprzątanie kontekstu GSAP wyłącznie przy odmontowaniu całego komponentu
+  useEffect(() => {
+    return () => {
       if (timelineRef.current) {
         timelineRef.current.kill();
         timelineRef.current = null;
       }
-
-      if (isInitialMount.current) {
-        isInitialMount.current = false;
-        // Ustawienie pozycji początkowych
-        notes.forEach((note, idx) => {
-          const cardEl = cardRefs.current[note.id];
-          const innerEl = innerRefs.current[note.id];
-          const handleEl = handleRefs.current[note.id];
-          if (!cardEl) return;
-
-          gsap.set(cardEl, {
-            x: note.x,
-            y: note.y,
-            scale: 1,
-            rotation: (note.rotation ?? 0) * 0.5,
-            zIndex: 10 + idx,
-            opacity: 1,
-            boxShadow: '0px 10px 30px rgba(0,0,0,0.1)',
-          });
-          if (innerEl) gsap.set(innerEl, { opacity: 1 });
-          if (handleEl) gsap.set(handleEl, { opacity: 1 });
-        });
-        return;
+      const ctx = gsapCtxRef.current;
+      if (ctx) {
+        ctx.revert();
       }
-
-      const tl = gsap.timeline();
-      timelineRef.current = tl;
-
-      if (isStacked) {
-        // ── ZWIJANIE DO STOSU (COLLAPSE) ──
-        const duration = isReducedMotion ? 0.05 : 0.65;
-        const ease = isReducedMotion ? 'none' : 'power3.inOut';
-        const stagger = isReducedMotion ? 0 : 0.05;
-
-        // Kaskadowe stopnie przesunięcia pod kartą wierzchnią
-        const cascadeSteps = [
-          { dx: -10, dy: 8, rot: -2.5 },
-          { dx: 14, dy: -12, rot: 3.5 },
-          { dx: -14, dy: 14, rot: -3.8 },
-          { dx: 18, dy: -16, rot: 4.2 },
-          { dx: -8, dy: -6, rot: -1.8 },
-        ];
-
-        orderedNotes.forEach((n, idx) => {
-          const cardEl = cardRefs.current[n.id];
-          const innerEl = innerRefs.current[n.id];
-          const handleEl = handleRefs.current[n.id];
-          if (!cardEl) return;
-
-          const isTop = idx === orderedNotes.length - 1;
-          const distFromTop = orderedNotes.length - 1 - idx;
-          const step = isTop ? { dx: 0, dy: 0, rot: 0 } : cascadeSteps[(distFromTop - 1) % cascadeSteps.length];
-
-          const targetX = originNote.x + step.dx;
-          const targetY = originNote.y + step.dy;
-          const targetRot = isReducedMotion ? 0 : step.rot;
-          const targetZIndex = isTop ? 40 : 10 + idx;
-          const targetShadow = isTop
-            ? '0px 20px 38px -6px rgba(0,0,0,0.32), 0px 10px 18px -4px rgba(0,0,0,0.18), 0px 2px 6px rgba(0,0,0,0.12)'
-            : '0px 8px 20px -2px rgba(0,0,0,0.18), 0px 3px 8px -1px rgba(0,0,0,0.10)';
-
-          const cardStartTime = idx * stagger;
-
-          // Animacja karty do punktu stosu
-          tl.to(
-            cardEl,
-            {
-              x: targetX,
-              y: targetY,
-              scale: 0.46,
-              rotation: targetRot,
-              zIndex: targetZIndex,
-              boxShadow: targetShadow,
-              duration,
-              ease,
-              overwrite: 'auto',
-            },
-            cardStartTime
-          );
-
-          // Płynne wygaszenie tekstu i kontrolek
-          if (innerEl) {
-            tl.to(
-              innerEl,
-              {
-                opacity: 0,
-                duration: duration * 0.4,
-                ease: 'power2.in',
-                overwrite: 'auto',
-              },
-              cardStartTime
-            );
-          }
-
-          if (handleEl) {
-            tl.to(
-              handleEl,
-              {
-                opacity: 0,
-                duration: duration * 0.3,
-                ease: 'power2.in',
-                overwrite: 'auto',
-              },
-              cardStartTime
-            );
-          }
-        });
-      } else {
-        // ── ROZWIJANIE ZE STOSU (EXPAND) ──
-        const duration = isReducedMotion ? 0.05 : 0.75;
-        const ease = isReducedMotion ? 'none' : 'back.out(1.15)';
-        const stagger = isReducedMotion ? 0 : 0.055;
-
-        // Rozwijanie fanning-out: od wierzchu do spodu
-        const reverseOrdered = [...orderedNotes].reverse();
-
-        reverseOrdered.forEach((n, idx) => {
-          const cardEl = cardRefs.current[n.id];
-          const innerEl = innerRefs.current[n.id];
-          const handleEl = handleRefs.current[n.id];
-          if (!cardEl) return;
-
-          const naturalRotation = isReducedMotion ? 0 : (n.rotation ?? 0) * 0.5;
-          const cardStartTime = idx * stagger;
-
-          tl.to(
-            cardEl,
-            {
-              x: n.x,
-              y: n.y,
-              scale: 1.0,
-              rotation: naturalRotation,
-              zIndex: 10 + idx,
-              boxShadow: '0px 10px 30px rgba(0,0,0,0.1)',
-              duration,
-              ease,
-              overwrite: 'auto',
-            },
-            cardStartTime
-          );
-
-          // Płynne przywrócenie widoczności tekstu i kontrolek w locie
-          if (innerEl) {
-            tl.to(
-              innerEl,
-              {
-                opacity: 1,
-                duration: duration * 0.55,
-                ease: 'power2.out',
-                overwrite: 'auto',
-              },
-              cardStartTime + duration * 0.35
-            );
-          }
-
-          if (handleEl) {
-            tl.to(
-              handleEl,
-              {
-                opacity: 1,
-                duration: duration * 0.45,
-                ease: 'power2.out',
-                overwrite: 'auto',
-              },
-              cardStartTime + duration * 0.3
-            );
-          }
-        });
-      }
-    }, containerRef);
-
-    return () => {
-      ctx.revert();
     };
-  }, [isStacked, originNote, notes, orderedNotes]);
+  }, []);
+
+  const originNote = notes.find((n) => n.id === originId) || notes[0];
 
   return (
     <div
@@ -579,6 +639,7 @@ export const FloatingSheetNotes: React.FC<FloatingSheetNotesProps> = ({
                 if (isStacked) {
                   setIsStacked(false);
                   setOriginId(null);
+                  onStackChange?.(false);
                 }
                 onNoteSelect?.(note.id);
               }}
@@ -623,3 +684,4 @@ export const FloatingSheetNotes: React.FC<FloatingSheetNotesProps> = ({
 };
 
 export default FloatingSheetNotes;
+

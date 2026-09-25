@@ -292,6 +292,151 @@ async function renderPdf(html, filePath) {
   }
 }
 
+/**
+ * Formatowanie czasu w sekundach do czytelnej postaci (np. 15 min 20 s).
+ */
+function formatDuration(seconds) {
+  const s = Math.round(Number(seconds) || 0);
+  const mins = Math.floor(s / 60);
+  const secs = s % 60;
+  if (mins === 0) return `${secs} s`;
+  return `${mins} min${secs > 0 ? ` ${secs} s` : ""}`;
+}
+
+/**
+ * Formatowanie sekund do timestampu [MM:SS].
+ */
+function formatTimestamp(seconds) {
+  const s = Math.round(Number(seconds) || 0);
+  const mins = Math.floor(s / 60);
+  const secs = s % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+/**
+ * Eksport spotkania do sformatowanego Markdowna zgodnie ze standardem C1.
+ *
+ * @param {object} meeting obiekt spotkania ze store
+ * @param {object} options
+ * @returns {string}
+ */
+function meetingToMarkdown(meeting, { locale = "pl-PL" } = {}) {
+  const title = String(meeting?.title ?? "").trim() || "Spotkanie";
+  const dateStr = new Date(meeting?.at ?? Date.now()).toLocaleDateString(locale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const durationStr = formatDuration(meeting?.seconds);
+  const langStr = meeting?.language || (meeting?.bilingual ? "Polski + angielski" : "Polski");
+
+  const lines = [
+    `# ${title}`,
+    "",
+    `- Data: ${dateStr}`,
+    `- Czas trwania: ${durationStr}`,
+    `- Język: ${langStr}`,
+    `- Źródło: pełne nagranie`,
+    "",
+    "## Transkrypcja",
+    "",
+  ];
+
+  const transcript = Array.isArray(meeting?.transcript) ? meeting.transcript : [];
+  if (transcript.length) {
+    for (const item of transcript) {
+      const timeVal = item.at ?? item.start;
+      const time = timeVal != null ? formatTimestamp(timeVal) : "";
+      const speaker = item.speaker ? `**${item.speaker}**` : "";
+      const prefix = [speaker, time ? `(${time})` : ""].filter(Boolean).join(" ");
+      lines.push(`${prefix ? `${prefix}: ` : ""}${String(item.text ?? "").trim()}`);
+      lines.push("");
+    }
+  } else {
+    lines.push("_Brak zapisu transkrypcji._", "");
+  }
+
+  if (meeting?.summary?.trim()) {
+    lines.push("## Podsumowanie", "", meeting.summary.trim(), "");
+  }
+
+  if (Array.isArray(meeting?.tasks) && meeting.tasks.length) {
+    lines.push("## Zadania", "");
+    for (const task of meeting.tasks) {
+      lines.push(`- [ ] ${task}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Arkusz HTML dla spotkania.
+ */
+function meetingSheetOf(meeting, { locale = "pl-PL" } = {}) {
+  const title = String(meeting?.title ?? "").trim() || "Spotkanie";
+  const dateStr = new Date(meeting?.at ?? Date.now()).toLocaleDateString(locale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  const durationStr = formatDuration(meeting?.seconds);
+  const langStr = meeting?.language || (meeting?.bilingual ? "Polski + angielski" : "Polski");
+
+  const metaItems = [
+    `Data: ${escapeHtml(dateStr)}`,
+    `Czas trwania: ${escapeHtml(durationStr)}`,
+    `Język: ${escapeHtml(langStr)}`,
+    `Źródło: pełne nagranie`,
+  ];
+
+  const transcript = Array.isArray(meeting?.transcript) ? meeting.transcript : [];
+  const transcriptHtml = transcript.length
+    ? transcript
+        .map((item) => {
+          const timeVal = item.at ?? item.start;
+          const time = timeVal != null ? formatTimestamp(timeVal) : "";
+          const speaker = item.speaker ? `<strong>${escapeHtml(item.speaker)}</strong>` : "";
+          const prefix = [speaker, time ? `<span style="opacity:0.75; font-size: 0.9em;">(${time})</span>` : ""].filter(Boolean).join(" ");
+          return `<p>${prefix ? `${prefix}: ` : ""}${escapeHtml(String(item.text ?? "").trim())}</p>`;
+        })
+        .join("\n")
+    : `<p><em>Brak zapisu transkrypcji.</em></p>`;
+
+  const summaryHtml = meeting?.summary?.trim()
+    ? `<section style="margin-top: 24px;"><h2>Podsumowanie</h2><div>${markdownToHtml(meeting.summary.trim())}</div></section>`
+    : "";
+
+  const tasksHtml = Array.isArray(meeting?.tasks) && meeting.tasks.length
+    ? `<section style="margin-top: 24px;"><h2>Zadania</h2><ul>${meeting.tasks.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul></section>`
+    : "";
+
+  return `    <div class="sheet">
+      <header class="head">
+        <h1>${escapeHtml(title)}</h1>
+        <div class="meta">${metaItems.join(" · ")}</div>
+      </header>
+      <div class="rule"></div>
+      <div class="prose">
+        <h2>Transkrypcja</h2>
+        ${transcriptHtml}
+        ${summaryHtml}
+        ${tasksHtml}
+      </div>
+    </div>`;
+}
+
+function toMeetingDocument(meeting, { locale = "pl-PL" } = {}) {
+  const title = String(meeting?.title ?? "").trim() || "Spotkanie";
+  return wrap([meetingSheetOf(meeting, { locale })], title);
+}
+
+/** Jedno spotkanie → plik PDF. */
+async function meetingToPdf(meeting, { filePath, locale = "pl-PL" }) {
+  return renderPdf(toMeetingDocument(meeting, { locale }), filePath);
+}
+
 /** Jedna notatka → jeden plik PDF. */
 async function noteToPdf(note, { filePath, title, locale }) {
   return renderPdf(toDocument(note, { title, locale }), filePath);
@@ -306,4 +451,14 @@ async function folderToPdf(items, { filePath, locale, documentTitle }) {
   return renderPdf(toBook(items, { locale, documentTitle }), filePath);
 }
 
-module.exports = { noteToPdf, folderToPdf, toDocument, toBook, bodyOf };
+module.exports = {
+  noteToPdf,
+  folderToPdf,
+  meetingToPdf,
+  meetingToMarkdown,
+  toDocument,
+  toMeetingDocument,
+  toBook,
+  bodyOf,
+};
+
